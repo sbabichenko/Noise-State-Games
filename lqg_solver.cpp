@@ -433,7 +433,7 @@ EquilibriumResult solve_equilibrium(
     EnvironmentResult env;
 
     // Anderson acceleration (AA) state
-    constexpr int AA_M = 7;
+    constexpr int AA_M = 5;
     constexpr int AA_STORE = AA_M + 1;  // +1 so write slot doesn't collide with reads
     constexpr double AA_REG = 1e-12;
     constexpr double AA_BETA = 0.6;
