@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 // Decentralized LQG noise-state game solver
-// Corrected (Gamma cross-term) optimized solver
+// F-free optimized solver (no 36MB Kernel3D in filter/control)
 // ============================================================
 
 #include <Eigen/Dense>
@@ -97,9 +97,13 @@ inline Mat3 Pi2() {
 struct EnvironmentResult {
     Kernel2D X;
     Kernel2D R1, R2;
-    Kernel3D F1, F2;
     Kernel2D Xhat1, Xhat2;
     Kernel2D calD1, calD2;
+    // Rank-1 filter factorization: A_store[k][s] for s < k
+    Kernel2D A_store1, A_store2;
+    // Observation parameters (needed for F materialization)
+    double obs_gain1, obs_gain2;
+    int obs_idx1, obs_idx2;
 };
 
 // ---------- bar solution ----------
@@ -120,16 +124,6 @@ struct BackwardBarResult {
 void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
                             Kernel2D& X);
 
-void compute_filter_kernels(const Kernel2D& X, const Mat3& Pi, int obs_index,
-                            const std::array<double, N>& obs_gain,
-                            int filter_iters, double relax,
-                            Kernel2D& R, Eigen::MatrixXd& Q_flat,
-                            Kernel3D& F, Kernel2D& Xhat);
-
-void primitive_control_kernel(const Kernel2D& D, const Kernel3D& F,
-                              const Mat3& Pi, Kernel2D& calD);
-
-// Writes result into pre-allocated env (avoids Kernel3D heap churn)
 void forward_environment(
     const Kernel2D& D1, const Kernel2D& D2,
     double obs_gain1, double obs_gain2,
@@ -173,6 +167,11 @@ struct CostPair {
 CostPair compute_costs_general(const EnvironmentResult& env,
                                const BarSolution& bar_sol,
                                double r_val, double b1_val, double b2_val);
+
+// ---------- F materialization (for figure output only) ----------
+// Builds F[j][u][s] for ALL j from R + A_store. Writes into pre-allocated Kernel3D.
+void materialize_F(const Kernel2D& R, const Kernel2D& A_store,
+                   double obs_gain, int obs_index, Kernel3D& F);
 
 // ---------- utility ----------
 inline std::array<double, N> make_constant_prec(double val) {

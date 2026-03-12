@@ -99,7 +99,11 @@ int main() {
     // FIGURE 7: F1 at t=T
     // ============================================================
     std::cout << "Figure 7: Filtering kernel F1 at t=T ...\n";
-    write_F1_T(DATA_DIR + "/fig7_F1_T.csv", env.F1);
+    {
+        Kernel3D F1;
+        materialize_F(env.R1, env.A_store1, env.obs_gain1, env.obs_idx1, F1);
+        write_F1_T(DATA_DIR + "/fig7_F1_T.csv", F1);
+    }
 
     // ============================================================
     // FIGURE 8: Mean control barD1(t) vs precision p

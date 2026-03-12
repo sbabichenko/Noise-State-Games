@@ -1,13 +1,13 @@
 // ============================================================
-// Decentralized LQG noise-state game solver — optimized implementation
+// Decentralized LQG noise-state game solver — F-free implementation
 //
-// Key optimizations over naive port:
-// 1. Direct 3x3 block ops instead of dynamic Eigen flat matrices
-// 2. Rank-1 factorization of filter delta: delta[u][s] = R[j][u]*A[s]^T
-//    reduces filter iteration from O(j^2) to O(j) per step
-// 3. Factored Q_corr from R history (scalar*Vec3 vs Mat3^T*Vec3)
-// 4. Pre-allocated Kernel3D to avoid heap churn
-// 5. Simplified Gamma computation
+// Key optimization: the 36MB Kernel3D F is never materialized during
+// the solver loop. Instead, products like sum_u F[j][u][s]^T * v[u]
+// are computed directly from the rank-1 decomposition:
+//   F[j][u][s] = border[u][s] + sum_k R[k][u] * A_store[k][s]^T
+//
+// This eliminates the dominant O(N^3) F copy per filter call and
+// removes 72MB of heap allocation from EnvironmentResult.
 // ============================================================
 
 #include "lqg_solver.h"
@@ -36,211 +36,233 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
 }
 
 // ============================================================
-// compute_filter_kernels — fully optimized
+// compute_filter_kernels — F-free implementation
 //
-// Major optimization: the filter fixed-point iteration maintains
-//   delta[u][s] = R[j][u] * A[s]^T   (rank-1 in u)
-// so we only track A[s] (Vec3 per s) instead of j*j Mat3 blocks.
-// This reduces the filter loop from O(j^2 * iters) to O(j * iters).
+// Computes R[j][s], A_store[j][s], and Xhat[j][s] without
+// materializing the 3D filter kernel F.
 //
-// Q_corr uses factored form from R history:
-//   Q_corr[s] = DT^2 * prec * sum_{k<j} c_k * R[k][s]
-//   where c_k = sum_{u<=k} dot(R[k][u], X[j][u])
+// Xhat_const is computed from A_store history:
+//   Xhat_const[s] = Pi*X[j][s] + gamma_a[s]
+//                 + DT*g*e_i * sum_{u<s} dot(R[s][u], X[j][u])
+//                 + DT * sum_{k=s+1}^{j-1} partial_c_k * A_store[k][s]
+//
+// where gamma_a[s] = border_gt contribution (already computed for Gamma)
+//       partial_c_k = c_k - dot(R[k][k], X[j][k])
 // ============================================================
-void compute_filter_kernels(const Kernel2D& X, const Mat3& Pi, int obs_index,
-                            const std::array<double, N>& obs_gain,
-                            int filter_iters, double relax,
-                            Kernel2D& R, Eigen::MatrixXd& /*Q_flat_unused*/,
-                            Kernel3D& F, Kernel2D& Xhat) {
+static void compute_filter_kernels(
+    const Kernel2D& X, const Mat3& Pi, int obs_index,
+    double obs_gain_val,
+    int filter_iters, double relax,
+    Kernel2D& R, Kernel2D& A_store, Kernel2D& Xhat) {
+
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
     Mat3 I_minus_Pi = Mat3::Identity() - Pi;
-
-    // Filter factorization storage: A_store[k][s] = Vec3
-    // A_store[k] is the A vector from the filter iteration at step k.
-    // Used for Xhat_const computation and primitive_control_kernel via F.
-    // F[j][u][s] = F[j-1][u][s] + R[j][u] * A_j[s]^T  for u,s < j
-    Kernel2D A_store; // reuse Kernel2D type: A_store[k][s] for s < k
+    double g = obs_gain_val;
+    double prec = g * g;
+    double dt2_prec = DT * DT * prec;
 
     for (int j = 0; j < N; ++j) {
-        double g = obs_gain[j];
-        double prec = g * g;
         int m = j + 1;
 
-        // --- Q_corr from R history (factored form) ---
-        // Q_corr[s] = DT^2 * prec * sum_{k=s}^{j-1} c_k * R[k][s]
-        // where c_k = sum_{u=0}^{k} dot(R[k][u], X[j][u])
-        std::array<Vec3, N> Q_corr;
         if (j == 0) {
-            Q_corr[0].setZero();
-        } else {
-            // Compute c_k for k = 0..j-1
-            std::array<double, N> c_k;
-            for (int k = 0; k < j; ++k) {
-                double acc = 0.0;
-                for (int u = 0; u <= k; ++u)
-                    acc += R[k][u].dot(X[j][u]);
-                c_k[k] = acc;
-            }
-            double dt2_prec = DT * DT * prec;
-            for (int s = 0; s < m; ++s) {
-                Vec3 acc = Vec3::Zero();
-                int k_start = std::max(s, 0);
-                for (int k = k_start; k < j; ++k)
-                    acc += c_k[k] * R[k][s];
-                Q_corr[s] = dt2_prec * acc;
-            }
+            // Base case: no history
+            R[0][0] = I_minus_Pi * X[0][0];
+            for (int s = 1; s < N; ++s) R[0][s].setZero();
+            Xhat[0][0] = Pi * X[0][0];
+            A_store[0][0].setZero();
+            continue;
         }
 
-        // --- Gamma computation (simplified) ---
-        // gamma_a[s] = dt * sum_{z=s+1}^{j-1} coeff_a[z] * R[z][s]   for s < j
-        // gamma_a[s] = 0 for s >= j
-        // gamma_b[s] = dt * b_scalar[s] * obs_gain[s] * e_i
-        std::array<Vec3, N> Gamma;
+        // --- Compute c_k and partial_c_k for k = 0..j-1 ---
+        // c_k = sum_{u=0}^{k} dot(R[k][u], X[j][u])
+        // partial_c_k = c_k - dot(R[k][k], X[j][k]) = sum_{u=0}^{k-1} dot(R[k][u], X[j][u])
+        std::array<double, N> c_k, partial_c_k;
+        for (int k = 0; k < j; ++k) {
+            double acc = 0.0;
+            for (int u = 0; u < k; ++u)
+                acc += R[k][u].dot(X[j][u]);
+            partial_c_k[k] = acc;
+            c_k[k] = acc + R[k][k].dot(X[j][k]);
+        }
 
-        if (j == 0) {
-            Gamma[0].setZero();
-        } else {
-            // coeff_a[z] = X[j][z](obs_index) * obs_gain[z]
-            std::array<double, N> coeff_a;
+        // --- coeff_a for gamma_a ---
+        // coeff_a[z] = X[j][z](obs_index) * g
+        std::array<double, N> coeff_a;
+        for (int z = 0; z < j; ++z)
+            coeff_a[z] = X[j][z](obs_index) * g;
+
+        // --- Merged computation per s: Q_corr + gamma_a + Xhat interior ---
+        // All iterate k = s+1..j-1, accessing R[k][s] and A_store[k][s]
+        std::array<Vec3, N> correction;
+        std::array<Vec3, N> Xhat_const;
+
+        for (int s = 0; s < j; ++s) {
+            Vec3 q_upper = Vec3::Zero();
+            Vec3 ga_acc = Vec3::Zero();
+            Vec3 xi_acc = Vec3::Zero();
+
+            for (int k = s + 1; k < j; ++k) {
+                Vec3 Rks = R[k][s];
+                q_upper += c_k[k] * Rks;
+                ga_acc += coeff_a[k] * Rks;
+                xi_acc += partial_c_k[k] * A_store[k][s];
+            }
+
+            Vec3 Q_corr_s = dt2_prec * (c_k[s] * R[s][s] + q_upper);
+            Vec3 gamma_a_s = DT * ga_acc;
+
+            // gamma_b and border_lt (both iterate u < s)
+            double gb_acc = 0.0, bl_acc = 0.0;
+            for (int u = 0; u < s; ++u) {
+                gb_acc += X[j][u].dot(R[u][s]);
+                bl_acc += R[s][u].dot(X[j][u]);
+            }
+
+            correction[s] = Q_corr_s + gamma_a_s + (DT * gb_acc * g) * e_i;
+            Xhat_const[s] = Pi * X[j][s] + gamma_a_s
+                          + (DT * bl_acc * g) * e_i
+                          + DT * xi_acc;
+        }
+
+        // s = j: only gamma_b contributes to correction
+        {
+            double gb_acc = 0.0;
             for (int z = 0; z < j; ++z)
-                coeff_a[z] = X[j][z](obs_index) * obs_gain[z];
-
-            // gamma_a: direct sum for z > s
-            for (int s = 0; s < j; ++s) {
-                Vec3 acc = Vec3::Zero();
-                for (int z = s + 1; z < j; ++z)
-                    acc += coeff_a[z] * R[z][s];
-                Gamma[s] = DT * acc;
-            }
-            Gamma[j].setZero(); // s = j: gamma_a = 0
-
-            // gamma_b: b_scalar[s] * obs_gain[s] * e_i
-            // b_scalar[s] = sum_{z=0}^{min(s,j)-1} dot(X[j][z], R[z][s])
-            for (int s = 1; s < j; ++s) {
-                double cum = 0.0;
-                for (int z = 0; z < s; ++z)
-                    cum += X[j][z].dot(R[z][s]);
-                Gamma[s] += (DT * cum * obs_gain[s]) * e_i;
-            }
-            // s >= j (only s = j here): b_scalar = sum_{z=0}^{j-1}
-            if (j > 0) {
-                double cum = 0.0;
-                for (int z = 0; z < j; ++z)
-                    cum += X[j][z].dot(R[z][j]);
-                Gamma[j] += (DT * cum * obs_gain[j]) * e_i;
-            }
+                gb_acc += X[j][z].dot(R[z][j]);
+            correction[j] = (DT * gb_acc * g) * e_i;
         }
 
-        // --- R[j][s] = (I - Pi) * X[j][s] - Q_corr[s] - Gamma[s] ---
+        // --- R[j][s] = (I - Pi) * X[j][s] - correction[s] ---
         for (int s = 0; s < m; ++s)
-            R[j][s] = I_minus_Pi * X[j][s] - Q_corr[s] - Gamma[s];
+            R[j][s] = I_minus_Pi * X[j][s] - correction[s];
         for (int s = m; s < N; ++s)
             R[j][s].setZero();
 
-        // --- Xhat & F computation ---
-        if (j == 0) {
-            Xhat[j][0] = Pi * X[j][0];
-            F[j][0][0].setZero();
-            A_store[0][0].setZero(); // no correction at step 0
-        } else {
-            // Set border blocks of F[j]
-            for (int u = 0; u < j; ++u) {
-                F[j][u][j] = g * R[j][u] * e_i.transpose();
-                F[j][j][u] = g * e_i * R[j][u].transpose();
-            }
-            F[j][j][j].setZero();
-
-            // Xhat_const[s] = Pi*X[j][s] + DT * F[j][j][s]^T * X[j][j]
-            //                 + DT * sum_{u<j} F[j-1][u][s]^T * X[j][u]
-            //
-            // F[j-1][u][s] can be expanded using stored A vectors:
-            //   F[j-1][u][s] = sum_{k: max(u,s)<k<=j-1} R[k][u] * A_store[k][s]^T
-            //                  + border contributions
-            // But this recursive expansion is complex. Instead, compute directly
-            // using the already-built F[j-1] (which is fully materialized).
-            //
-            // For s < j: use F[j-1][u][s] (valid, set at step j-1)
-            // For s = j: use F[j][u][j] (border, just set above)
-            std::array<Vec3, N> Xhat_const;
-            for (int s = 0; s < j; ++s) {
-                Vec3 acc = Pi * X[j][s];
-                acc += DT * F[j][j][s].transpose() * X[j][j];
-                for (int u = 0; u < j; ++u)
-                    acc += DT * F[j - 1][u][s].transpose() * X[j][u];
-                Xhat_const[s] = acc;
-            }
-            // s = j: use border column F[j][u][j]
-            {
-                Vec3 acc = Pi * X[j][j];
-                // F[j][j][j] = 0, no u=j contribution
-                for (int u = 0; u < j; ++u)
-                    acc += DT * F[j][u][j].transpose() * X[j][u];
-                Xhat_const[j] = acc;
-            }
-
-            // --- Rank-1 factorized filter iteration ---
-            // delta[u][s] = R[j][u] * A[s]^T
-            // sigma = sum_{u<j} dot(R[j][u], DT * X[j][u]) — precomputed scalar
-            // diff[s] = X[j][s] - Xhat_const[s] - sigma * A[s]
-            // A_new[s] = alpha * diff[s] + beta * A[s]
-            //   where alpha = relax * DT * prec, beta = 1 - relax
-
-            double sigma = 0.0;
+        // --- Now compute Xhat_const[j] using the just-computed R[j] ---
+        {
+            double bl_acc = 0.0;
             for (int u = 0; u < j; ++u)
-                sigma += R[j][u].dot(DT * X[j][u]);
-
-            double alpha = relax * DT * prec;
-            double beta = 1.0 - relax;
-
-            std::array<Vec3, N> A;
-            for (int s = 0; s < j; ++s)
-                A[s].setZero();
-
-            for (int iter = 0; iter < filter_iters; ++iter) {
-                for (int s = 0; s < j; ++s) {
-                    Vec3 diff = X[j][s] - Xhat_const[s] - sigma * A[s];
-                    A[s] = alpha * diff + beta * A[s];
-                }
-            }
-
-            // Store A for later use (Xhat_const at future steps via F)
-            for (int s = 0; s < j; ++s)
-                A_store[j][s] = A[s];
-
-            // Write F[j][u][s] = F[j-1][u][s] + R[j][u] * A[s]^T for u,s < j
-            for (int u = 0; u < j; ++u)
-                for (int s = 0; s < j; ++s)
-                    F[j][u][s] = F[j - 1][u][s] + R[j][u] * A[s].transpose();
-
-            // Final Xhat
-            for (int s = 0; s < j; ++s)
-                Xhat[j][s] = Xhat_const[s] + sigma * A[s];
-            Xhat[j][j] = Xhat_const[j]; // delta has no s=j component
+                bl_acc += R[j][u].dot(X[j][u]);
+            Xhat_const[j] = Pi * X[j][j] + (DT * bl_acc * g) * e_i;
         }
+
+        // --- Rank-1 filter iteration ---
+        double sigma = 0.0;
+        for (int u = 0; u < j; ++u)
+            sigma += R[j][u].dot(DT * X[j][u]);
+
+        double alpha = relax * DT * prec;
+        double beta = 1.0 - relax;
+
+        std::array<Vec3, N> A;
+        for (int s = 0; s < j; ++s)
+            A[s].setZero();
+
+        for (int iter = 0; iter < filter_iters; ++iter) {
+            for (int s = 0; s < j; ++s) {
+                Vec3 diff = X[j][s] - Xhat_const[s] - sigma * A[s];
+                A[s] = alpha * diff + beta * A[s];
+            }
+        }
+
+        for (int s = 0; s < j; ++s)
+            A_store[j][s] = A[s];
+
+        // Final Xhat
+        for (int s = 0; s < j; ++s)
+            Xhat[j][s] = Xhat_const[s] + sigma * A[s];
+        Xhat[j][j] = Xhat_const[j];
     }
 }
 
 // ============================================================
-// primitive_control_kernel — direct block operations
+// primitive_control_kernel — F-free implementation
+//
+// calD[j][s] = Pi*D[j][s] + DT * sum_u F[j][u][s]^T * D[j][u]
+//
+// Decomposed using F[j][u][s] = border + sum_k R[k][u]*A_store[k][s]^T:
+//
+// For s < j:
+//   border_gt = g * sum_{u=s+1}^{j} R[u][s] * D[j][u](obs_index)
+//   border_lt = g * e_i * sum_{u<s} dot(R[s][u], D[j][u])
+//   interior  = sum_{k=s+1}^{j} A_store[k][s] * partial_d_k
+//     where partial_d_k = sum_{u<k} dot(R[k][u], D[j][u])
+//
+// For s = j:
+//   calD[j][j] = Pi*D[j][j] + DT*g*e_i * sum_{u<j} dot(R[j][u], D[j][u])
 // ============================================================
-void primitive_control_kernel(const Kernel2D& D, const Kernel3D& F,
-                              const Mat3& Pi, Kernel2D& calD) {
+static void primitive_control_kernel(
+    const Kernel2D& D, const Kernel2D& R, const Kernel2D& A_store,
+    double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD) {
+
+    Vec3 e_i = Vec3::Zero();
+    e_i(obs_index) = 1.0;
+    double g = obs_gain_val;
+
     for (int j = 0; j < N; ++j) {
         int m = j + 1;
-        for (int s = 0; s < m; ++s) {
+
+        if (j == 0) {
+            calD[0][0] = Pi * D[0][0];
+            for (int s = 1; s < N; ++s) calD[0][s].setZero();
+            continue;
+        }
+
+        // Precompute partial_d_k = sum_{u=0}^{k-1} dot(R[k][u], D[j][u])
+        // for k = 1..j
+        std::array<double, N> partial_d_k;
+        for (int k = 1; k <= j; ++k) {
+            double acc = 0.0;
+            for (int u = 0; u < k; ++u)
+                acc += R[k][u].dot(D[j][u]);
+            partial_d_k[k] = acc;
+        }
+
+        // Precompute D[j][u](obs_index) for u = 0..j
+        std::array<double, N> D_obs;
+        for (int u = 0; u <= j; ++u)
+            D_obs[u] = D[j][u](obs_index);
+
+        for (int s = 0; s < j; ++s) {
             Vec3 acc = Pi * D[j][s];
-            for (int u = 0; u < m; ++u)
-                acc += DT * F[j][u][s].transpose() * D[j][u];
+
+            // border_gt: g * sum_{u=s+1}^{j} R[u][s] * D_obs[u]
+            Vec3 bg_vec = Vec3::Zero();
+            for (int u = s + 1; u <= j; ++u)
+                bg_vec += D_obs[u] * R[u][s];
+            acc += DT * g * bg_vec;
+
+            // border_lt: g * e_i * sum_{u<s} dot(R[s][u], D[j][u])
+            double bl_acc = 0.0;
+            for (int u = 0; u < s; ++u)
+                bl_acc += R[s][u].dot(D[j][u]);
+            acc += (DT * g * bl_acc) * e_i;
+
+            // interior: sum_{k=s+1}^{j} A_store[k][s] * partial_d_k[k]
+            Vec3 int_acc = Vec3::Zero();
+            for (int k = s + 1; k <= j; ++k)
+                int_acc += partial_d_k[k] * A_store[k][s];
+            acc += DT * int_acc;
+
             calD[j][s] = acc;
         }
+
+        // s = j
+        {
+            double bl_acc = 0.0;
+            for (int u = 0; u < j; ++u)
+                bl_acc += R[j][u].dot(D[j][u]);
+            calD[j][j] = Pi * D[j][j] + (DT * g * bl_acc) * e_i;
+        }
+
         for (int s = m; s < N; ++s)
             calD[j][s].setZero();
     }
 }
 
 // ============================================================
-// forward_environment
+// forward_environment — F-free
 // ============================================================
 void forward_environment(
     const Kernel2D& D1, const Kernel2D& D2,
@@ -266,26 +288,20 @@ void forward_environment(
     Kernel2D X;
     state_kernel_from_calD(calD1, calD2, X);
 
-    std::array<double, N> gain1, gain2;
-    gain1.fill(obs_gain1);
-    gain2.fill(obs_gain2);
-
     Kernel2D R1, R2, Xhat1, Xhat2;
-    Eigen::MatrixXd Q_dummy;
-    Kernel3D& F1 = env.F1;
-    Kernel3D& F2 = env.F2;
+    Kernel2D A_store1, A_store2;
 
     for (int it = 0; it < inner_iters; ++it) {
-        compute_filter_kernels(X, Pi_1, obs_idx_1, gain1,
+        compute_filter_kernels(X, Pi_1, obs_idx_1, obs_gain1,
                                FILTER_INNER_ITERS, FILTER_RELAX,
-                               R1, Q_dummy, F1, Xhat1);
-        compute_filter_kernels(X, Pi_2, obs_idx_2, gain2,
+                               R1, A_store1, Xhat1);
+        compute_filter_kernels(X, Pi_2, obs_idx_2, obs_gain2,
                                FILTER_INNER_ITERS, FILTER_RELAX,
-                               R2, Q_dummy, F2, Xhat2);
+                               R2, A_store2, Xhat2);
 
         Kernel2D calD1_new, calD2_new;
-        primitive_control_kernel(D1, F1, Pi_1, calD1_new);
-        primitive_control_kernel(D2, F2, Pi_2, calD2_new);
+        primitive_control_kernel(D1, R1, A_store1, obs_gain1, obs_idx_1, Pi_1, calD1_new);
+        primitive_control_kernel(D2, R2, A_store2, obs_gain2, obs_idx_2, Pi_2, calD2_new);
 
         Kernel2D X_new;
         state_kernel_from_calD(calD1_new, calD2_new, X_new);
@@ -302,6 +318,9 @@ void forward_environment(
     env.R1 = R1; env.R2 = R2;
     env.Xhat1 = Xhat1; env.Xhat2 = Xhat2;
     env.calD1 = calD1; env.calD2 = calD2;
+    env.A_store1 = A_store1; env.A_store2 = A_store2;
+    env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
+    env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
 }
 
 // ============================================================
@@ -480,21 +499,20 @@ EquilibriumResult solve_equilibrium(
         backward_kernels(env.X, env.R2, D2, prec2, 0.0, Hx1, Hk1);
         backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2, Hk2);
 
-        Kernel2D D1_new, D2_new;
-        for (int t = 0; t < N; ++t)
-            for (int s = 0; s < N; ++s) {
-                D1_new[t][s] = -(1.0 / RHO) * Hx1[t][s];
-                D2_new[t][s] = -(1.0 / RHO) * Hx2[t][s];
-            }
-
+        // Merged: compute D_new, norms, and relaxation in one pass
+        constexpr double neg_inv_rho = -(1.0 / RHO);
         double norm_d1n = 0.0, norm_d1d = 0.0;
         double norm_d2n = 0.0, norm_d2d = 0.0;
         for (int t = 0; t < N; ++t)
             for (int s = 0; s < N; ++s) {
-                norm_d1d += (D1_new[t][s] - D1[t][s]).squaredNorm();
-                norm_d1n += D1_new[t][s].squaredNorm();
-                norm_d2d += (D2_new[t][s] - D2[t][s]).squaredNorm();
-                norm_d2n += D2_new[t][s].squaredNorm();
+                Vec3 d1n = neg_inv_rho * Hx1[t][s];
+                Vec3 d2n = neg_inv_rho * Hx2[t][s];
+                norm_d1d += (d1n - D1[t][s]).squaredNorm();
+                norm_d1n += d1n.squaredNorm();
+                norm_d2d += (d2n - D2[t][s]).squaredNorm();
+                norm_d2n += d2n.squaredNorm();
+                D1[t][s] += PICARD_RELAX * (d1n - D1[t][s]);
+                D2[t][s] += PICARD_RELAX * (d2n - D2[t][s]);
             }
         double err = std::max(
             std::sqrt(norm_d1d) / std::max(1.0, std::sqrt(norm_d1n)),
@@ -502,14 +520,6 @@ EquilibriumResult solve_equilibrium(
         residuals.push_back(err);
 
         if (!std::isfinite(err)) break;
-
-        for (int t = 0; t < N; ++t)
-            for (int s = 0; s < N; ++s) {
-                D1[t][s] = (1.0 - PICARD_RELAX) * D1[t][s] +
-                           PICARD_RELAX * D1_new[t][s];
-                D2[t][s] = (1.0 - PICARD_RELAX) * D2[t][s] +
-                           PICARD_RELAX * D2_new[t][s];
-            }
 
         if (verbose && (it <= 5 || it % 50 == 0))
             std::cout << "  it=" << it << "  resid=" << err << std::endl;
@@ -553,4 +563,44 @@ CostPair compute_costs_general(const EnvironmentResult& env,
         J2 += DT * (dx2 * dx2 + var_X + r_val * bar_sol.barD2[j] * bar_sol.barD2[j] + r_val * var_D2);
     }
     return {J1, J2};
+}
+
+// ============================================================
+// materialize_F — builds F[j][u][s] from R + A_store for figure output
+//
+// F[j][u][s] for u,s < j:
+//   border + sum_{k=max(u,s)+1}^{j} R[k][u] * A_store[k][s]^T
+//
+// Border at step max(u,s):
+//   u > s: F[u][u][s] = g*e_i*R[u][s]^T
+//   u < s: F[s][u][s] = g*R[s][u]*e_i^T
+//   u = s: 0
+//
+// Border row/col at step j:
+//   F[j][u][j] = g*R[j][u]*e_i^T  (u < j)
+//   F[j][j][s] = g*e_i*R[j][s]^T  (s < j)
+//   F[j][j][j] = 0
+// ============================================================
+void materialize_F(const Kernel2D& R, const Kernel2D& A_store,
+                   double obs_gain, int obs_index, Kernel3D& F) {
+    Vec3 e_i = Vec3::Zero();
+    e_i(obs_index) = 1.0;
+    double g = obs_gain;
+
+    // Build F incrementally: F[0], F[1], ..., F[N-1]
+    F[0][0][0].setZero();
+
+    for (int j = 1; j < N; ++j) {
+        // Set borders
+        for (int u = 0; u < j; ++u) {
+            F[j][u][j] = g * R[j][u] * e_i.transpose();
+            F[j][j][u] = g * e_i * R[j][u].transpose();
+        }
+        F[j][j][j].setZero();
+
+        // Interior: F[j][u][s] = F[j-1][u][s] + R[j][u] * A_store[j][s]^T
+        for (int u = 0; u < j; ++u)
+            for (int s = 0; s < j; ++s)
+                F[j][u][s] = F[j - 1][u][s] + R[j][u] * A_store[j][s].transpose();
+    }
 }
