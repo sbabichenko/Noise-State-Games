@@ -178,7 +178,7 @@ static void compute_filter_kernels(
 // For s = j:
 //   calD[j][j] = Pi*D[j][j] + DT*g*e_i * sum_{u<j} dot(Xtilde[j][u], D[j][u])
 // ============================================================
-static void primitive_control_kernel(
+void primitive_control_kernel(
     const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
     double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD) {
 
@@ -297,7 +297,6 @@ void forward_environment(
     }
 
     env.X = X;
-    env.calD1 = calD1_new; env.calD2 = calD2_new;
     env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
     env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
 }
@@ -548,10 +547,13 @@ EquilibriumResult solve_equilibrium(
     EnvironmentResult env;
 
     // Anderson acceleration state
+    // AA_STORE = AA_M + 1 so the current write slot never collides with
+    // the AA_M most-recent history entries read during Anderson mixing.
     constexpr int AA_M = 5;
+    constexpr int AA_STORE = AA_M + 1;
     constexpr double AA_REG = 1e-12;
     struct AAEntry { Kernel2D f1, f2, g1, g2; };
-    std::vector<AAEntry> aa_hist(AA_M);
+    std::vector<AAEntry> aa_hist(AA_STORE);
     int aa_stored = 0;
 
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
@@ -568,18 +570,20 @@ EquilibriumResult solve_equilibrium(
             backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2);
         }
 
-        // Compute Picard image G and residual F = G - D
+        // Write G and F directly into the next history slot,
+        // eliminating 6 temporary Kernel2D (G1/G2, F1/F2, D1_aa/D2_aa)
         constexpr double neg_inv_rho = -(1.0 / RHO);
-        Kernel2D G1, G2, F1, F2;
+        int store_idx = aa_stored % AA_STORE;
+        auto& cur = aa_hist[store_idx];
         double norm_fn = 0.0, norm_gn = 0.0;
         for (int t = 0; t < N; ++t)
             for (int s = 0; s <= t; ++s) {
-                G1[t][s] = neg_inv_rho * Hx1[t][s];
-                G2[t][s] = neg_inv_rho * Hx2[t][s];
-                F1[t][s] = G1[t][s] - D1[t][s];
-                F2[t][s] = G2[t][s] - D2[t][s];
-                norm_fn += F1[t][s].squaredNorm() + F2[t][s].squaredNorm();
-                norm_gn += G1[t][s].squaredNorm() + G2[t][s].squaredNorm();
+                cur.g1[t][s] = neg_inv_rho * Hx1[t][s];
+                cur.g2[t][s] = neg_inv_rho * Hx2[t][s];
+                cur.f1[t][s] = cur.g1[t][s] - D1[t][s];
+                cur.f2[t][s] = cur.g2[t][s] - D2[t][s];
+                norm_fn += cur.f1[t][s].squaredNorm() + cur.f2[t][s].squaredNorm();
+                norm_gn += cur.g1[t][s].squaredNorm() + cur.g2[t][s].squaredNorm();
             }
 
         double err = std::sqrt(norm_fn) / std::max(1.0, std::sqrt(norm_gn));
@@ -607,8 +611,8 @@ EquilibriumResult solve_equilibrium(
             double FF = norm_fn;
             Eigen::VectorXd Ffi(m);
             for (int i = 0; i < m; ++i) {
-                int idx = (aa_stored - 1 - i + AA_M) % AA_M;
-                Ffi(i) = kernel_dot(F1, F2, aa_hist[idx].f1, aa_hist[idx].f2);
+                int idx = (aa_stored - 1 - i + AA_STORE) % AA_STORE;
+                Ffi(i) = kernel_dot(cur.f1, cur.f2, aa_hist[idx].f1, aa_hist[idx].f2);
             }
 
             Eigen::MatrixXd H(m, m);
@@ -616,8 +620,8 @@ EquilibriumResult solve_equilibrium(
             for (int i = 0; i < m; ++i) {
                 rhs(i) = FF - Ffi(i);
                 for (int j = 0; j <= i; ++j) {
-                    int ii = (aa_stored - 1 - i + AA_M) % AA_M;
-                    int jj = (aa_stored - 1 - j + AA_M) % AA_M;
+                    int ii = (aa_stored - 1 - i + AA_STORE) % AA_STORE;
+                    int jj = (aa_stored - 1 - j + AA_STORE) % AA_STORE;
                     double fifj = kernel_dot(aa_hist[ii].f1, aa_hist[ii].f2,
                                              aa_hist[jj].f1, aa_hist[jj].f2);
                     H(i, j) = FF - Ffi(i) - Ffi(j) + fifj;
@@ -631,26 +635,22 @@ EquilibriumResult solve_equilibrium(
 
             Eigen::VectorXd gamma = H.ldlt().solve(rhs);
 
-            // x_{k+1} = G - Σ γ_i * (G - g_hist[i])
-            //         = (1 - Σγ) * G + Σ γ_i * g_hist[i]
-            Kernel2D D1_aa = G1, D2_aa = G2;
-            for (int i = 0; i < m; ++i) {
-                int idx = (aa_stored - 1 - i + AA_M) % AA_M;
-                double gi = gamma(i);
-                for (int t = 0; t < N; ++t)
-                    for (int s = 0; s <= t; ++s) {
-                        D1_aa[t][s] -= gi * (G1[t][s] - aa_hist[idx].g1[t][s]);
-                        D2_aa[t][s] -= gi * (G2[t][s] - aa_hist[idx].g2[t][s]);
-                    }
-            }
-
-            // Damped Anderson: blend with simple relaxation for stability
-            // x_{k+1} = (1-β)*D + β*D_aa, with β tuned for the problem
+            // Anderson mixing computed directly into D (no D_aa temporaries):
+            // D_aa = G - Σ γ_i * (G - g_hist[i])
+            // D_new = (1-β)*D + β*D_aa
             constexpr double AA_BETA = 0.6;
             for (int t = 0; t < N; ++t)
                 for (int s = 0; s <= t; ++s) {
-                    D1[t][s] = (1.0 - AA_BETA) * D1[t][s] + AA_BETA * D1_aa[t][s];
-                    D2[t][s] = (1.0 - AA_BETA) * D2[t][s] + AA_BETA * D2_aa[t][s];
+                    Vec3 d1_aa = cur.g1[t][s];
+                    Vec3 d2_aa = cur.g2[t][s];
+                    for (int i = 0; i < m; ++i) {
+                        int idx = (aa_stored - 1 - i + AA_STORE) % AA_STORE;
+                        double gi = gamma(i);
+                        d1_aa -= gi * (cur.g1[t][s] - aa_hist[idx].g1[t][s]);
+                        d2_aa -= gi * (cur.g2[t][s] - aa_hist[idx].g2[t][s]);
+                    }
+                    D1[t][s] = (1.0 - AA_BETA) * D1[t][s] + AA_BETA * d1_aa;
+                    D2[t][s] = (1.0 - AA_BETA) * D2[t][s] + AA_BETA * d2_aa;
                 }
             did_anderson = true;
         }
@@ -659,17 +659,11 @@ EquilibriumResult solve_equilibrium(
             // Simple relaxation for first iteration
             for (int t = 0; t < N; ++t)
                 for (int s = 0; s <= t; ++s) {
-                    D1[t][s] += PICARD_RELAX * F1[t][s];
-                    D2[t][s] += PICARD_RELAX * F2[t][s];
+                    D1[t][s] += PICARD_RELAX * cur.f1[t][s];
+                    D2[t][s] += PICARD_RELAX * cur.f2[t][s];
                 }
         }
 
-        // Store in ring buffer
-        int store_idx = aa_stored % AA_M;
-        aa_hist[store_idx].f1 = F1;
-        aa_hist[store_idx].f2 = F2;
-        aa_hist[store_idx].g1 = G1;
-        aa_hist[store_idx].g2 = G2;
         aa_stored++;
     }
 
@@ -677,13 +671,26 @@ EquilibriumResult solve_equilibrium(
     // check breaks BEFORE the Anderson update modifies D, so no final
     // forward_environment is needed.
 
-    return {D1, D2, std::move(env), residuals};
+    // Compute calD once from the converged D and filter kernels
+    Kernel2D calD1, calD2;
+    #pragma omp parallel sections
+    {
+        #pragma omp section
+        primitive_control_kernel(D1, env.Xtilde1, env.A_store1,
+                                 p1_val, obs_idx_1, Pi_1, calD1);
+        #pragma omp section
+        primitive_control_kernel(D2, env.Xtilde2, env.A_store2,
+                                 p2_val, obs_idx_2, Pi_2, calD2);
+    }
+
+    return {D1, D2, std::move(env), std::move(calD1), std::move(calD2), residuals};
 }
 
 // ============================================================
 // compute_costs_general
 // ============================================================
 CostPair compute_costs_general(const EnvironmentResult& env,
+                               const Kernel2D& calD1, const Kernel2D& calD2,
                                const BarSolution& bar_sol,
                                double r_val, double b1_val, double b2_val) {
     double J1 = 0.0, J2 = 0.0;
@@ -694,8 +701,8 @@ CostPair compute_costs_general(const EnvironmentResult& env,
 
         double var_D1 = 0.0, var_D2 = 0.0;
         for (int s = 0; s < j; ++s) {
-            var_D1 += DT * env.calD1[j][s].squaredNorm();
-            var_D2 += DT * env.calD2[j][s].squaredNorm();
+            var_D1 += DT * calD1[j][s].squaredNorm();
+            var_D2 += DT * calD2[j][s].squaredNorm();
         }
 
         double dx1 = bar_sol.barX[j] - b1_val;

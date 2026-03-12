@@ -210,7 +210,7 @@ int main() {
     // FIGURE 6: calD1(t,s) primitive-noise kernel
     // ============================================================
     std::cout << "Figure 6: calD1(t,s) primitive-noise kernel ...\n";
-    write_kernel2d(DATA_DIR + "/fig6_calD1.csv", env.calD1);
+    write_kernel2d(DATA_DIR + "/fig6_calD1.csv", eq.calD1);
 
     // ============================================================
     // FIGURE 7: F1 at t=T
@@ -379,7 +379,7 @@ int main() {
                 auto& eq_a = cached_solve(p1_fixed, p2v);
                 auto& bar_a = cached_bar_solve(eq_a, p1_fixed*p1_fixed, p2v*p2v,
                                                p1_fixed, p2v, 1, 2);
-                auto [j1p, j2p_priv] = compute_costs_general(eq_a.env, bar_a, RHO, cfg.b1, cfg.b2);
+                auto [j1p, j2p_priv] = compute_costs_general(eq_a.env, eq_a.calD1, eq_a.calD2, bar_a, RHO, cfg.b1, cfg.b2);
 
                 // Pooled
                 double p_common = std::sqrt(p1_fixed * p1_fixed + p2v * p2v);
@@ -388,7 +388,7 @@ int main() {
                                           Pi1(), 1, Pi1(), 1);
                 auto& bar_c = cached_bar_solve(eq_c, p_common*p_common, p_common*p_common,
                                                p_common, p_common, 1, 1);
-                auto [j1pool, j2pool] = compute_costs_general(eq_c.env, bar_c, RHO, cfg.b1, cfg.b2);
+                auto [j1pool, j2pool] = compute_costs_general(eq_c.env, eq_c.calD1, eq_c.calD2, bar_c, RHO, cfg.b1, cfg.b2);
 
                 f << cfg.label << "," << p2v << ","
                   << j1p << "," << j2p_priv << ","

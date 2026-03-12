@@ -97,7 +97,6 @@ inline Mat3 Pi2() {
 struct EnvironmentResult {
     Kernel2D X;
     Kernel2D Xtilde1, Xtilde2;
-    Kernel2D calD1, calD2;
     // Rank-1 filter factorization: A_store[k][s] for s < k
     Kernel2D A_store1, A_store2;
     // Observation parameters (needed for F materialization)
@@ -122,6 +121,10 @@ struct BackwardBarResult {
 // ---------- functions ----------
 void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
                             Kernel2D& X);
+
+void primitive_control_kernel(
+    const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
+    double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD);
 
 void forward_environment(
     const Kernel2D& D1, const Kernel2D& D2,
@@ -157,6 +160,7 @@ BarSolution solve_bar_equilibrium(
 struct EquilibriumResult {
     Kernel2D D1, D2;
     EnvironmentResult env;
+    Kernel2D calD1, calD2;  // primitive control kernels (computed once after convergence)
     std::vector<double> residuals;
 };
 
@@ -171,6 +175,7 @@ struct CostPair {
 };
 
 CostPair compute_costs_general(const EnvironmentResult& env,
+                               const Kernel2D& calD1, const Kernel2D& calD2,
                                const BarSolution& bar_sol,
                                double r_val, double b1_val, double b2_val);
 
