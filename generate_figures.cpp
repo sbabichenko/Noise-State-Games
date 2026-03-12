@@ -4,6 +4,7 @@
 // ============================================================
 
 #include "lqg_solver.h"
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -73,7 +74,11 @@ int main() {
     std::cout << std::string(60, '=') << "\n";
     std::cout << "Solving symmetric benchmark p1=p2=3 ...\n";
 
+    auto t0 = std::chrono::high_resolution_clock::now();
     auto& eq = cached_solve(3, 3, true);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::cout << "  Solve (3,3) time: "
+              << std::chrono::duration<double>(t1 - t0).count() << "s\n";
     auto& D1 = eq.D1;
     auto& D2 = eq.D2;
     auto& env = eq.env;

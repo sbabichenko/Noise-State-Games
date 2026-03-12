@@ -288,20 +288,29 @@ void forward_environment(
     Kernel2D X;
     state_kernel_from_calD(calD1, calD2, X);
 
-    Kernel2D R1, R2, Xhat1, Xhat2;
-    Kernel2D A_store1, A_store2;
+    // Write filter results directly into env to avoid 6 × 38KB copies
     Kernel2D calD1_new, calD2_new, X_new;
 
     for (int it = 0; it < inner_iters; ++it) {
-        compute_filter_kernels(X, Pi_1, obs_idx_1, obs_gain1,
-                               FILTER_INNER_ITERS, FILTER_RELAX,
-                               R1, A_store1, Xhat1);
-        compute_filter_kernels(X, Pi_2, obs_idx_2, obs_gain2,
-                               FILTER_INNER_ITERS, FILTER_RELAX,
-                               R2, A_store2, Xhat2);
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            compute_filter_kernels(X, Pi_1, obs_idx_1, obs_gain1,
+                                   FILTER_INNER_ITERS, FILTER_RELAX,
+                                   env.R1, env.A_store1, env.Xhat1);
+            #pragma omp section
+            compute_filter_kernels(X, Pi_2, obs_idx_2, obs_gain2,
+                                   FILTER_INNER_ITERS, FILTER_RELAX,
+                                   env.R2, env.A_store2, env.Xhat2);
+        }
 
-        primitive_control_kernel(D1, R1, A_store1, obs_gain1, obs_idx_1, Pi_1, calD1_new);
-        primitive_control_kernel(D2, R2, A_store2, obs_gain2, obs_idx_2, Pi_2, calD2_new);
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            primitive_control_kernel(D1, env.R1, env.A_store1, obs_gain1, obs_idx_1, Pi_1, calD1_new);
+            #pragma omp section
+            primitive_control_kernel(D2, env.R2, env.A_store2, obs_gain2, obs_idx_2, Pi_2, calD2_new);
+        }
 
         state_kernel_from_calD(calD1_new, calD2_new, X_new);
 
@@ -314,10 +323,7 @@ void forward_environment(
     }
 
     env.X = X;
-    env.R1 = R1; env.R2 = R2;
-    env.Xhat1 = Xhat1; env.Xhat2 = Xhat2;
     env.calD1 = calD1; env.calD2 = calD2;
-    env.A_store1 = A_store1; env.A_store2 = A_store2;
     env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
     env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
 }
@@ -486,8 +492,14 @@ BarSolution solve_bar_equilibrium(
         for (int j = 0; j < N - 1; ++j)
             barX[j + 1] = barX[j] + DT * (barD1[j] + barD2[j]);
 
-        auto bba1 = backward_bar_adjoints(env.X, env.R2, D2, barX, g_b1, prec2_arr, 0.0);
-        auto bba2 = backward_bar_adjoints(env.X, env.R1, D1, barX, g_b2, prec1_arr, 0.0);
+        BackwardBarResult bba1, bba2;
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            bba1 = backward_bar_adjoints(env.X, env.R2, D2, barX, g_b1, prec2_arr, 0.0);
+            #pragma omp section
+            bba2 = backward_bar_adjoints(env.X, env.R1, D1, barX, g_b2, prec1_arr, 0.0);
+        }
 
         std::array<double, N> barD1_new, barD2_new;
         for (int j = 0; j < N; ++j) {
@@ -551,8 +563,13 @@ EquilibriumResult solve_equilibrium(
                             Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
         Kernel2D Hx1, Hx2;
-        backward_kernels(env.X, env.R2, D2, prec2, 0.0, Hx1);
-        backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2);
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            backward_kernels(env.X, env.R2, D2, prec2, 0.0, Hx1);
+            #pragma omp section
+            backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2);
+        }
 
         // Merged: compute D_new, norms, and relaxation in one pass
         // Only iterate over causal triangle (s <= t) — upper triangle is always zero
