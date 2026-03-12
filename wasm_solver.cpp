@@ -22,29 +22,31 @@ static void out(const char* fmt, ...) {
 static void out_array(const char* name, const double* arr, int n) {
     out("\"%s\":[", name);
     for (int i = 0; i < n; ++i)
-        out("%s%.12g", i ? "," : "", arr[i]);
+        out("%s%.6g", i ? "," : "", arr[i]);
     out("]");
 }
 
 static void out_kernel2d(const char* name, const Kernel2D& K) {
-    out("\"%s\":{", name);
-    bool first = true;
+    char buf[32];
+    g_output += '"'; g_output += name; g_output += "\":{";
     for (int ch = 0; ch < 3; ++ch) {
-        out("%s\"ch%d\":[", first ? "" : ",", ch);
-        first = false;
-        bool first_row = true;
+        if (ch) g_output += ',';
+        g_output += "\"ch"; g_output += ('0' + ch); g_output += "\":[";
         for (int ti = 0; ti < N; ++ti) {
-            out("%s[", first_row ? "" : ",");
-            first_row = false;
-            for (int si = 0; si <= ti; ++si)
-                out("%s%.12g", si ? "," : "", K[ti][si](ch));
+            if (ti) g_output += ',';
+            g_output += '[';
+            for (int si = 0; si <= ti; ++si) {
+                if (si) g_output += ',';
+                int n = snprintf(buf, sizeof(buf), "%.6g", K[ti][si](ch));
+                g_output.append(buf, n);
+            }
             for (int si = ti + 1; si < N; ++si)
-                out(",0");
-            out("]");
+                g_output += ",0";
+            g_output += ']';
         }
-        out("]");
+        g_output += ']';
     }
-    out("}");
+    g_output += '}';
 }
 
 static void compute_perfect_info(double b1, double b2,
@@ -70,6 +72,7 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE
 const char* solve_single(double p1, double p2, double b1, double b2, double r1, double r2) {
     g_output.clear();
+    g_output.reserve(64 * 1024);  // ~64KB typical for single solve
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
 
@@ -103,7 +106,7 @@ const char* solve_single(double p1, double p2, double b1, double b2, double r1, 
     out_array("t", tg.data(), N);
     out(",\"residuals\":[");
     for (size_t i = 0; i < eq.residuals.size(); ++i)
-        out("%s%.12g", i ? "," : "", eq.residuals[i]);
+        out("%s%.6g", i ? "," : "", eq.residuals[i]);
     out("],\"n_iters\":%zu", eq.residuals.size());
 
     out(","); out_kernel2d("X", eq.env.X);
@@ -114,13 +117,13 @@ const char* solve_single(double p1, double p2, double b1, double b2, double r1, 
     out(","); out_array("barD1", bar.barD1.data(), N);
     out(","); out_array("barD2", bar.barD2.data(), N);
     out(","); out_array("barX", bar.barX.data(), N);
-    out(",\"bar_residual\":%.12g", bar.bar_residual);
+    out(",\"bar_residual\":%.6g", bar.bar_residual);
     out(","); out_array("V1", V1_arr.data(), N);
     out(","); out_array("V2", V2_arr.data(), N);
     out(","); out_array("barD1_pi", barD1_pi.data(), N);
     out(","); out_array("barX_pi", barX_pi.data(), N);
-    out(",\"J1\":%.12g,\"J2\":%.12g", costs.J1, costs.J2);
-    out(",\"p1\":%.12g,\"p2\":%.12g,\"b1\":%.12g,\"b2\":%.12g", p1, p2, b1, b2);
+    out(",\"J1\":%.6g,\"J2\":%.6g", costs.J1, costs.J2);
+    out(",\"p1\":%.6g,\"p2\":%.6g,\"b1\":%.6g,\"b2\":%.6g", p1, p2, b1, b2);
     out("}");
 
     return g_output.c_str();
@@ -130,6 +133,7 @@ EMSCRIPTEN_KEEPALIVE
 const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
                          const double* p2_vals, int n_p2) {
     g_output.clear();
+    g_output.reserve(32 * 1024);  // ~32KB typical for sweep
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
 
@@ -140,13 +144,13 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     out("{");
     out_array("t", tg.data(), N);
     out(","); out_array("barD1_pi", barD1_pi.data(), N);
-    out(",\"p1\":%.12g,\"b1\":%.12g,\"b2\":%.12g", p1, b1, b2);
+    out(",\"p1\":%.6g,\"b1\":%.6g,\"b2\":%.6g", p1, b1, b2);
 
     out(",\"sweeps\":[");
     for (int i = 0; i < n_p2; ++i) {
         double p2 = p2_vals[i];
         if (i > 0) out(",");
-        out("{\"p2\":%.12g", p2);
+        out("{\"p2\":%.6g", p2);
 
         auto eq = solve_equilibrium(p1, p2, false);
         auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
@@ -154,10 +158,7 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
         auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
                                                  bar, r1, r2, b1, b2);
         out(","); out_array("barD1", bar.barD1.data(), N);
-        out(","); out_array("barD2", bar.barD2.data(), N);
-        out(","); out_array("barX", bar.barX.data(), N);
-        out(",\"J1_priv\":%.12g,\"J2_priv\":%.12g", costs_priv.J1, costs_priv.J2);
-        out(",\"n_iters\":%zu", eq.residuals.size());
+        out(",\"J1_priv\":%.6g,\"J2_priv\":%.6g", costs_priv.J1, costs_priv.J2);
 
         double p_common = std::sqrt(p1*p1 + p2*p2);
         auto eq_pool = solve_equilibrium(p_common, p_common, false,
@@ -167,7 +168,7 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
                                                2000, 0.08, 1e-10);
         auto costs_pool = compute_costs_general(eq_pool.env, eq_pool.calD1, eq_pool.calD2,
                                                  bar_pool, r1, r2, b1, b2);
-        out(",\"J1_pool\":%.12g,\"J2_pool\":%.12g", costs_pool.J1, costs_pool.J2);
+        out(",\"J1_pool\":%.6g,\"J2_pool\":%.6g", costs_pool.J1, costs_pool.J2);
 
         auto prec2_arr = make_constant_prec(p2 * p2);
         auto prec1_arr = make_constant_prec(p1 * p1);

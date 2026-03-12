@@ -226,6 +226,7 @@ document.addEventListener('click', function(e) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     e.target.classList.add('active');
     document.getElementById(e.target.dataset.tab).classList.add('active');
+    onTabSwitch(e.target.dataset.tab);
 });
 
 // --- WASM solver interface ---
@@ -438,6 +439,12 @@ function plotWedgesSweep(divId, sweep) {
 
 // --- app logic ---
 let debounceTimer = null;
+let activeTab = 'tab-equilibrium';
+
+// Cached solver results + dirty flags per tab
+let singleData = null, sweepData = null;
+let singleKey = '', sweepKey = '';  // param fingerprints for cache invalidation
+const dirty = { 'tab-equilibrium': true, 'tab-kernels': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 function getParams() {
     return {
@@ -460,42 +467,86 @@ function updateLabels() {
     document.getElementById('val-r2').textContent = p.r2.toFixed(2);
 }
 
-function updateAll() {
+// Ensure single solve result is fresh (cached if params unchanged)
+function ensureSingle(p) {
+    const key = `${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
+    if (key !== singleKey) {
+        singleData = callSingle(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
+        singleKey = key;
+    }
+    return singleData;
+}
+
+// Ensure sweep result is fresh (sweep doesn't depend on p2)
+function ensureSweep(p) {
+    const key = `${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
+    if (key !== sweepKey) {
+        sweepData = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
+        sweepKey = key;
+    }
+    return sweepData;
+}
+
+function renderTab(tab, p) {
+    switch (tab) {
+        case 'tab-equilibrium': {
+            const data = ensureSingle(p);
+            plotControls('plot-controls', data, p.b1, p.b2);
+            plotWedges('plot-wedges', data);
+            break;
+        }
+        case 'tab-kernels': {
+            const data = ensureSingle(p);
+            plotKernel('plot-X', data.t, data.X, 'X(t,s)');
+            plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
+            plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
+            plotKernel('plot-calD1', data.t, data.calD1, '\uD835\uDCD3\u00B9(t,s)');
+            break;
+        }
+        case 'tab-statics': {
+            const sweep = ensureSweep(p);
+            plotCosts('plot-costs', sweep);
+            plotBarD1Sweep('plot-barD1-sweep', sweep);
+            plotWedgesSweep('plot-wedges-sweep', sweep);
+            break;
+        }
+        case 'tab-diagnostics': {
+            const data = ensureSingle(p);
+            plotResidual('plot-residual', data);
+            break;
+        }
+    }
+    dirty[tab] = false;
+}
+
+function updateActive() {
     const p = getParams();
     const t0 = performance.now();
 
-    // Single solve
-    const data = callSingle(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-    const singleMs = performance.now() - t0;
-
-    plotControls('plot-controls', data, p.b1, p.b2);
-    plotWedges('plot-wedges', data);
-    plotResidual('plot-residual', data);
-    plotKernel('plot-X', data.t, data.X, 'X(t,s)');
-    plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
-    plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
-    plotKernel('plot-calD1', data.t, data.calD1, '\uD835\uDCD3\u00B9(t,s)');
-
-    // Sweep
-    const t1 = performance.now();
-    const sweep = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
-    const sweepMs = performance.now() - t1;
-
-    plotCosts('plot-costs', sweep);
-    plotBarD1Sweep('plot-barD1-sweep', sweep);
-    plotWedgesSweep('plot-wedges-sweep', sweep);
+    // Only render the active tab (solver calls are cached, so this is cheap if params unchanged)
+    renderTab(activeTab, p);
 
     const totalMs = performance.now() - t0;
+
+    // Update status line with single-solve info (cheap — cached)
+    const data = ensureSingle(p);
     document.getElementById('status').textContent =
         `p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
         `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-        `single ${singleMs.toFixed(0)}ms + sweep ${sweepMs.toFixed(0)}ms = ${totalMs.toFixed(0)}ms`;
+        `${totalMs.toFixed(0)}ms`;
 }
 
 function onSliderChange() {
     updateLabels();
+    // Mark all tabs dirty
+    for (const k in dirty) dirty[k] = true;
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(updateAll, 150);
+    debounceTimer = setTimeout(updateActive, 150);
+}
+
+function onTabSwitch(tab) {
+    activeTab = tab;
+    if (dirty[tab]) updateActive();
 }
 
 // --- init ---
@@ -513,7 +564,7 @@ SolverModule().then(mod => {
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
     updateLabels();
-    updateAll();
+    updateActive();
 });
 </script>
 </body>
