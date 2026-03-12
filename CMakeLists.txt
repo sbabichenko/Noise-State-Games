@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Eigen3 dependency
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
+# OpenMP (optional — graceful fallback if unavailable)
+find_package(OpenMP)
+
 add_executable(generate_figures
     generate_figures.cpp
     lqg_solver.cpp
@@ -14,3 +17,7 @@ add_executable(generate_figures
 
 target_link_libraries(generate_figures PRIVATE Eigen3::Eigen)
 target_compile_options(generate_figures PRIVATE -O3 -march=native -Wall -Wextra)
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(generate_figures PRIVATE OpenMP::OpenMP_CXX)
+endif()

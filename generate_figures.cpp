@@ -4,15 +4,66 @@
 // ============================================================
 
 #include "lqg_solver.h"
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <tuple>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace fs = std::filesystem;
 
 static const std::string DATA_DIR = "data";
+
+// ---------- equilibrium cache ----------
+// Many figures solve the same (p1, p2, obs_config) equilibria.
+// Cache them to avoid redundant ~0.02s solves.
+// All entries are pre-computed in parallel before figure generation.
+static std::map<std::tuple<int,int,int,int>, EquilibriumResult> eq_cache;
+
+static auto make_eq_key(double p1, double p2, int obs1, int obs2) {
+    return std::make_tuple(
+        static_cast<int>(p1 * 1000000), static_cast<int>(p2 * 1000000),
+        obs1, obs2);
+}
+
+static EquilibriumResult& cached_solve(
+    double p1, double p2, bool verbose = false,
+    const Mat3& Pi_1 = Pi1(), int obs1 = 1,
+    const Mat3& Pi_2 = Pi2(), int obs2 = 2) {
+    auto key = make_eq_key(p1, p2, obs1, obs2);
+    auto it = eq_cache.find(key);
+    if (it != eq_cache.end()) return it->second;
+    auto [ins, _] = eq_cache.emplace(key,
+        solve_equilibrium(p1, p2, verbose, Pi_1, obs1, Pi_2, obs2));
+    return ins->second;
+}
+
+// ---------- bar solution cache ----------
+// Key: (eq_key, prec1*1M, prec2*1M, b1*1M, b2*1M)
+using BarKey = std::tuple<int,int,int,int,int,int,int,int>;
+static std::map<BarKey, BarSolution> bar_cache;
+
+static BarSolution& cached_bar_solve(
+    const EquilibriumResult& eq, double prec1, double prec2,
+    double p1, double p2, int obs1, int obs2,
+    int max_iters = 2000, double relax = 0.08, double tol = 1e-10) {
+    auto key = std::make_tuple(
+        static_cast<int>(p1 * 1000000), static_cast<int>(p2 * 1000000),
+        obs1, obs2,
+        static_cast<int>(prec1 * 1000000), static_cast<int>(prec2 * 1000000),
+        static_cast<int>(g_b1 * 1000000), static_cast<int>(g_b2 * 1000000));
+    auto it = bar_cache.find(key);
+    if (it != bar_cache.end()) return it->second;
+    auto [ins, _] = bar_cache.emplace(key,
+        solve_bar_equilibrium(eq.env, eq.D1, eq.D2, prec1, prec2, max_iters, relax, tol));
+    return ins->second;
+}
 
 // ---------- CSV helpers ----------
 // Write a 2D kernel (N x N x D_W) as CSV: columns t, s, ch0, ch1, ch2
@@ -47,13 +98,79 @@ int main() {
     fs::create_directories(DATA_DIR);
     const auto& tg = t_grid();
 
+    std::vector<int> p_values = {1, 2, 3, 5, 10};
+    int p1_fixed = 3;
+    std::vector<int> p2_values = {1, 2, 3, 5, 10, 20};
+
     // ============================================================
-    // Solve symmetric benchmark p1 = p2 = 3
+    // Pre-solve all unique equilibria in parallel
     // ============================================================
     std::cout << std::string(60, '=') << "\n";
-    std::cout << "Solving symmetric benchmark p1=p2=3 ...\n";
+    std::cout << "Pre-solving all equilibria in parallel ...\n";
 
-    auto eq = solve_equilibrium(3, 3);
+    // Collect all unique solve parameters
+    struct SolveSpec {
+        double p1, p2;
+        Mat3 Pi_1, Pi_2;
+        int obs1, obs2;
+    };
+    std::vector<SolveSpec> specs;
+    std::map<std::tuple<int,int,int,int>, int> spec_dedup;
+
+    auto add_spec = [&](double p1, double p2, const Mat3& Pi_1, int obs1,
+                        const Mat3& Pi_2, int obs2) {
+        auto key = make_eq_key(p1, p2, obs1, obs2);
+        if (spec_dedup.count(key) == 0) {
+            spec_dedup[key] = static_cast<int>(specs.size());
+            specs.push_back({p1, p2, Pi_1, Pi_2, obs1, obs2});
+        }
+    };
+
+    // (3,3) benchmark
+    add_spec(3, 3, Pi1(), 1, Pi2(), 2);
+    // Fig 8: symmetric p=1,2,3,5,10
+    for (int p : p_values)
+        add_spec(p, p, Pi1(), 1, Pi2(), 2);
+    // Fig 10/11: asymmetric p1=3, p2 varies
+    for (int p2v : p2_values)
+        add_spec(p1_fixed, p2v, Pi1(), 1, Pi2(), 2);
+    // Fig 12: pooled info
+    for (int p2v : p_values) {
+        double p_common = std::sqrt(p1_fixed * p1_fixed + p2v * p2v);
+        add_spec(p_common, p_common, Pi1(), 1, Pi1(), 1);
+    }
+
+    std::cout << "  " << specs.size() << " unique equilibria to solve\n";
+
+    // Solve (3,3) first with verbose output + timing
+    auto t0 = std::chrono::high_resolution_clock::now();
+    cached_solve(3, 3, true);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::cout << "  Solve (3,3) time: "
+              << std::chrono::duration<double>(t1 - t0).count() << "s\n";
+
+    // Solve remaining in parallel (exclude (3,3) which is already done)
+    auto t_par0 = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for schedule(dynamic)
+    for (size_t i = 0; i < specs.size(); ++i) {
+        auto& sp = specs[i];
+        auto key = make_eq_key(sp.p1, sp.p2, sp.obs1, sp.obs2);
+        // Skip if already in cache (e.g. the (3,3) we just solved)
+        bool need_solve;
+        #pragma omp critical
+        { need_solve = (eq_cache.find(key) == eq_cache.end()); }
+        if (!need_solve) continue;
+
+        auto result = solve_equilibrium(sp.p1, sp.p2, false,
+                                         sp.Pi_1, sp.obs1, sp.Pi_2, sp.obs2);
+        #pragma omp critical
+        { eq_cache.emplace(key, std::move(result)); }
+    }
+    auto t_par1 = std::chrono::high_resolution_clock::now();
+    std::cout << "  Parallel solve time: "
+              << std::chrono::duration<double>(t_par1 - t_par0).count() << "s\n";
+
+    auto& eq = cached_solve(3, 3);
     auto& D1 = eq.D1;
     auto& D2 = eq.D2;
     auto& env = eq.env;
@@ -63,7 +180,7 @@ int main() {
 
     // Backward bar adjoints for Figure 9
     auto prec9 = make_constant_prec(9.0);
-    auto bba = backward_bar_adjoints(env.X, env.R2, D2, bar_sol.barX, g_b1, prec9, 0.0);
+    auto bba = backward_bar_adjoints(env.X, env.Xtilde2, D2, bar_sol.barX, g_b1, prec9, 0.0);
 
     // ============================================================
     // FIGURE 3: Picard residual
@@ -93,7 +210,7 @@ int main() {
     // FIGURE 6: calD1(t,s) primitive-noise kernel
     // ============================================================
     std::cout << "Figure 6: calD1(t,s) primitive-noise kernel ...\n";
-    write_kernel2d(DATA_DIR + "/fig6_calD1.csv", env.calD1);
+    write_kernel2d(DATA_DIR + "/fig6_calD1.csv", eq.calD1);
 
     // ============================================================
     // FIGURE 7: F1 at t=T
@@ -101,7 +218,7 @@ int main() {
     std::cout << "Figure 7: Filtering kernel F1 at t=T ...\n";
     {
         Kernel3D F1;
-        materialize_F(env.R1, env.A_store1, env.obs_gain1, env.obs_idx1, F1);
+        materialize_F(env.Xtilde1, env.A_store1, env.obs_gain1, env.obs_idx1, F1);
         write_F1_T(DATA_DIR + "/fig7_F1_T.csv", F1);
     }
 
@@ -109,7 +226,6 @@ int main() {
     // FIGURE 8: Mean control barD1(t) vs precision p
     // ============================================================
     std::cout << "Figure 8: Mean control vs precision ...\n";
-    std::vector<int> p_values = {1, 2, 3, 5, 10};
 
     // Perfect-info benchmark
     std::array<double, N> S_pi;
@@ -141,9 +257,8 @@ int main() {
 
         for (int p : p_values) {
             std::cout << "  Solving p=" << p << " ...\n";
-            auto eq_p = solve_equilibrium(p, p, false);
-            auto bar_p = solve_bar_equilibrium(eq_p.env, eq_p.D1, eq_p.D2,
-                                               p * p, p * p, 2000, 0.08, 1e-10);
+            auto& eq_p = cached_solve(p, p);
+            auto& bar_p = cached_bar_solve(eq_p, p*p, p*p, p, p, 1, 2);
             barD1_curves[p] = bar_p.barD1;
             std::cout << "    bar residual: " << bar_p.bar_residual << "\n";
         }
@@ -157,18 +272,16 @@ int main() {
     }
 
     // ============================================================
-    // FIGURE 9: barH2 and R2
+    // FIGURE 9: barH2 and Xtilde2
     // ============================================================
-    std::cout << "Figure 9: Opponent adjoint barH2 and gain R2 ...\n";
+    std::cout << "Figure 9: Opponent adjoint barH2 and gain Xtilde2 ...\n";
     write_kernel2d(DATA_DIR + "/fig9_barH2.csv", bba.barHk);
-    write_kernel2d(DATA_DIR + "/fig9_R2.csv", env.R2);
+    write_kernel2d(DATA_DIR + "/fig9_R2.csv", env.Xtilde2);
 
     // ============================================================
     // FIGURE 10: Asymmetric equilibrium panels (p1=3, p2 varies)
     // ============================================================
     std::cout << "Figure 10: Asymmetric equilibrium panels (p1=3, p2 varies) ...\n";
-    int p1_fixed = 3;
-    std::vector<int> p2_values = {1, 2, 3, 5, 10, 20};
 
     {
         std::ofstream f(DATA_DIR + "/fig10_asymmetric.csv");
@@ -177,10 +290,9 @@ int main() {
 
         for (int p2v : p2_values) {
             std::cout << "  Solving p1=" << p1_fixed << ", p2=" << p2v << " ...\n";
-            auto eq_a = solve_equilibrium(p1_fixed, p2v, false);
-            auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
-                                               p1_fixed * p1_fixed, p2v * p2v,
-                                               2000, 0.08, 1e-10);
+            auto& eq_a = cached_solve(p1_fixed, p2v);
+            auto& bar_a = cached_bar_solve(eq_a, p1_fixed*p1_fixed, p2v*p2v,
+                                           p1_fixed, p2v, 1, 2);
             std::cout << "    bar residual: " << bar_a.bar_residual << "\n";
 
             for (int i = 0; i < N; ++i)
@@ -208,25 +320,24 @@ int main() {
 
         for (int p2v : p2_values) {
             std::cout << "  Computing wedges for p1=" << p1_fixed << ", p2=" << p2v << " ...\n";
-            auto eq_a = solve_equilibrium(p1_fixed, p2v, false);
-            auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
-                                               p1_fixed * p1_fixed, p2v * p2v,
-                                               2000, 0.08, 1e-10);
+            auto& eq_a = cached_solve(p1_fixed, p2v);
+            auto& bar_a = cached_bar_solve(eq_a, p1_fixed*p1_fixed, p2v*p2v,
+                                           p1_fixed, p2v, 1, 2);
 
             auto prec2_arr = make_constant_prec(static_cast<double>(p2v * p2v));
             auto prec1_arr = make_constant_prec(static_cast<double>(p1_fixed * p1_fixed));
 
-            auto bba1 = backward_bar_adjoints(eq_a.env.X, eq_a.env.R2, eq_a.D2,
+            auto bba1 = backward_bar_adjoints(eq_a.env.X, eq_a.env.Xtilde2, eq_a.D2,
                                               bar_a.barX, B1_DEFAULT, prec2_arr, 0.0);
-            auto bba2 = backward_bar_adjoints(eq_a.env.X, eq_a.env.R1, eq_a.D1,
+            auto bba2 = backward_bar_adjoints(eq_a.env.X, eq_a.env.Xtilde1, eq_a.D1,
                                               bar_a.barX, B2_DEFAULT, prec1_arr, 0.0);
 
             for (int j = 0; j < N; ++j) {
                 int m = j + 1;
                 double V1 = 0.0, V2 = 0.0;
                 for (int z = 0; z < m; ++z) {
-                    V1 += eq_a.env.R2[j][z].dot(bba1.barHk[j][z]);
-                    V2 += eq_a.env.R1[j][z].dot(bba2.barHk[j][z]);
+                    V1 += eq_a.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
+                    V2 += eq_a.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
                 }
                 V1 *= static_cast<double>(p2v * p2v) * DT;
                 V2 *= static_cast<double>(p1_fixed * p1_fixed) * DT;
@@ -265,21 +376,19 @@ int main() {
             for (int p2v : p_values) {
                 // Private
                 std::cout << "    Private: p2=" << p2v << " ...\n";
-                auto eq_a = solve_equilibrium(p1_fixed, p2v, false);
-                auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
-                                                   p1_fixed * p1_fixed, p2v * p2v,
-                                                   2000, 0.08, 1e-10);
-                auto [j1p, j2p_priv] = compute_costs_general(eq_a.env, bar_a, RHO, cfg.b1, cfg.b2);
+                auto& eq_a = cached_solve(p1_fixed, p2v);
+                auto& bar_a = cached_bar_solve(eq_a, p1_fixed*p1_fixed, p2v*p2v,
+                                               p1_fixed, p2v, 1, 2);
+                auto [j1p, j2p_priv] = compute_costs_general(eq_a.env, eq_a.calD1, eq_a.calD2, bar_a, RHO, cfg.b1, cfg.b2);
 
                 // Pooled
                 double p_common = std::sqrt(p1_fixed * p1_fixed + p2v * p2v);
                 std::cout << "    Pooled: p_common=" << p_common << " ...\n";
-                auto eq_c = solve_equilibrium(p_common, p_common, false,
-                                              Pi1(), 1, Pi1(), 1);
-                auto bar_c = solve_bar_equilibrium(eq_c.env, eq_c.D1, eq_c.D2,
-                                                   p_common * p_common, p_common * p_common,
-                                                   2000, 0.08, 1e-10);
-                auto [j1pool, j2pool] = compute_costs_general(eq_c.env, bar_c, RHO, cfg.b1, cfg.b2);
+                auto& eq_c = cached_solve(p_common, p_common, false,
+                                          Pi1(), 1, Pi1(), 1);
+                auto& bar_c = cached_bar_solve(eq_c, p_common*p_common, p_common*p_common,
+                                               p_common, p_common, 1, 1);
+                auto [j1pool, j2pool] = compute_costs_general(eq_c.env, eq_c.calD1, eq_c.calD2, bar_c, RHO, cfg.b1, cfg.b2);
 
                 f << cfg.label << "," << p2v << ","
                   << j1p << "," << j2p_priv << ","

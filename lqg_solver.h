@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 // Decentralized LQG noise-state game solver
-// F-free optimized solver (no 36MB Kernel3D in filter/control)
+// F-free optimized solver with triangular Kernel2D storage
 // ============================================================
 
 #include <Eigen/Dense>
@@ -40,9 +40,29 @@ using Vec3 = Eigen::Vector3d;
 using Mat3 = Eigen::Matrix3d;
 using VecN = Eigen::VectorXd;
 
-// 2D kernel: shape (N, N, D_W) stored as array of arrays of Vec3
-// ~N*N*3*8 = ~38KB — fine on stack
-using Kernel2D = std::array<std::array<Vec3, N>, N>;
+// 2D kernel: lower-triangular packed storage (s <= t only)
+// ~N*(N+1)/2*3*8 ≈ 19.7KB — half the memory of the full N×N layout
+struct Kernel2D {
+    static constexpr int TRI_SIZE = N * (N + 1) / 2;
+    std::array<Vec3, TRI_SIZE> data;
+
+    struct RowProxy {
+        Vec3* base;
+        Vec3& operator[](int s) { return base[s]; }
+        const Vec3& operator[](int s) const { return base[s]; }
+    };
+    struct ConstRowProxy {
+        const Vec3* base;
+        const Vec3& operator[](int s) const { return base[s]; }
+    };
+
+    RowProxy operator[](int t) { return {&data[t * (t + 1) / 2]}; }
+    ConstRowProxy operator[](int t) const { return {&data[t * (t + 1) / 2]}; }
+
+    void setZero() {
+        for (auto& v : data) v.setZero();
+    }
+};
 
 // 3D kernel: shape (N, N, N, D_W, D_W) → F[t][u][s] is a 3x3 matrix
 // ~N*N*N*9*8 = ~36MB — must be heap-allocated
@@ -96,9 +116,7 @@ inline Mat3 Pi2() {
 // ---------- environment result ----------
 struct EnvironmentResult {
     Kernel2D X;
-    Kernel2D R1, R2;
-    Kernel2D Xhat1, Xhat2;
-    Kernel2D calD1, calD2;
+    Kernel2D Xtilde1, Xtilde2;
     // Rank-1 filter factorization: A_store[k][s] for s < k
     Kernel2D A_store1, A_store2;
     // Observation parameters (needed for F materialization)
@@ -124,6 +142,10 @@ struct BackwardBarResult {
 void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
                             Kernel2D& X);
 
+void primitive_control_kernel(
+    const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
+    double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD);
+
 void forward_environment(
     const Kernel2D& D1, const Kernel2D& D2,
     double obs_gain1, double obs_gain2,
@@ -132,13 +154,20 @@ void forward_environment(
     const Mat3& Pi_2, int obs_idx_2,
     EnvironmentResult& env);
 
-void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
+// Hk-free version: uses internal ping-pong buffers (~230KB) instead of 36MB Kernel3D
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
+                      const Kernel2D& Dk, const std::array<double, N>& prec_k,
+                      double terminal_state_weight,
+                      Kernel2D& Hx);
+
+// Legacy version that also fills Hk (only needed for figure output)
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk, const std::array<double, N>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx, Kernel3D& Hk);
 
 BackwardBarResult backward_bar_adjoints(
-    const Kernel2D& X, const Kernel2D& Rk, const Kernel2D& Dk,
+    const Kernel2D& X, const Kernel2D& Xtildek, const Kernel2D& Dk,
     const std::array<double, N>& barX, double b,
     const std::array<double, N>& prec_k, double terminal_weight);
 
@@ -151,6 +180,7 @@ BarSolution solve_bar_equilibrium(
 struct EquilibriumResult {
     Kernel2D D1, D2;
     EnvironmentResult env;
+    Kernel2D calD1, calD2;  // primitive control kernels (computed once after convergence)
     std::vector<double> residuals;
 };
 
@@ -165,12 +195,13 @@ struct CostPair {
 };
 
 CostPair compute_costs_general(const EnvironmentResult& env,
+                               const Kernel2D& calD1, const Kernel2D& calD2,
                                const BarSolution& bar_sol,
                                double r_val, double b1_val, double b2_val);
 
 // ---------- F materialization (for figure output only) ----------
 // Builds F[j][u][s] for ALL j from R + A_store. Writes into pre-allocated Kernel3D.
-void materialize_F(const Kernel2D& R, const Kernel2D& A_store,
+void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
                    double obs_gain, int obs_index, Kernel3D& F);
 
 // ---------- utility ----------
