@@ -31,9 +31,11 @@ constexpr int MAX_PICARD_ITERS = 10000;
 constexpr double PICARD_RELAX = 0.15;
 constexpr double PICARD_TOL = 1e-5;
 
-// Mutable global targets (modified for cost experiments)
+// Mutable game parameters (modified by interactive app)
 extern double g_b1;
 extern double g_b2;
+extern double g_r1;  // player 1 control cost weight
+extern double g_r2;  // player 2 control cost weight
 
 // ---------- type aliases ----------
 using Vec3 = Eigen::Vector3d;
@@ -197,7 +199,8 @@ struct CostPair {
 CostPair compute_costs_general(const EnvironmentResult& env,
                                const Kernel2D& calD1, const Kernel2D& calD2,
                                const BarSolution& bar_sol,
-                               double r_val, double b1_val, double b2_val);
+                               double r1_val, double r2_val,
+                               double b1_val, double b2_val);
 
 // ---------- F materialization (for figure output only) ----------
 // Builds F[j][u][s] for ALL j from R + A_store. Writes into pre-allocated Kernel3D.

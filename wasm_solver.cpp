@@ -54,11 +54,11 @@ static void compute_perfect_info(double b1, double b2,
     S_pi.fill(0.0);
     S_pi[N - 1] = TERMINAL_STATE_WEIGHT;
     for (int j = N - 2; j >= 0; --j)
-        S_pi[j] = S_pi[j + 1] + DT * (1.0 - (2.0 / RHO) * S_pi[j + 1] * S_pi[j + 1]);
+        S_pi[j] = S_pi[j + 1] + DT * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
     barX_pi[0] = X0;
     for (int j = 0; j < N; ++j) {
-        barD1_pi[j] = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - b1);
-        double barD2_pi_j = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - b2);
+        barD1_pi[j] = -(1.0 / g_r1) * S_pi[j] * (barX_pi[j] - b1);
+        double barD2_pi_j = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
         if (j < N - 1)
             barX_pi[j + 1] = barX_pi[j] + DT * (barD1_pi[j] + barD2_pi_j);
     }
@@ -68,14 +68,15 @@ extern "C" {
 
 // Returns pointer to JSON string (owned by g_output, valid until next call)
 EMSCRIPTEN_KEEPALIVE
-const char* solve_single(double p1, double p2, double b1, double b2) {
+const char* solve_single(double p1, double p2, double b1, double b2, double r1, double r2) {
     g_output.clear();
     g_b1 = b1; g_b2 = b2;
+    g_r1 = r1; g_r2 = r2;
 
     auto eq = solve_equilibrium(p1, p2, false);
     auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
                                       p1*p1, p2*p2, 2000, 0.08, 1e-10);
-    auto costs = compute_costs_general(eq.env, eq.calD1, eq.calD2, bar, RHO, b1, b2);
+    auto costs = compute_costs_general(eq.env, eq.calD1, eq.calD2, bar, r1, r2, b1, b2);
 
     auto prec1_arr = make_constant_prec(p1 * p1);
     auto prec2_arr = make_constant_prec(p2 * p2);
@@ -126,10 +127,11 @@ const char* solve_single(double p1, double p2, double b1, double b2) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-const char* solve_sweep(double p1, double b1, double b2,
+const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
                          const double* p2_vals, int n_p2) {
     g_output.clear();
     g_b1 = b1; g_b2 = b2;
+    g_r1 = r1; g_r2 = r2;
 
     std::array<double, N> barD1_pi, barX_pi;
     compute_perfect_info(b1, b2, barD1_pi, barX_pi);
@@ -150,7 +152,7 @@ const char* solve_sweep(double p1, double b1, double b2,
         auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
                                           p1*p1, p2*p2, 2000, 0.08, 1e-10);
         auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
-                                                 bar, RHO, b1, b2);
+                                                 bar, r1, r2, b1, b2);
         out(","); out_array("barD1", bar.barD1.data(), N);
         out(","); out_array("barD2", bar.barD2.data(), N);
         out(","); out_array("barX", bar.barX.data(), N);
@@ -164,7 +166,7 @@ const char* solve_sweep(double p1, double b1, double b2,
                                                p_common*p_common, p_common*p_common,
                                                2000, 0.08, 1e-10);
         auto costs_pool = compute_costs_general(eq_pool.env, eq_pool.calD1, eq_pool.calD2,
-                                                 bar_pool, RHO, b1, b2);
+                                                 bar_pool, r1, r2, b1, b2);
         out(",\"J1_pool\":%.12g,\"J2_pool\":%.12g", costs_pool.J1, costs_pool.J2);
 
         auto prec2_arr = make_constant_prec(p2 * p2);

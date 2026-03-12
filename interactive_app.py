@@ -26,9 +26,9 @@ SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20]
 
 # --------------- solver interface ---------------
 
-def run_single(p1, p2, b1, b2):
+def run_single(p1, p2, b1, b2, r1=0.1, r2=0.1):
     result = subprocess.run(
-        [SOLVER, "single", str(p1), str(p2), str(b1), str(b2)],
+        [SOLVER, "single", str(p1), str(p2), str(b1), str(b2), str(r1), str(r2)],
         capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0:
@@ -36,8 +36,8 @@ def run_single(p1, p2, b1, b2):
     return json.loads(result.stdout)
 
 
-def run_sweep(p1, b1, b2, p2_values=SWEEP_P2):
-    cmd = [SOLVER, "sweep", str(p1), str(b1), str(b2)]
+def run_sweep(p1, b1, b2, r1=0.1, r2=0.1, p2_values=SWEEP_P2):
+    cmd = [SOLVER, "sweep", str(p1), str(b1), str(b2), str(r1), str(r2)]
     cmd += [str(p) for p in p2_values]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
@@ -306,7 +306,19 @@ app.layout = html.Div([
                        marks={i: str(i) for i in [-3, -2, -1, 0, 1, 2, 3]},
                        tooltip={"placement": "bottom", "always_visible": True}),
         ], style={"flex": "1", **slider_style}),
-    ], style={"display": "flex", "gap": "10px", "margin": "10px 20px"}),
+        html.Div([
+            html.Label("r₁ (player 1 control cost)"),
+            dcc.Slider(id="r1", min=0.01, max=1, step=0.01, value=0.1,
+                       marks={v: str(v) for v in [0.01, 0.1, 0.25, 0.5, 0.75, 1.0]},
+                       tooltip={"placement": "bottom", "always_visible": True}),
+        ], style={"flex": "1", **slider_style}),
+        html.Div([
+            html.Label("r₂ (player 2 control cost)"),
+            dcc.Slider(id="r2", min=0.01, max=1, step=0.01, value=0.1,
+                       marks={v: str(v) for v in [0.01, 0.1, 0.25, 0.5, 0.75, 1.0]},
+                       tooltip={"placement": "bottom", "always_visible": True}),
+        ], style={"flex": "1", **slider_style}),
+    ], style={"display": "flex", "gap": "10px", "margin": "10px 20px", "flexWrap": "wrap"}),
 
     # Status bar
     html.Div(id="status", style={
@@ -352,11 +364,13 @@ app.layout = html.Div([
     Input("p1", "value"),
     Input("b1", "value"),
     Input("b2", "value"),
+    Input("r1", "value"),
+    Input("r2", "value"),
 )
-def update_sweep_figures(p1, b1, b2):
+def update_sweep_figures(p1, b1, b2, r1, r2):
     t0 = time.perf_counter()
     try:
-        sweep = run_sweep(p1, b1, b2)
+        sweep = run_sweep(p1, b1, b2, r1, r2)
     except Exception as e:
         empty = go.Figure()
         return empty, empty, empty, f"Sweep error: {e}"
@@ -384,11 +398,13 @@ def update_sweep_figures(p1, b1, b2):
     Input("p2", "value"),
     Input("b1", "value"),
     Input("b2", "value"),
+    Input("r1", "value"),
+    Input("r2", "value"),
 )
-def update_single_figures(p1, p2, b1, b2):
+def update_single_figures(p1, p2, b1, b2, r1, r2):
     t0 = time.perf_counter()
     try:
-        data = run_single(p1, p2, b1, b2)
+        data = run_single(p1, p2, b1, b2, r1, r2)
     except Exception as e:
         empty = go.Figure()
         return empty, empty, empty, empty, empty, empty, empty, f"Error: {e}"
@@ -405,7 +421,7 @@ def update_single_figures(p1, p2, b1, b2):
     fig_wedges = make_wedges_fig(data)
 
     status = (
-        f"p₁={p1} p₂={p2} b₁={b1} b₂={b2} | "
+        f"p₁={p1} p₂={p2} b₁={b1} b₂={b2} r₁={r1} r₂={r2} | "
         f"{data['n_iters']} iters | "
         f"J¹={data['J1']:.4f} J²={data['J2']:.4f} | "
         f"bar resid={data['bar_residual']:.2e} | "
