@@ -38,8 +38,9 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
 // ============================================================
 // compute_filter_kernels — F-free implementation
 //
-// Computes R[j][s], A_store[j][s], and Xhat[j][s] without
-// materializing the 3D filter kernel F.
+// Computes R[j][s] and A_store[j][s] without materializing
+// the 3D filter kernel F.  Xhat is not computed since X = Xhat + R
+// makes it redundant (and it is unused downstream).
 //
 // Xhat_const is computed from A_store history:
 //   Xhat_const[s] = Pi*X[j][s] + gamma_a[s]
@@ -53,7 +54,7 @@ static void compute_filter_kernels(
     const Kernel2D& X, const Mat3& Pi, int obs_index,
     double obs_gain_val,
     int filter_iters, double relax,
-    Kernel2D& R, Kernel2D& A_store, Kernel2D& Xhat) {
+    Kernel2D& R, Kernel2D& A_store) {
 
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
@@ -69,7 +70,6 @@ static void compute_filter_kernels(
             // Base case: no history
             R[0][0] = I_minus_Pi * X[0][0];
             for (int s = 1; s < N; ++s) R[0][s].setZero();
-            Xhat[0][0] = Pi * X[0][0];
             A_store[0][0].setZero();
             continue;
         }
@@ -137,14 +137,6 @@ static void compute_filter_kernels(
         for (int s = m; s < N; ++s)
             R[j][s].setZero();
 
-        // --- Now compute Xhat_const[j] using the just-computed R[j] ---
-        {
-            double bl_acc = 0.0;
-            for (int u = 0; u < j; ++u)
-                bl_acc += R[j][u].dot(X[j][u]);
-            Xhat_const[j] = Pi * X[j][j] + (DT * bl_acc * g) * e_i;
-        }
-
         // --- Rank-1 filter iteration ---
         double sigma = 0.0;
         for (int u = 0; u < j; ++u)
@@ -166,11 +158,6 @@ static void compute_filter_kernels(
 
         for (int s = 0; s < j; ++s)
             A_store[j][s] = A[s];
-
-        // Final Xhat
-        for (int s = 0; s < j; ++s)
-            Xhat[j][s] = Xhat_const[s] + sigma * A[s];
-        Xhat[j][j] = Xhat_const[j];
     }
 }
 
@@ -286,11 +273,11 @@ void forward_environment(
             #pragma omp section
             compute_filter_kernels(X, Pi_1, obs_idx_1, obs_gain1,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.R1, env.A_store1, env.Xhat1);
+                                   env.R1, env.A_store1);
             #pragma omp section
             compute_filter_kernels(X, Pi_2, obs_idx_2, obs_gain2,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.R2, env.A_store2, env.Xhat2);
+                                   env.R2, env.A_store2);
         }
 
         #pragma omp parallel sections

@@ -97,7 +97,6 @@ inline Mat3 Pi2() {
 struct EnvironmentResult {
     Kernel2D X;
     Kernel2D R1, R2;
-    Kernel2D Xhat1, Xhat2;
     Kernel2D calD1, calD2;
     // Rank-1 filter factorization: A_store[k][s] for s < k
     Kernel2D A_store1, A_store2;
