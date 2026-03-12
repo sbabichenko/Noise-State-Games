@@ -48,30 +48,32 @@ static void compute_perfect_info(double b1, double b2,
     S_pi.fill(0.0);
     S_pi[N - 1] = TERMINAL_STATE_WEIGHT;
     for (int j = N - 2; j >= 0; --j)
-        S_pi[j] = S_pi[j + 1] + DT * (1.0 - (2.0 / RHO) * S_pi[j + 1] * S_pi[j + 1]);
+        S_pi[j] = S_pi[j + 1] + DT * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
 
     barX_pi[0] = X0;
     for (int j = 0; j < N; ++j) {
-        barD1_pi[j] = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - b1);
-        double barD2_pi_j = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - b2);
+        barD1_pi[j] = -(1.0 / g_r1) * S_pi[j] * (barX_pi[j] - b1);
+        double barD2_pi_j = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
         if (j < N - 1)
             barX_pi[j + 1] = barX_pi[j] + DT * (barD1_pi[j] + barD2_pi_j);
     }
 }
 
 static int run_single(int argc, char* argv[]) {
-    if (argc < 6) {
-        fprintf(stderr, "Usage: %s single <p1> <p2> <b1> <b2>\n", argv[0]);
+    if (argc < 8) {
+        fprintf(stderr, "Usage: %s single <p1> <p2> <b1> <b2> <r1> <r2>\n", argv[0]);
         return 1;
     }
     double p1 = atof(argv[2]), p2 = atof(argv[3]);
     double b1 = atof(argv[4]), b2 = atof(argv[5]);
+    double r1 = atof(argv[6]), r2 = atof(argv[7]);
     g_b1 = b1; g_b2 = b2;
+    g_r1 = r1; g_r2 = r2;
 
     auto eq = solve_equilibrium(p1, p2, false);
     auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
                                       p1*p1, p2*p2, 2000, 0.08, 1e-10);
-    auto costs = compute_costs_general(eq.env, eq.calD1, eq.calD2, bar, RHO, b1, b2);
+    auto costs = compute_costs_general(eq.env, eq.calD1, eq.calD2, bar, r1, r2, b1, b2);
 
     // Wedges
     auto prec1_arr = make_constant_prec(p1 * p1);
@@ -129,18 +131,20 @@ static int run_single(int argc, char* argv[]) {
 }
 
 static int run_sweep(int argc, char* argv[]) {
-    if (argc < 6) {
-        fprintf(stderr, "Usage: %s sweep <p1> <b1> <b2> <p2_0> [p2_1 ...]\n", argv[0]);
+    if (argc < 8) {
+        fprintf(stderr, "Usage: %s sweep <p1> <b1> <b2> <r1> <r2> <p2_0> [p2_1 ...]\n", argv[0]);
         return 1;
     }
     double p1 = atof(argv[2]);
     double b1 = atof(argv[3]), b2 = atof(argv[4]);
+    double r1 = atof(argv[5]), r2 = atof(argv[6]);
     g_b1 = b1; g_b2 = b2;
+    g_r1 = r1; g_r2 = r2;
 
-    int n_p2 = argc - 5;
+    int n_p2 = argc - 7;
     std::vector<double> p2_vals(n_p2);
     for (int i = 0; i < n_p2; ++i)
-        p2_vals[i] = atof(argv[5 + i]);
+        p2_vals[i] = atof(argv[7 + i]);
 
     std::array<double, N> barD1_pi, barX_pi;
     compute_perfect_info(b1, b2, barD1_pi, barX_pi);
@@ -162,7 +166,7 @@ static int run_sweep(int argc, char* argv[]) {
         auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
                                           p1*p1, p2*p2, 2000, 0.08, 1e-10);
         auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
-                                                 bar, RHO, b1, b2);
+                                                 bar, r1, r2, b1, b2);
 
         printf(","); print_array("barD1", bar.barD1.data(), N);
         printf(","); print_array("barD2", bar.barD2.data(), N);
@@ -178,7 +182,7 @@ static int run_sweep(int argc, char* argv[]) {
                                                p_common*p_common, p_common*p_common,
                                                2000, 0.08, 1e-10);
         auto costs_pool = compute_costs_general(eq_pool.env, eq_pool.calD1, eq_pool.calD2,
-                                                 bar_pool, RHO, b1, b2);
+                                                 bar_pool, r1, r2, b1, b2);
 
         printf(",\"J1_pool\":%.12g,\"J2_pool\":%.12g", costs_pool.J1, costs_pool.J2);
         printf(",\"p_common\":%.12g", p_common);

@@ -9,6 +9,8 @@
 
 double g_b1 = B1_DEFAULT;
 double g_b2 = B2_DEFAULT;
+double g_r1 = RHO;
+double g_r2 = RHO;
 
 // --- state_kernel_from_calD ---
 
@@ -370,8 +372,8 @@ BarSolution solve_bar_equilibrium(
 
         std::array<double, N> barD1_new, barD2_new;
         for (int j = 0; j < N; ++j) {
-            barD1_new[j] = -(1.0 / RHO) * bba1.barHx[j];
-            barD2_new[j] = -(1.0 / RHO) * bba2.barHx[j];
+            barD1_new[j] = -(1.0 / g_r1) * bba1.barHx[j];
+            barD2_new[j] = -(1.0 / g_r2) * bba2.barHx[j];
         }
 
         double n1 = 0, d1 = 0, n2 = 0, d2 = 0;
@@ -456,13 +458,14 @@ EquilibriumResult solve_equilibrium(
             backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2);
         }
 
-        // Compute G = -(1/rho)*Hx and residual F = G - D
-        constexpr double neg_inv_rho = -(1.0 / RHO);
+        // Compute G = -(1/r_k)*Hx and residual F = G - D
+        const double neg_inv_r1 = -(1.0 / g_r1);
+        const double neg_inv_r2 = -(1.0 / g_r2);
         auto& cur = hist[stored % AA_STORE];
         double norm_f = 0.0, norm_g = 0.0;
         for (int i = 0; i < TRI; ++i) {
-            cur.g1.data[i] = neg_inv_rho * Hx1.data[i];
-            cur.g2.data[i] = neg_inv_rho * Hx2.data[i];
+            cur.g1.data[i] = neg_inv_r1 * Hx1.data[i];
+            cur.g2.data[i] = neg_inv_r2 * Hx2.data[i];
             cur.f1.data[i] = cur.g1.data[i] - D1.data[i];
             cur.f2.data[i] = cur.g2.data[i] - D2.data[i];
             norm_f += cur.f1.data[i].squaredNorm() + cur.f2.data[i].squaredNorm();
@@ -560,7 +563,8 @@ EquilibriumResult solve_equilibrium(
 CostPair compute_costs_general(const EnvironmentResult& env,
                                const Kernel2D& calD1, const Kernel2D& calD2,
                                const BarSolution& bar_sol,
-                               double r_val, double b1_val, double b2_val) {
+                               double r1_val, double r2_val,
+                               double b1_val, double b2_val) {
     double J1 = 0.0, J2 = 0.0;
     for (int j = 0; j < N; ++j) {
         double var_X = 0.0, var_D1 = 0.0, var_D2 = 0.0;
@@ -571,8 +575,8 @@ CostPair compute_costs_general(const EnvironmentResult& env,
         }
         double dx1 = bar_sol.barX[j] - b1_val;
         double dx2 = bar_sol.barX[j] - b2_val;
-        J1 += DT * (dx1*dx1 + var_X + r_val * (bar_sol.barD1[j]*bar_sol.barD1[j] + var_D1));
-        J2 += DT * (dx2*dx2 + var_X + r_val * (bar_sol.barD2[j]*bar_sol.barD2[j] + var_D2));
+        J1 += DT * (dx1*dx1 + var_X + r1_val * (bar_sol.barD1[j]*bar_sol.barD1[j] + var_D1));
+        J2 += DT * (dx2*dx2 + var_X + r2_val * (bar_sol.barD2[j]*bar_sol.barD2[j] + var_D2));
     }
     return {J1, J2};
 }
