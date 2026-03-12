@@ -307,7 +307,7 @@ double* solve_f_kernel_bin(double p1, double p2, double b1, double b2, double r1
                 double* dst = base + (r * 3 + c) * block;
                 for (int u = 0; u < n; ++u)
                     for (int s = 0; s < n; ++s)
-                        dst[u * n + s] = F.data[u][s](r, c);
+                        dst[u * n + s] = F(u, s)(r, c);
             }
         }
     }

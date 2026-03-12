@@ -88,7 +88,7 @@ static void bench(int n, double T, double p1, double p2, double b1, double b2, d
                 double* dst = base + (row * 3 + col) * block;
                 for (int u = 0; u < g_n; ++u)
                     for (int s = 0; s < g_n; ++s)
-                        dst[u * g_n + s] = F.data[u][s](row, col);
+                        dst[u * g_n + s] = F(u, s)(row, col);
             }
     }
     double fbin_ms = ms_since(t0);
@@ -104,7 +104,7 @@ static void bench(int n, double T, double p1, double p2, double b1, double b2, d
             for (int col = 0; col < 3; ++col)
                 for (int u = 0; u < g_n; ++u)
                     for (int s = 0; s < g_n; ++s) {
-                        int len = snprintf(buf, sizeof(buf), "%.6g", F.data[u][s](row, col));
+                        int len = snprintf(buf, sizeof(buf), "%.6g", F(u, s)(row, col));
                         out.append(buf, len);
                         out += ',';
                     }
@@ -120,6 +120,10 @@ static void bench(int n, double T, double p1, double p2, double b1, double b2, d
 int main() {
     // Quick single test matching solve_interactive
     bench(40, 1.0, 3.0, 3.0, 1.0, -1.0, 0.1, 0.1);
+
+    // Test larger N to verify dynamic sizing
+    bench(160, 1.0, 3.0, 3.0, 1.0, -1.0, 0.1, 0.1);
+    bench(320, 1.0, 3.0, 3.0, 1.0, -1.0, 0.1, 0.1);
 
     return 0;
 }

@@ -14,8 +14,12 @@
 #include <vector>
 
 // ---------- compile-time maximum ----------
-constexpr int N_MAX = 80;
+constexpr int N_MAX = 320;
 constexpr int D_W = 3;
+
+// Legacy 3D kernel max — kept small to avoid 320^3 * 72 B = 2.4 GB types.
+// Only used by generate_figures; the interactive solver never touches Kernel3D.
+constexpr int N_MAX_3D = 80;
 
 // ---------- runtime grid parameters ----------
 extern int g_n;        // current grid size (default 40, max N_MAX)
@@ -51,10 +55,11 @@ using Mat3 = Eigen::Matrix3d;
 using VecN = Eigen::VectorXd;
 
 // 2D kernel: lower-triangular packed storage (s <= t only)
-// Allocated for N_MAX but only g_n rows are used at runtime.
+// Dynamically sized to g_n*(g_n+1)/2 entries — safe on the stack at any N.
 struct Kernel2D {
-    static constexpr int TRI_SIZE = N_MAX * (N_MAX + 1) / 2;
-    std::array<Vec3, TRI_SIZE> data;
+    std::vector<Vec3> data;
+
+    Kernel2D() : data(g_n * (g_n + 1) / 2, Vec3::Zero()) {}
 
     struct RowProxy {
         Vec3* base;
@@ -70,15 +75,20 @@ struct Kernel2D {
     ConstRowProxy operator[](int t) const { return {&data[t * (t + 1) / 2]}; }
 
     void setZero() {
-        // Only zero the portion we use (g_n rows)
-        const int tri = g_n * (g_n + 1) / 2;
-        for (int i = 0; i < tri; ++i) data[i].setZero();
+        for (auto& v : data) v.setZero();
     }
+
+    // Resize to current g_n (used after set_grid changes)
+    void resize() {
+        data.resize(g_n * (g_n + 1) / 2, Vec3::Zero());
+    }
+
+    int tri_size() const { return static_cast<int>(data.size()); }
 };
 
-// 3D kernel: shape (N_MAX, N_MAX, N_MAX, D_W, D_W) → F[t][u][s] is a 3x3 matrix
+// 3D kernel: shape (N_MAX_3D, N_MAX_3D, N_MAX_3D, D_W, D_W) → F[t][u][s] is a 3x3 matrix
 // Only used by legacy code paths (generate_figures). NOT used by interactive app.
-using Kernel3DRaw = std::array<std::array<std::array<Mat3, N_MAX>, N_MAX>, N_MAX>;
+using Kernel3DRaw = std::array<std::array<std::array<Mat3, N_MAX_3D>, N_MAX_3D>, N_MAX_3D>;
 
 struct Kernel3D {
     std::unique_ptr<Kernel3DRaw> data;
@@ -216,13 +226,14 @@ void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
                    double obs_gain, int obs_index, Kernel3D& F);
 
 // ---------- F slice computation (memory-efficient) ----------
-// Computes F[g_n-1][u][s] for all (u,s), returning an N_MAX x N_MAX array of Mat3.
-// Only allocates two N_MAX x N_MAX slices (ping-pong), NOT the full 3D kernel.
+// Computes F[g_n-1][u][s] for all (u,s), returning a g_n x g_n array of Mat3.
+// Only allocates two g_n x g_n slices (ping-pong), NOT the full 3D kernel.
 struct FSlice {
-    // F_T[u][s] = F[g_n-1][u][s]
-    std::array<std::array<Mat3, N_MAX>, N_MAX> data;
-    Mat3& operator()(int u, int s) { return data[u][s]; }
-    const Mat3& operator()(int u, int s) const { return data[u][s]; }
+    int n;  // grid size at construction time
+    std::vector<Mat3> data;
+    FSlice() : n(g_n), data(g_n * g_n, Mat3::Zero()) {}
+    Mat3& operator()(int u, int s) { return data[u * n + s]; }
+    const Mat3& operator()(int u, int s) const { return data[u * n + s]; }
 };
 
 std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,

@@ -243,10 +243,20 @@ void forward_environment(
 //
 // Two N_MAX×N_MAX Mat3 slices replace the full Kernel3D.
 
-using HkSlice = std::array<std::array<Mat3, N_MAX>, N_MAX>;
+// Dynamically sized HkSlice: g_n × g_n Mat3 entries.
+struct HkSlice {
+    int n;
+    std::vector<Mat3> data;
+    HkSlice() : n(0) {}
+    void resize(int nn) {
+        if (n != nn) { n = nn; data.resize(nn * nn); }
+    }
+    Mat3& operator()(int z, int r) { return data[z * n + r]; }
+    const Mat3& operator()(int z, int r) const { return data[z * n + r]; }
+};
 
 // Thread-local HkSlice buffers — reused across backward_kernels calls within a
-// thread to avoid heap allocation churn (38 alloc/free cycles per solve at 920KB each).
+// thread to avoid heap allocation churn.
 // thread_local is needed because OMP parallel sections call backward_kernels
 // concurrently from different threads.
 static thread_local std::unique_ptr<HkSlice> s_hk_buf0, s_hk_buf1;
@@ -254,6 +264,8 @@ static thread_local std::unique_ptr<HkSlice> s_hk_buf0, s_hk_buf1;
 static void ensure_hk_buffers() {
     if (!s_hk_buf0) s_hk_buf0 = std::make_unique<HkSlice>();
     if (!s_hk_buf1) s_hk_buf1 = std::make_unique<HkSlice>();
+    s_hk_buf0->resize(g_n);
+    s_hk_buf1->resize(g_n);
 }
 
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
@@ -269,7 +281,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
     // Only zero the portion we'll use (g_n rows × g_n cols)
     for (int z = 0; z < g_n; ++z)
         for (int r = 0; r < g_n; ++r)
-            (*s_hk_buf0)[z][r].setZero();
+            (*s_hk_buf0)(z, r).setZero();
     HkSlice* cur = s_hk_buf0.get();
     HkSlice* nxt = s_hk_buf1.get();
 
@@ -282,7 +294,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
         for (int r = 0; r <= j; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z <= tp; ++z)
-                acc += (*cur)[z][r].transpose() * Xtildek[tp][z];
+                acc += (*cur)(z, r).transpose() * Xtildek[tp][z];
             W[r] = g_dt * Pk * acc;
         }
 
@@ -291,7 +303,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
 
         for (int z = 0; z <= j; ++z)
             for (int r = 0; r <= j; ++r)
-                (*nxt)[z][r] = (*cur)[z][r]
+                (*nxt)(z, r) = (*cur)(z, r)
                     + g_dt * (Dk[tp][r] * Hx[tp][z].transpose()
                           - X[tp][z] * W[r].transpose());
 
@@ -467,7 +479,13 @@ EquilibriumResult solve_equilibrium(
     const int TRI = g_n * (g_n + 1) / 2;
 
     struct AAEntry { Kernel2D f1, f2, g1, g2; };
-    std::vector<AAEntry> hist(AA_STORE);
+    // Thread-local AA history: avoids ~29MB alloc/free churn per solve at N=320.
+    static thread_local std::vector<AAEntry> hist;
+    if (static_cast<int>(hist.size()) != AA_STORE) hist.resize(AA_STORE);
+    // Ensure each entry is sized for current g_n
+    for (auto& e : hist) {
+        e.f1.resize(); e.f2.resize(); e.g1.resize(); e.g2.resize();
+    }
     int stored = 0;
 
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
@@ -644,25 +662,25 @@ std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kerne
     double g = obs_gain;
 
     // Two slices for ping-pong: prev = F[j-1], cur = F[j]
-    // Heap-allocated to avoid ~900KB stack pressure; pointer swap avoids deep copy.
+    // Heap-allocated; pointer swap avoids deep copy.
     auto prev = std::make_unique<FSlice>();
     auto cur  = std::make_unique<FSlice>();
 
     // j = 0: F[0][0][0] = 0
-    prev->data[0][0].setZero();
+    (*prev)(0, 0).setZero();
 
     for (int j = 1; j < g_n; ++j) {
         // Borders
         for (int u = 0; u < j; ++u) {
-            cur->data[u][j] = g * Xtilde[j][u] * e_i.transpose();
-            cur->data[j][u] = g * e_i * Xtilde[j][u].transpose();
+            (*cur)(u, j) = g * Xtilde[j][u] * e_i.transpose();
+            (*cur)(j, u) = g * e_i * Xtilde[j][u].transpose();
         }
-        cur->data[j][j].setZero();
+        (*cur)(j, j).setZero();
 
         // Interior: F[j][u][s] = F[j-1][u][s] + Xtilde[j][u] * A_store[j][s]^T
         for (int u = 0; u < j; ++u)
             for (int s = 0; s < j; ++s)
-                cur->data[u][s] = prev->data[u][s] + Xtilde[j][u] * A_store[j][s].transpose();
+                (*cur)(u, s) = (*prev)(u, s) + Xtilde[j][u] * A_store[j][s].transpose();
 
         std::swap(prev, cur);
     }
