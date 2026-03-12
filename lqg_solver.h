@@ -97,8 +97,6 @@ inline Mat3 Pi2() {
 struct EnvironmentResult {
     Kernel2D X;
     Kernel2D R1, R2;
-    // Q stored as flat (N*D_W) x (N*D_W) matrix
-    Eigen::MatrixXd Q1, Q2;
     Kernel3D F1, F2;
     Kernel2D Xhat1, Xhat2;
     Kernel2D calD1, calD2;
@@ -131,12 +129,14 @@ void compute_filter_kernels(const Kernel2D& X, const Mat3& Pi, int obs_index,
 void primitive_control_kernel(const Kernel2D& D, const Kernel3D& F,
                               const Mat3& Pi, Kernel2D& calD);
 
-EnvironmentResult forward_environment(
+// Writes result into pre-allocated env (avoids Kernel3D heap churn)
+void forward_environment(
     const Kernel2D& D1, const Kernel2D& D2,
     double obs_gain1, double obs_gain2,
     int inner_iters,
     const Mat3& Pi_1, int obs_idx_1,
-    const Mat3& Pi_2, int obs_idx_2);
+    const Mat3& Pi_2, int obs_idx_2,
+    EnvironmentResult& env);
 
 void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
                       const Kernel2D& Dk, const std::array<double, N>& prec_k,

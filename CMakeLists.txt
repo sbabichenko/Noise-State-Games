@@ -13,4 +13,4 @@ add_executable(generate_figures
 )
 
 target_link_libraries(generate_figures PRIVATE Eigen3::Eigen)
-target_compile_options(generate_figures PRIVATE -O2 -Wall -Wextra)
+target_compile_options(generate_figures PRIVATE -O3 -march=native -Wall -Wextra)

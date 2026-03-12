@@ -1,5 +1,6 @@
 // ============================================================
-// Decentralized LQG noise-state game solver — implementation
+// Decentralized LQG noise-state game solver — optimized implementation
+// Uses direct 3x3 block operations instead of flat dynamic matrices.
 // ============================================================
 
 #include "lqg_solver.h"
@@ -29,305 +30,261 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
 }
 
 // ============================================================
-// Helper: _to_flat / _from_flat for filter kernels
+// Q stored as block matrix: Q_blocks[u][s] is a 3x3 matrix
+// Q_blocks[u][s] corresponds to Q_flat[u*dw..(u+1)*dw, s*dw..(s+1)*dw]
 // ============================================================
-// F4d[u][s] is a D_W x D_W matrix, for u,s in [0,m)
-// Flat layout: (m*D_W) x (m*D_W) with transpose(0,2,1,3) indexing
-// to_flat: F4d[t_idx][u][s](a,b) → flat[u*dw+a, s*dw+b]
-// Python: F[:m,:m].transpose(0,2,1,3).reshape(m*dw, m*dw)
-static inline void to_flat(const Kernel3D& F4d, int t_idx, int m,
-                           Eigen::MatrixXd& out) {
-    int sz = m * D_W;
-    out.setZero(sz, sz);
-    for (int u = 0; u < m; ++u)
-        for (int s = 0; s < m; ++s)
-            for (int a = 0; a < D_W; ++a)
-                for (int b = 0; b < D_W; ++b)
-                    out(u * D_W + a, s * D_W + b) = F4d[t_idx][u][s](a, b);
-}
-
-static void from_flat(const Eigen::MatrixXd& flat, int m,
-                      Kernel3D& F4d, int t_idx) {
-    for (int u = 0; u < m; ++u)
-        for (int s = 0; s < m; ++s)
-            for (int a = 0; a < D_W; ++a)
-                for (int b = 0; b < D_W; ++b)
-                    F4d[t_idx][u][s](a, b) = flat(u * D_W + a, s * D_W + b);
-}
+using QBlocks = std::array<std::array<Mat3, N>, N>;
 
 // ============================================================
-// compute_filter_kernels
+// compute_filter_kernels — optimized with direct block ops
 // ============================================================
 void compute_filter_kernels(const Kernel2D& X, const Mat3& Pi, int obs_index,
                             const std::array<double, N>& obs_gain,
                             int filter_iters, double relax,
-                            Kernel2D& R, Eigen::MatrixXd& Q_flat,
+                            Kernel2D& R, Eigen::MatrixXd& /*Q_flat_unused*/,
                             Kernel3D& F, Kernel2D& Xhat) {
-    const int dw = D_W;
-
-    // Zero initialize
-    for (auto& row : R)
-        for (auto& v : row)
-            v.setZero();
-    for (int i = 0; i < N; ++i)
-        for (int j2 = 0; j2 < N; ++j2)
-            for (int k = 0; k < N; ++k)
-                F[i][j2][k].setZero();
-    for (auto& row : Xhat)
-        for (auto& v : row)
-            v.setZero();
-
-    int max_flat = N * dw;
-    Q_flat.setZero(max_flat, max_flat);
-
-    // F_flat_store[j] is a (N*dw) x (N*dw) matrix (only first (j+1)*dw used)
-    std::vector<Eigen::MatrixXd> F_flat_store(N,
-        Eigen::MatrixXd::Zero(max_flat, max_flat));
+    // Zero-init only the parts we'll use
+    // R[j][s] for s <= j, Xhat[j][s] for s <= j, F[j][u][s] for u,s <= j
 
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
+
+    // Q as block matrix — only upper-left (j+1)x(j+1) block used at step j
+    // Allocated once, accumulated across j
+    QBlocks Q_blocks;
+    for (auto& row : Q_blocks)
+        for (auto& m : row)
+            m.setZero();
+
+    // Pre-allocate scratch arrays for Gamma computation (avoid heap allocation)
+    std::array<Vec3, N> total_sum_buf, gamma_a_buf, inclusive_buf;
+    std::array<double, N> coeff_a_buf, b_scalar_buf;
+    // cum_diag[s] = cumulative weighted R[z][s] evaluated at z=s (for inclusive)
+    // We don't need the full cum[z][s] matrix — we only need cum[s][s] and total_sum[s]
+    // gamma_a[s] = dt * (total_sum[s] - inclusive[s])
+    // where inclusive[s] = cum[s][s] for s < j, total_sum[s] for s >= j.
+    // cum[s][s] = sum_{z=0}^{s} coeff_a[z] * R[z][s]
+    // So we can compute this incrementally without storing the full matrix.
 
     for (int j = 0; j < N; ++j) {
         double g = obs_gain[j];
         double prec = g * g;
         int m = j + 1;
-        int mdw = m * dw;
 
-        // Compute base = X[j,:m] - X[j,:m] @ Pi  and Q_corr
-        // R[j] = base - Q_corr - Gamma
-        // base[s] = X[j][s] - Pi * X[j][s]  (note: Pi acts on rows)
-        // Actually: base = Xj - Xj @ Pi → base[s] = X[j][s] - X[j][s].transpose() * Pi
-        // Wait: X[j][s] is a Vec3. "Xj @ Pi" means matrix multiply where Xj is (m, dw)
-        // and Pi is (dw, dw). So row s: X[j][s] @ Pi = (Pi^T * X[j][s]) but since Pi
-        // is diagonal, Pi^T = Pi, so it's just Pi * X[j][s].
-        // Actually in numpy: Xj @ Pi means each row of Xj is multiplied by Pi on the right.
-        // For row vector x: x @ Pi = (Pi^T x)^T. For a column vector stored as Vec3:
-        // the equivalent is (Pi^T * x) = Pi * x (since Pi is symmetric diagonal).
+        // --- Q_corr[s] = dt * sum_u Q_blocks[u][s]^T * X[j][u], for s in [0,m) ---
+        // Q_corr replaces: dt * (Xj_flat^T @ Q_flat)^T
+        std::array<Vec3, N> Q_corr;
+        for (int s = 0; s < m; ++s) {
+            Vec3 acc = Vec3::Zero();
+            for (int u = 0; u < m; ++u)
+                acc += Q_blocks[u][s].transpose() * X[j][u];
+            Q_corr[s] = DT * acc;
+        }
 
-        // Q_corr[s] = dt * sum over rows of (Xj.ravel() @ Q_flat[:mdw, :mdw])
-        // reshaped to (m, dw). This is Xj_flat^T @ Q_flat reshaped.
-        Eigen::VectorXd Xj_flat(mdw);
-        for (int s = 0; s < m; ++s)
-            Xj_flat.segment<D_W>(s * dw) = X[j][s];
+        // --- Gamma computation ---
+        // gamma_a[s] = dt * (total_sum[s] - inclusive[s])
+        // gamma_b[s] = dt * b_scalar[s] * obs_gain[s] * e_i
+        // Gamma[s] = gamma_a[s] + gamma_b[s]
+        std::array<Vec3, N>& Gamma = gamma_a_buf; // reuse buffer for final result
 
-        Eigen::VectorXd Q_corr_flat = DT * (Xj_flat.transpose() *
-            Q_flat.topLeftCorner(mdw, mdw)).transpose();
-
-        // Gamma computation
-        std::vector<Vec3> Gamma(m, Vec3::Zero());
-
-        if (j > 0) {
-            // x_obs = X[j][:j, obs_index], gains_s = obs_gain[:j]
-            // coeff_a = x_obs * gains_s
-            // R_past = R[:j, :m] → R[z][s] for z in [0,j), s in [0,m)
-            // weights[z][s] = coeff_a[z] * R[z][s]
-            // total_sum[s] = sum_z weights[z][s]
-            // cum[z][s] = cumsum over z of weights
-            // inclusive[s] = cum[min(s,j-1)][s] if s < j, else total_sum[s]
-            // gamma_a[s] = dt * (total_sum[s] - inclusive[s])
-
-            std::vector<double> coeff_a(j);
+        if (j == 0) {
+            Gamma[0].setZero();
+        } else {
+            // coeff_a[z] = X[j][z](obs_index) * obs_gain[z]
             for (int z = 0; z < j; ++z)
-                coeff_a[z] = X[j][z](obs_index) * obs_gain[z];
+                coeff_a_buf[z] = X[j][z](obs_index) * obs_gain[z];
 
-            // total_sum and inclusive
-            std::vector<Vec3> total_sum(m, Vec3::Zero());
-            // cumulative sum storage: cum[z][s]
-            std::vector<std::vector<Vec3>> cum(j, std::vector<Vec3>(m, Vec3::Zero()));
+            // Compute total_sum[s] = sum_{z=0}^{j-1} coeff_a[z] * R[z][s]
+            for (int s = 0; s < m; ++s)
+                total_sum_buf[s].setZero();
 
             for (int z = 0; z < j; ++z) {
-                for (int s = 0; s < m; ++s) {
-                    Vec3 w = coeff_a[z] * R[z][s];
-                    total_sum[s] += w;
-                    if (z == 0)
-                        cum[z][s] = w;
-                    else
-                        cum[z][s] = cum[z - 1][s] + w;
-                }
-            }
-
-            int jj = std::min(j, m);
-            std::vector<Vec3> inclusive(m, Vec3::Zero());
-            for (int s = 0; s < jj; ++s)
-                inclusive[s] = cum[s][s]; // cum[s][s] for s < j
-            for (int s = j; s < m; ++s)
-                inclusive[s] = total_sum[s];
-
-            // gamma_a
-            std::vector<Vec3> gamma_a(m);
-            for (int s = 0; s < m; ++s)
-                gamma_a[s] = DT * (total_sum[s] - inclusive[s]);
-
-            // gamma_b: dot_mat[z][s] = X[j][z] . R[z][s] (dot product)
-            // cum_dot[z][s] = cumsum over z of dot_mat
-            // b_scalar[s] = ... (see Python)
-            // gamma_b[s] = dt * b_scalar[s] * obs_gain[s] * e_i
-
-            std::vector<std::vector<double>> dot_mat(j, std::vector<double>(m, 0.0));
-            for (int z = 0; z < j; ++z)
+                double ca = coeff_a_buf[z];
                 for (int s = 0; s < m; ++s)
-                    dot_mat[z][s] = X[j][z].dot(R[z][s]);
-
-            std::vector<std::vector<double>> cum_dot(j, std::vector<double>(m, 0.0));
-            for (int z = 0; z < j; ++z)
-                for (int s = 0; s < m; ++s) {
-                    cum_dot[z][s] = dot_mat[z][s];
-                    if (z > 0) cum_dot[z][s] += cum_dot[z - 1][s];
-                }
-
-            std::vector<double> b_scalar(m, 0.0);
-            for (int s = 1; s < jj; ++s)
-                b_scalar[s] = cum_dot[s - 1][s];
-            if (m > j && j > 0)
-                for (int s = j; s < m; ++s)
-                    b_scalar[s] = cum_dot[j - 1][s];
-
-            for (int s = 0; s < m; ++s) {
-                Vec3 gamma_b_s = (DT * b_scalar[s] * obs_gain[s]) * e_i;
-                Gamma[s] = gamma_a[s] + gamma_b_s;
+                    total_sum_buf[s] += ca * R[z][s];
             }
+
+            // inclusive[s]:
+            //   s < j: cum[s][s] = sum_{z=0}^{s} coeff_a[z] * R[z][s]
+            //   s >= j: total_sum[s]
+            int jj = std::min(j, m);
+            // For s < jj, compute partial sum up to z=s
+            // We can do this by accumulating per-s
+            for (int s = 0; s < jj; ++s) {
+                Vec3 acc = Vec3::Zero();
+                for (int z = 0; z <= s; ++z)
+                    acc += coeff_a_buf[z] * R[z][s];
+                inclusive_buf[s] = acc;
+            }
+            for (int s = j; s < m; ++s)
+                inclusive_buf[s] = total_sum_buf[s];
+
+            // gamma_a[s] = dt * (total_sum[s] - inclusive[s])
+            for (int s = 0; s < m; ++s)
+                gamma_a_buf[s] = DT * (total_sum_buf[s] - inclusive_buf[s]);
+
+            // gamma_b: b_scalar[s], then gamma_b[s] = dt * b_scalar[s] * obs_gain[s] * e_i
+            // dot_mat[z][s] = X[j][z] . R[z][s]
+            // cum_dot[z][s] = cumsum over z
+            // b_scalar[s] = cum_dot[s-1][s] for 1<=s<jj, cum_dot[j-1][s] for s>=j
+            // b_scalar[0] = 0
+
+            // Compute b_scalar without storing full dot_mat/cum_dot matrices
+            for (int s = 0; s < m; ++s)
+                b_scalar_buf[s] = 0.0;
+
+            for (int s = 1; s < jj; ++s) {
+                double cum = 0.0;
+                for (int z = 0; z < s; ++z) // z < s, so cum_dot[s-1][s] = sum_{z=0}^{s-1}
+                    cum += X[j][z].dot(R[z][s]);
+                b_scalar_buf[s] = cum;
+            }
+            if (m > j && j > 0) {
+                // For s >= j: b_scalar[s] = cum_dot[j-1][s] = sum_{z=0}^{j-1} X[j][z].dot(R[z][s])
+                for (int s = j; s < m; ++s) {
+                    double cum = 0.0;
+                    for (int z = 0; z < j; ++z)
+                        cum += X[j][z].dot(R[z][s]);
+                    b_scalar_buf[s] = cum;
+                }
+            }
+
+            // Gamma[s] = gamma_a[s] + gamma_b[s]
+            for (int s = 0; s < m; ++s)
+                Gamma[s] += (DT * b_scalar_buf[s] * obs_gain[s]) * e_i;
         }
 
-        // R[j][s] = base[s] - Q_corr[s] - Gamma[s]
-        for (int s = 0; s < m; ++s) {
-            Vec3 base_s = X[j][s] - Pi * X[j][s];
-            Vec3 Q_corr_s = Q_corr_flat.segment<D_W>(s * dw);
-            R[j][s] = base_s - Q_corr_s - Gamma[s];
-        }
+        // --- R[j][s] = (I - Pi) * X[j][s] - Q_corr[s] - Gamma[s] ---
+        Mat3 I_minus_Pi = Mat3::Identity() - Pi;
+        for (int s = 0; s < m; ++s)
+            R[j][s] = I_minus_Pi * X[j][s] - Q_corr[s] - Gamma[s];
+        // Zero out unused entries
+        for (int s = m; s < N; ++s)
+            R[j][s].setZero();
 
-        // Xhat computation
+        // --- Xhat & F computation using direct block operations ---
         if (j == 0) {
             Xhat[j][0] = Pi * X[j][0];
+            F[j][0][0].setZero();
         } else {
-            int jdw = j * dw;
-            Eigen::MatrixXd& F_base = F_flat_store[j];
-            F_base.setZero(max_flat, max_flat);
+            // Set new row/column of F[j] (border blocks)
+            for (int u = 0; u < j; ++u) {
+                F[j][u][j] = g * R[j][u] * e_i.transpose();
+                F[j][j][u] = g * e_i * R[j][u].transpose();
+            }
+            F[j][j][j].setZero();
 
-            // Copy from previous
-            F_base.topLeftCorner(jdw, jdw) =
-                F_flat_store[j - 1].topLeftCorner(jdw, jdw);
+            // Copy F[j-1] → F[j] for interior block (u,s < j)
+            // and track correction delta[u][s] = F[j][u][s] - F[j-1][u][s]
+            // Initialize delta = 0, so F[j][u][s] = F[j-1][u][s] initially
+            // We reference F[j-1] as base to avoid a separate copy.
 
-            // Rj_j_flat = R[j][:j].ravel()
-            Eigen::VectorXd Rj_j_flat(jdw);
-            for (int s = 0; s < j; ++s)
-                Rj_j_flat.segment<D_W>(s * dw) = R[j][s];
+            // Precompute Pi * X[j][s] and the contribution from the fixed s=j column
+            std::array<Vec3, N> Xhat_const; // constant part across iterations
+            for (int s = 0; s < m; ++s) {
+                Vec3 acc = Pi * X[j][s];
+                // u = j contribution (fixed): F[j][j][s]^T * X[j][j]
+                acc += DT * F[j][j][s].transpose() * X[j][j];
+                // u < j contribution from F[j-1] (base):
+                for (int u = 0; u < j; ++u)
+                    acc += DT * F[j - 1][u][s].transpose() * X[j][u];
+                Xhat_const[s] = acc;
+            }
 
-            // F_base[:jdw, jdw:mdw] = g * outer(Rj_j_flat, e_i)
-            Eigen::MatrixXd outer1 = g * Rj_j_flat * e_i.transpose();
-            F_base.block(0, jdw, jdw, dw) = outer1;
-            F_base.block(jdw, 0, dw, jdw) = outer1.transpose();
-
-            Eigen::MatrixXd F_cur = F_base.topLeftCorner(mdw, mdw);
-
-            // Fixed-point iteration
+            // Fixed-point iteration updates delta[u][s] for u,s < j
+            // F_eff[u][s] = F[j-1][u][s] + delta[u][s]
+            // Xhat[s] = Xhat_const[s] + DT * sum_{u<j} delta[u][s]^T * X[j][u]
             double dt_prec = DT * prec;
             double one_minus_relax = 1.0 - relax;
 
-            // XjPi[s] = Pi * X[j][s]
-            Eigen::VectorXd XjPi_flat(mdw);
-            for (int s = 0; s < m; ++s)
-                XjPi_flat.segment<D_W>(s * dw) = Pi * X[j][s];
+            // delta starts at zero
+            // Store as flat array of Mat3
+            std::array<std::array<Mat3, N>, N> delta;
+            for (int u = 0; u < j; ++u)
+                for (int s = 0; s < j; ++s)
+                    delta[u][s].setZero();
+
+            // Precompute DT * X[j][u] for u < j
+            std::array<Vec3, N> dtXju;
+            for (int u = 0; u < j; ++u)
+                dtXju[u] = DT * X[j][u];
 
             for (int iter = 0; iter < filter_iters; ++iter) {
-                // Xhat_j = XjPi + dt * (Xj_flat^T @ F_cur)^T reshaped
-                Eigen::VectorXd Xhat_j_flat =
-                    XjPi_flat + DT * (Xj_flat.head(mdw).transpose() * F_cur).transpose();
-
-                // diff_flat = (X[j][:j] - Xhat_j[:j]).ravel()
-                Eigen::VectorXd diff_flat(jdw);
+                // Compute diff[s] = X[j][s] - Xhat[s] for s < j
+                // Xhat[s] = Xhat_const[s] + sum_{u<j} delta[u][s]^T * dtXju[u]
+                std::array<Vec3, N> diff;
                 for (int s = 0; s < j; ++s) {
-                    Vec3 xhat_s(Xhat_j_flat.segment<D_W>(s * dw));
-                    diff_flat.segment<D_W>(s * dw) = X[j][s] - xhat_s;
+                    Vec3 delta_contrib = Vec3::Zero();
+                    for (int u = 0; u < j; ++u)
+                        delta_contrib += delta[u][s].transpose() * dtXju[u];
+                    diff[s] = X[j][s] - Xhat_const[s] - delta_contrib;
                 }
 
-                Eigen::MatrixXd F_new_inner =
-                    F_base.topLeftCorner(jdw, jdw) +
-                    dt_prec * Rj_j_flat * diff_flat.transpose();
-
-                F_cur.topLeftCorner(jdw, jdw) =
-                    relax * F_new_inner +
-                    one_minus_relax * F_cur.topLeftCorner(jdw, jdw);
+                // Update delta: new_delta[u][s] = relax * dt_prec * R[j][u] * diff[s]^T
+                //                                 + (1-relax) * delta[u][s]
+                for (int u = 0; u < j; ++u) {
+                    Vec3 Ru_scaled = (relax * dt_prec) * R[j][u];
+                    for (int s = 0; s < j; ++s)
+                        delta[u][s] = Ru_scaled * diff[s].transpose()
+                                      + one_minus_relax * delta[u][s];
+                }
             }
 
-            F_flat_store[j].topLeftCorner(mdw, mdw) = F_cur;
+            // Write final F[j][u][s] = F[j-1][u][s] + delta[u][s]
+            for (int u = 0; u < j; ++u)
+                for (int s = 0; s < j; ++s)
+                    F[j][u][s] = F[j - 1][u][s] + delta[u][s];
 
             // Final Xhat
-            Eigen::VectorXd Xhat_j_flat =
-                XjPi_flat + DT * (Xj_flat.head(mdw).transpose() * F_cur).transpose();
-            for (int s = 0; s < m; ++s)
-                Xhat[j][s] = Xhat_j_flat.segment<D_W>(s * dw);
+            for (int s = 0; s < m; ++s) {
+                Vec3 acc = Xhat_const[s];
+                for (int u = 0; u < j; ++u)
+                    acc += delta[u][s].transpose() * dtXju[u];
+                Xhat[j][s] = acc;
+            }
         }
 
-        // Update Q_flat
+        // --- Update Q_blocks: Q[u][s] += dt * prec * R[j][u] * R[j][s]^T ---
         if (j < N - 1) {
-            Eigen::VectorXd Rj_flat(mdw);
-            for (int s = 0; s < m; ++s)
-                Rj_flat.segment<D_W>(s * dw) = R[j][s];
-            Q_flat.topLeftCorner(mdw, mdw) +=
-                DT * prec * Rj_flat * Rj_flat.transpose();
-        }
-    }
-
-    // Convert F_flat_store to Kernel3D F
-    for (int j = 0; j < N; ++j) {
-        int m = j + 1;
-        int mdw = m * dw;
-        if (mdw > 0) {
-            Eigen::MatrixXd flat_j = F_flat_store[j].topLeftCorner(mdw, mdw);
-            from_flat(flat_j, m, F, j);
+            double coeff = DT * prec;
+            for (int u = 0; u < m; ++u) {
+                Vec3 Ru_scaled = coeff * R[j][u];
+                for (int s = 0; s < m; ++s)
+                    Q_blocks[u][s] += Ru_scaled * R[j][s].transpose();
+            }
         }
     }
 }
 
 // ============================================================
-// primitive_control_kernel
+// primitive_control_kernel — direct block operations
+// calD[j][s] = Pi * D[j][s] + dt * sum_u F[j][u][s]^T * D[j][u]
 // ============================================================
 void primitive_control_kernel(const Kernel2D& D, const Kernel3D& F,
                               const Mat3& Pi, Kernel2D& calD) {
-    for (auto& row : calD)
-        for (auto& v : row)
-            v.setZero();
-
     for (int j = 0; j < N; ++j) {
         int m = j + 1;
-        int mdw = m * D_W;
-
-        // calD[j][s] = D[j][:m] @ Pi + dt * (D[j].ravel() @ F_t).reshape
-        // i.e., calD[j][s] = Pi * D[j][s]  +  dt * sum_u F[j][u][s]^T * D[j][u]
-        // (using the to_flat convention)
-
-        // More precisely: compute via flat multiply
-        Eigen::VectorXd Dj_flat(mdw);
-        for (int s = 0; s < m; ++s)
-            Dj_flat.segment<D_W>(s * D_W) = D[j][s];
-
-        Eigen::MatrixXd F_t;
-        to_flat(F, j, m, F_t);
-
-        Eigen::VectorXd result_flat(mdw);
-        // Pi * D[j][s] for each s
-        for (int s = 0; s < m; ++s)
-            result_flat.segment<D_W>(s * D_W) = Pi * D[j][s];
-
-        // + dt * (Dj_flat^T @ F_t)^T
-        result_flat += DT * (Dj_flat.transpose() * F_t).transpose();
-
-        for (int s = 0; s < m; ++s)
-            calD[j][s] = result_flat.segment<D_W>(s * D_W);
+        for (int s = 0; s < m; ++s) {
+            Vec3 acc = Pi * D[j][s];
+            for (int u = 0; u < m; ++u)
+                acc += DT * F[j][u][s].transpose() * D[j][u];
+            calD[j][s] = acc;
+        }
+        for (int s = m; s < N; ++s)
+            calD[j][s].setZero();
     }
 }
 
 // ============================================================
 // forward_environment
 // ============================================================
-EnvironmentResult forward_environment(
+void forward_environment(
     const Kernel2D& D1, const Kernel2D& D2,
     double obs_gain1, double obs_gain2,
     int inner_iters,
     const Mat3& Pi_1, int obs_idx_1,
-    const Mat3& Pi_2, int obs_idx_2) {
-
-    EnvironmentResult env;
+    const Mat3& Pi_2, int obs_idx_2,
+    EnvironmentResult& env) {
 
     // Initial calD from just Pi projection
     Kernel2D calD1, calD2;
@@ -351,16 +308,18 @@ EnvironmentResult forward_environment(
     gain2.fill(obs_gain2);
 
     Kernel2D R1, R2, Xhat1, Xhat2;
-    Eigen::MatrixXd Q1, Q2;
-    Kernel3D F1, F2;
+    Eigen::MatrixXd Q_dummy; // not used in optimized path
+    // Reuse F1, F2 from env to avoid reallocation
+    Kernel3D& F1 = env.F1;
+    Kernel3D& F2 = env.F2;
 
     for (int it = 0; it < inner_iters; ++it) {
         compute_filter_kernels(X, Pi_1, obs_idx_1, gain1,
                                FILTER_INNER_ITERS, FILTER_RELAX,
-                               R1, Q1, F1, Xhat1);
+                               R1, Q_dummy, F1, Xhat1);
         compute_filter_kernels(X, Pi_2, obs_idx_2, gain2,
                                FILTER_INNER_ITERS, FILTER_RELAX,
-                               R2, Q2, F2, Xhat2);
+                               R2, Q_dummy, F2, Xhat2);
 
         Kernel2D calD1_new, calD2_new;
         primitive_control_kernel(D1, F1, Pi_1, calD1_new);
@@ -380,33 +339,32 @@ EnvironmentResult forward_environment(
 
     env.X = X;
     env.R1 = R1; env.R2 = R2;
-    env.Q1 = Q1; env.Q2 = Q2;
-    env.F1 = F1; env.F2 = F2;
+    // F1, F2 already written in-place via references
     env.Xhat1 = Xhat1; env.Xhat2 = Xhat2;
     env.calD1 = calD1; env.calD2 = calD2;
-    return env;
 }
 
 // ============================================================
-// backward_kernels
+// backward_kernels — only zero used portions
 // ============================================================
 void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
                       const Kernel2D& Dk,
                       const std::array<double, N>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx, Kernel3D& Hk) {
-    // Zero init
+    // Zero init Hx
     for (auto& row : Hx)
         for (auto& v : row)
             v.setZero();
-    for (int i = 0; i < N; ++i)
-        for (int j2 = 0; j2 < N; ++j2)
-            for (int k = 0; k < N; ++k)
-                Hk[i][j2][k].setZero();
 
     // Terminal condition
     for (int s = 0; s < N; ++s)
         Hx[N - 1][s] = -terminal_state_weight * X[N - 1][s];
+
+    // Zero Hk[N-1] (only used portion)
+    for (int z = 0; z < N; ++z)
+        for (int r = 0; r < N; ++r)
+            Hk[N - 1][z][r].setZero();
 
     for (int j = N - 2; j >= 0; --j) {
         int t_idx = j + 1;
@@ -414,52 +372,24 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
         int m = j + 1;
         int mz = t_idx + 1;
 
-        // coupling_x = dt * Pk * einsum("za,zrab->rb", Rz, Hk_t)
-        // Rz = Rk[t_idx][:mz], Hk_t = Hk[t_idx][:mz][:m]
-        // coupling_x[r][b] = dt * Pk * sum_z sum_a Rk[t_idx][z][a] * Hk[t_idx][z][r](a,b)
-
-        // Hx[j][r] = Hx[t_idx][r] + dt * (X[t_idx][r] + coupling_x_r)
+        // Compute coupling/W for each r (reused in Hx and Hk)
+        // W[r] = dt * Pk * sum_z Hk[t_idx][z][r]^T * Rk[t_idx][z]
+        std::array<Vec3, N> W;
         for (int r = 0; r < m; ++r) {
-            Vec3 coupling = Vec3::Zero();
-            for (int z = 0; z < mz; ++z) {
-                // sum_a Rk[t_idx][z][a] * Hk[t_idx][z][r](a, :)
-                // = Hk[t_idx][z][r]^T * Rk[t_idx][z]
-                coupling += Hk[t_idx][z][r].transpose() * Rk[t_idx][z];
-            }
-            coupling *= DT * Pk;
-            Hx[j][r] = Hx[t_idx][r] + DT * (X[t_idx][r] + coupling);
-        }
-
-        // Hk[j][z][r](a,b) = Hk[t_idx][z][r](a,b) + dt * (first - coupling_k)
-        // first = D[t_idx][r][a] * Hx[t_idx][z][b]  → outer product D[t_idx][r] * Hx[t_idx][z]^T
-        // Actually: first[z,r,a,b] = Dk[t_idx,r,a,_] * Hx[t_idx,_,z,b]
-        // Python: first = Dk[t_idx, :m, :, None] * Hx[t_idx, None, :m, None, :]
-        // Dk[t_idx][:m] shape (m, dw) → Dk[t_idx][r][a]
-        // Hx[t_idx][:m] shape (m, dw) → Hx[t_idx][z][b]
-        // first[r,z,a,b] = Dk[t_idx][r][a] * Hx[t_idx][z][b]
-
-        // W[r][b] = dt * Pk * sum_z sum_c Rk[t_idx][z][c] * Hk[t_idx][z][r](c,b)
-        // = coupling from above (same as coupling_x but different usage)
-        // Actually W is same formula: W[r,b] = dt*Pk * einsum("zc,zrcb->rb", Rz, Hk_t)
-        // This is the same as coupling_x above.
-
-        // coupling_k[z,r,a,b] = X[t_idx][z][a] * W[r][b]
-        // Python: X[t_idx, :m, None, :, None] * W[None, :, None, :]
-        // coupling_k[z,r,a,b] = X[t_idx][z][a] * W[r][b]
-
-        // First compute W for each r
-        std::vector<Vec3> W(m, Vec3::Zero());
-        for (int r = 0; r < m; ++r) {
+            Vec3 acc = Vec3::Zero();
             for (int z = 0; z < mz; ++z)
-                W[r] += Hk[t_idx][z][r].transpose() * Rk[t_idx][z];
-            W[r] *= DT * Pk;
+                acc += Hk[t_idx][z][r].transpose() * Rk[t_idx][z];
+            W[r] = DT * Pk * acc;
         }
 
+        // Hx[j][r] = Hx[t_idx][r] + dt * (X[t_idx][r] + W[r])
+        for (int r = 0; r < m; ++r)
+            Hx[j][r] = Hx[t_idx][r] + DT * (X[t_idx][r] + W[r]);
+
+        // Hk[j][z][r] = Hk[t_idx][z][r] + dt * (Dk[t_idx][r] * Hx[t_idx][z]^T - X[t_idx][z] * W[r]^T)
         for (int z = 0; z < m; ++z) {
             for (int r = 0; r < m; ++r) {
-                // first = Dk[t_idx][r] * Hx[t_idx][z]^T  (outer product, 3x3)
                 Mat3 first = Dk[t_idx][r] * Hx[t_idx][z].transpose();
-                // coupling_k = X[t_idx][z] * W[r]^T
                 Mat3 ck = X[t_idx][z] * W[r].transpose();
                 Hk[j][z][r] = Hk[t_idx][z][r] + DT * (first - ck);
             }
@@ -489,7 +419,6 @@ BackwardBarResult backward_bar_adjoints(
         int mz = t_idx + 1;
         int m_u = j + 1;
 
-        // I_val = dt * Pk * dot(Rk[t_idx][:mz].ravel(), barHk[t_idx][:mz].ravel())
         double I_val = 0.0;
         for (int z = 0; z < mz; ++z)
             I_val += Rk[t_idx][z].dot(res.barHk[t_idx][z]);
@@ -586,13 +515,16 @@ EquilibriumResult solve_equilibrium(
     auto prec1 = make_constant_prec(P1);
     auto prec2 = make_constant_prec(P2);
 
+    // Pre-allocate to avoid repeated 36MB heap alloc/free per iteration
+    EnvironmentResult env;
+    Kernel3D Hk1, Hk2;
+
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
-        auto env = forward_environment(D1, D2, p1_val, p2_val,
-                                       FORWARD_INNER_ITERS,
-                                       Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+        forward_environment(D1, D2, p1_val, p2_val,
+                            FORWARD_INNER_ITERS,
+                            Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
         Kernel2D Hx1, Hx2;
-        Kernel3D Hk1, Hk2;
         backward_kernels(env.X, env.R2, D2, prec2, 0.0, Hx1, Hk1);
         backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2, Hk2);
 
@@ -638,11 +570,11 @@ EquilibriumResult solve_equilibrium(
         }
     }
 
-    auto env = forward_environment(D1, D2, p1_val, p2_val,
-                                   FORWARD_INNER_ITERS,
-                                   Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+    forward_environment(D1, D2, p1_val, p2_val,
+                        FORWARD_INNER_ITERS,
+                        Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
-    return {D1, D2, env, residuals};
+    return {D1, D2, std::move(env), residuals};
 }
 
 // ============================================================
