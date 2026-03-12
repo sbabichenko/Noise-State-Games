@@ -245,6 +245,17 @@ void forward_environment(
 
 using HkSlice = std::array<std::array<Mat3, N_MAX>, N_MAX>;
 
+// Thread-local HkSlice buffers — reused across backward_kernels calls within a
+// thread to avoid heap allocation churn (38 alloc/free cycles per solve at 920KB each).
+// thread_local is needed because OMP parallel sections call backward_kernels
+// concurrently from different threads.
+static thread_local std::unique_ptr<HkSlice> s_hk_buf0, s_hk_buf1;
+
+static void ensure_hk_buffers() {
+    if (!s_hk_buf0) s_hk_buf0 = std::make_unique<HkSlice>();
+    if (!s_hk_buf1) s_hk_buf1 = std::make_unique<HkSlice>();
+}
+
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
                       const std::array<double, N_MAX>& prec_k,
@@ -254,12 +265,13 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
     for (int s = 0; s < g_n; ++s)
         Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
 
-    // Heap-allocated to avoid ~900KB stack pressure (critical for WASM).
-    auto buf0 = std::make_unique<HkSlice>();
-    auto buf1 = std::make_unique<HkSlice>();
-    for (auto& row : *buf0) for (auto& m : row) m.setZero();
-    HkSlice* cur = buf0.get();
-    HkSlice* nxt = buf1.get();
+    ensure_hk_buffers();
+    // Only zero the portion we'll use (g_n rows × g_n cols)
+    for (int z = 0; z < g_n; ++z)
+        for (int r = 0; r < g_n; ++r)
+            (*s_hk_buf0)[z][r].setZero();
+    HkSlice* cur = s_hk_buf0.get();
+    HkSlice* nxt = s_hk_buf1.get();
 
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;  // t+1

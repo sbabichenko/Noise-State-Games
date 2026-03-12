@@ -265,7 +265,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFull, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -305,9 +305,29 @@ function callLight(p1, p2, b1, b2, r1, r2) {
 }
 
 function callFull(p1, p2, b1, b2, r1, r2) {
-    const ptr = solveFull(p1, p2, b1, b2, r1, r2);
-    const json = Module.UTF8ToString(ptr);
-    return JSON.parse(json);
+    // Binary transfer: returns pointer to 4 kernels × 3 channels × N×N doubles
+    const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
+    const n = N;
+    const block = n * n;
+    const total = 4 * 3 * block;
+    const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
+    const t = Array.from({length: n}, (_, i) => i * currentT / n);
+    const kernelNames = ['X', 'D1', 'D2', 'calD1'];
+    const result = {t};
+    let offset = 0;
+    for (const name of kernelNames) {
+        const kernel = {};
+        for (let ch = 0; ch < 3; ch++) {
+            const rows = [];
+            for (let ti = 0; ti < n; ti++) {
+                rows.push(Array.from(arr.subarray(offset, offset + n)));
+                offset += n;
+            }
+            kernel['ch' + ch] = rows;
+        }
+        result[name] = kernel;
+    }
+    return result;
 }
 
 function callSweep(p1, b1, b2, r1, r2, p2Arr) {
@@ -710,7 +730,7 @@ function onTabSwitch(tab) {
 SolverModule().then(mod => {
     Module = mod;
     solveLight = mod.cwrap('solve_light', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
-    solveFull = mod.cwrap('solve_full', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
+    solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);

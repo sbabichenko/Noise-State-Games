@@ -31,28 +31,7 @@ static void out_array(const char* name, const double* arr, int n) {
     out("]");
 }
 
-static void out_kernel2d(const char* name, const Kernel2D& K) {
-    char buf[32];
-    g_output += '"'; g_output += name; g_output += "\":{";
-    for (int ch = 0; ch < 3; ++ch) {
-        if (ch) g_output += ',';
-        g_output += "\"ch"; g_output += ('0' + ch); g_output += "\":[";
-        for (int ti = 0; ti < g_n; ++ti) {
-            if (ti) g_output += ',';
-            g_output += '[';
-            for (int si = 0; si <= ti; ++si) {
-                if (si) g_output += ',';
-                int n = snprintf(buf, sizeof(buf), "%.6g", K[ti][si](ch));
-                g_output.append(buf, n);
-            }
-            for (int si = ti + 1; si < g_n; ++si)
-                g_output += ",0";
-            g_output += ']';
-        }
-        g_output += ']';
-    }
-    g_output += '}';
-}
+// (out_kernel2d removed — kernel2d data now uses binary transfer via solve_full_bin)
 
 static void compute_perfect_info(double b1, double b2,
                                   std::array<double, N_MAX>& barD1_pi,
@@ -203,29 +182,39 @@ const char* solve_light(double p1, double p2, double b1, double b2, double r1, d
     return g_output.c_str();
 }
 
-// Full solve: light data + all kernel2d outputs. ~6MB JSON.
-// Used by Kernels tab.
+// Binary full solve: writes 4 kernels × 3 channels × N×N doubles to buffer.
+// Layout: [X_ch0[N×N], X_ch1[N×N], X_ch2[N×N], D1_ch0, ..., calD1_ch2]
+// Each channel is row-major lower-triangular (upper entries are 0).
+// JS reads directly from HEAPF64 — no JSON serialize/parse.
+static std::vector<double> g_full_buf;
+
 EMSCRIPTEN_KEEPALIVE
-const char* solve_full(double p1, double p2, double b1, double b2, double r1, double r2) {
-    g_output.clear();
-    g_output.reserve(256 * 1024);
+double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, double r2) {
     ensure_solve(p1, p2, b1, b2, r1, r2);
 
-    const auto& tg = t_grid();
-    const auto& eq = g_cache.eq;
-    const auto& bar = g_cache.bar;
+    const int n = g_n;
+    const int block = n * n;
+    // 4 kernels × 3 channels × N×N
+    g_full_buf.resize(4 * 3 * block);
 
-    out("{");
-    out_array("t", tg.data(), g_n);
+    const Kernel2D* kernels[4] = {
+        &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1
+    };
 
-    out(","); out_kernel2d("X", eq.env.X);
-    out(","); out_kernel2d("D1", eq.D1);
-    out(","); out_kernel2d("D2", eq.D2);
-    out(","); out_kernel2d("calD1", eq.calD1);
+    for (int k = 0; k < 4; ++k) {
+        const Kernel2D& K = *kernels[k];
+        for (int ch = 0; ch < 3; ++ch) {
+            double* dst = g_full_buf.data() + (k * 3 + ch) * block;
+            for (int ti = 0; ti < n; ++ti) {
+                for (int si = 0; si <= ti; ++si)
+                    dst[ti * n + si] = K[ti][si](ch);
+                for (int si = ti + 1; si < n; ++si)
+                    dst[ti * n + si] = 0.0;
+            }
+        }
+    }
 
-    out("}");
-
-    return g_output.c_str();
+    return g_full_buf.data();
 }
 
 EMSCRIPTEN_KEEPALIVE

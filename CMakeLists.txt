@@ -31,3 +31,10 @@ target_compile_options(solve_interactive PRIVATE -O3 -march=native -Wall -Wextra
 if(OpenMP_CXX_FOUND)
     target_link_libraries(solve_interactive PRIVATE OpenMP::OpenMP_CXX)
 endif()
+
+add_executable(benchmark
+    benchmark.cpp
+    lqg_solver.cpp
+)
+target_link_libraries(benchmark PRIVATE Eigen3::Eigen)
+target_compile_options(benchmark PRIVATE -O3 -march=native -Wall -Wextra)
