@@ -265,7 +265,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveSingle, solveSweep, solveFKernel, wasmSetGrid, wasmMalloc, wasmFree;
+let solveLight, solveFull, solveSweep, solveFKernel, wasmSetGrid, wasmMalloc, wasmFree;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -298,8 +298,14 @@ function makeViridis(n) {
     return Array.from({length: n}, (_, i) => viridisColor(i / (n - 1)));
 }
 
-function callSingle(p1, p2, b1, b2, r1, r2) {
-    const ptr = solveSingle(p1, p2, b1, b2, r1, r2);
+function callLight(p1, p2, b1, b2, r1, r2) {
+    const ptr = solveLight(p1, p2, b1, b2, r1, r2);
+    const json = Module.UTF8ToString(ptr);
+    return JSON.parse(json);
+}
+
+function callFull(p1, p2, b1, b2, r1, r2) {
+    const ptr = solveFull(p1, p2, b1, b2, r1, r2);
     const json = Module.UTF8ToString(ptr);
     return JSON.parse(json);
 }
@@ -525,8 +531,8 @@ let debounceTimer = null;
 let activeTab = 'tab-equilibrium';
 
 // Cached solver results + dirty flags per tab
-let singleData = null, sweepData = null, fKernelData = null;
-let singleKey = '', sweepKey = '', fKernelKey = '';
+let lightData = null, fullData = null, sweepData = null, fKernelData = null;
+let lightKey = '', fullKey = '', sweepKey = '', fKernelKey = '';
 const dirty = { 'tab-equilibrium': true, 'tab-kernels': true, 'tab-fkernel': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
@@ -564,19 +570,30 @@ function applyGrid(p) {
         currentT = p.T;
         N = p.N;
         // Grid change invalidates all caches
-        singleKey = ''; sweepKey = ''; fKernelKey = '';
+        lightKey = ''; fullKey = ''; sweepKey = ''; fKernelKey = '';
     }
 }
 
-// Ensure single solve result is fresh (cached if params unchanged)
-function ensureSingle(p) {
+// Ensure light solve result is fresh (~5KB: bar solution, costs, wedges, residuals)
+function ensureLight(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== singleKey) {
-        singleData = callSingle(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        singleKey = key;
+    if (key !== lightKey) {
+        lightData = callLight(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
+        lightKey = key;
     }
-    return singleData;
+    return lightData;
+}
+
+// Ensure full solve result is fresh (~6MB: kernel2d data for Kernels tab)
+function ensureFull(p) {
+    applyGrid(p);
+    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
+    if (key !== fullKey) {
+        fullData = callFull(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
+        fullKey = key;
+    }
+    return fullData;
 }
 
 // Ensure sweep result is fresh (sweep doesn't depend on p2)
@@ -604,13 +621,13 @@ function ensureFKernel(p) {
 function renderTab(tab, p) {
     switch (tab) {
         case 'tab-equilibrium': {
-            const data = ensureSingle(p);
+            const data = ensureLight(p);
             plotControls('plot-controls', data, p.b1, p.b2);
             plotWedges('plot-wedges', data);
             break;
         }
         case 'tab-kernels': {
-            const data = ensureSingle(p);
+            const data = ensureFull(p);
             plotKernel('plot-X', data.t, data.X, 'X(t,s)');
             plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
             plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
@@ -631,7 +648,7 @@ function renderTab(tab, p) {
             break;
         }
         case 'tab-diagnostics': {
-            const data = ensureSingle(p);
+            const data = ensureLight(p);
             plotResidual('plot-residual', data);
             break;
         }
@@ -648,8 +665,8 @@ function updateActive() {
 
     const totalMs = performance.now() - t0;
 
-    // Update status line with single-solve info (cheap — cached)
-    const data = ensureSingle(p);
+    // Update status line with light-solve info (cheap — cached)
+    const data = ensureLight(p);
     document.getElementById('status').textContent =
         `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
         `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
@@ -672,7 +689,8 @@ function onTabSwitch(tab) {
 // --- init ---
 SolverModule().then(mod => {
     Module = mod;
-    solveSingle = mod.cwrap('solve_single', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
+    solveLight = mod.cwrap('solve_light', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
+    solveFull = mod.cwrap('solve_full', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernel = mod.cwrap('solve_f_kernel', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);

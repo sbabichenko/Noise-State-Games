@@ -254,10 +254,12 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
     for (int s = 0; s < g_n; ++s)
         Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
 
-    HkSlice buf0{}, buf1;
-    for (auto& row : buf0) for (auto& m : row) m.setZero();
-    HkSlice* cur = &buf0;
-    HkSlice* nxt = &buf1;
+    // Heap-allocated to avoid ~900KB stack pressure (critical for WASM).
+    auto buf0 = std::make_unique<HkSlice>();
+    auto buf1 = std::make_unique<HkSlice>();
+    for (auto& row : *buf0) for (auto& m : row) m.setZero();
+    HkSlice* cur = buf0.get();
+    HkSlice* nxt = buf1.get();
 
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;  // t+1
@@ -630,27 +632,29 @@ FSlice compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
     double g = obs_gain;
 
     // Two slices for ping-pong: prev = F[j-1], cur = F[j]
-    FSlice prev, cur;
+    // Heap-allocated to avoid ~900KB stack pressure; pointer swap avoids deep copy.
+    auto prev = std::make_unique<FSlice>();
+    auto cur  = std::make_unique<FSlice>();
 
     // j = 0: F[0][0][0] = 0
-    prev.data[0][0].setZero();
+    prev->data[0][0].setZero();
 
     for (int j = 1; j < g_n; ++j) {
         // Borders
         for (int u = 0; u < j; ++u) {
-            cur.data[u][j] = g * Xtilde[j][u] * e_i.transpose();
-            cur.data[j][u] = g * e_i * Xtilde[j][u].transpose();
+            cur->data[u][j] = g * Xtilde[j][u] * e_i.transpose();
+            cur->data[j][u] = g * e_i * Xtilde[j][u].transpose();
         }
-        cur.data[j][j].setZero();
+        cur->data[j][j].setZero();
 
         // Interior: F[j][u][s] = F[j-1][u][s] + Xtilde[j][u] * A_store[j][s]^T
         for (int u = 0; u < j; ++u)
             for (int s = 0; s < j; ++s)
-                cur.data[u][s] = prev.data[u][s] + Xtilde[j][u] * A_store[j][s].transpose();
+                cur->data[u][s] = prev->data[u][s] + Xtilde[j][u] * A_store[j][s].transpose();
 
         std::swap(prev, cur);
     }
 
     // After the loop, prev holds F[g_n-1]
-    return prev;
+    return std::move(*prev);
 }

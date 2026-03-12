@@ -1,5 +1,10 @@
 // WASM entry point for the interactive LQG solver.
 // Compiled with Emscripten, called from JavaScript via ccall/cwrap.
+//
+// Architecture: a C++-side cache holds the last EquilibriumResult, BarSolution,
+// and derived quantities. Multiple WASM endpoints (solve_light, solve_full,
+// solve_f_kernel, solve_sweep) all use ensure_solve() to avoid redundant
+// recomputation when the same parameters are queried from different tabs.
 
 #include "lqg_solver.h"
 #include <emscripten/emscripten.h>
@@ -75,7 +80,6 @@ static void out_fslice(const char* name, const FSlice& F) {
         for (int col = 0; col < 3; ++col) {
             if (!first) g_output += ',';
             first = false;
-            // Key: "r0c0", "r0c1", etc.
             g_output += "\"r"; g_output += ('0' + row);
             g_output += "c"; g_output += ('0' + col); g_output += "\":[";
             for (int u = 0; u < g_n; ++u) {
@@ -94,47 +98,77 @@ static void out_fslice(const char* name, const FSlice& F) {
     g_output += '}';
 }
 
-extern "C" {
+// ============================================================
+// Solver result cache
+// ============================================================
+// Avoids redundant solve_equilibrium calls when switching between tabs
+// (e.g. Equilibrium → Kernels → F Kernel all need the same solve).
 
-EMSCRIPTEN_KEEPALIVE
-void wasm_set_grid(int n, double T) {
-    set_grid(n, T);
+static struct SolveCache {
+    double p1, p2, b1, b2, r1, r2;
+    int n; double T;
+    bool valid;
+
+    EquilibriumResult eq;
+    BarSolution bar;
+    CostPair costs;
+    std::array<double, N_MAX> V1, V2;
+    std::array<double, N_MAX> barD1_pi, barX_pi;
+} g_cache = {};
+
+static bool cache_matches(double p1, double p2, double b1, double b2, double r1, double r2) {
+    return g_cache.valid &&
+           g_cache.p1 == p1 && g_cache.p2 == p2 &&
+           g_cache.b1 == b1 && g_cache.b2 == b2 &&
+           g_cache.r1 == r1 && g_cache.r2 == r2 &&
+           g_cache.n == g_n && g_cache.T == g_T;
 }
 
-// Returns pointer to JSON string (owned by g_output, valid until next call)
-EMSCRIPTEN_KEEPALIVE
-const char* solve_single(double p1, double p2, double b1, double b2, double r1, double r2) {
-    g_output.clear();
-    g_output.reserve(64 * 1024);
+// Run the full solve pipeline if not cached. After this, g_cache holds all results.
+static void ensure_solve(double p1, double p2, double b1, double b2, double r1, double r2) {
+    if (cache_matches(p1, p2, b1, b2, r1, r2)) return;
+
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
 
-    auto eq = solve_equilibrium(p1, p2, false);
-    auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
-                                      p1*p1, p2*p2, 2000, 0.08, 1e-10);
-    auto costs = compute_costs_general(eq.env, eq.calD1, eq.calD2, bar, r1, r2, b1, b2);
+    g_cache.eq = solve_equilibrium(p1, p2, false);
+    g_cache.bar = solve_bar_equilibrium(g_cache.eq.env, g_cache.eq.D1, g_cache.eq.D2,
+                                         p1*p1, p2*p2, 2000, 0.08, 1e-10);
+    g_cache.costs = compute_costs_general(g_cache.eq.env, g_cache.eq.calD1, g_cache.eq.calD2,
+                                           g_cache.bar, r1, r2, b1, b2);
 
     auto prec1_arr = make_constant_prec(p1 * p1);
     auto prec2_arr = make_constant_prec(p2 * p2);
-    auto bba1 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde2, eq.D2,
-                                       bar.barX, b1, prec2_arr, 0.0);
-    auto bba2 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde1, eq.D1,
-                                       bar.barX, b2, prec1_arr, 0.0);
-    std::array<double, N_MAX> V1_arr, V2_arr;
+    auto bba1 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
+                                       g_cache.bar.barX, b1, prec2_arr, 0.0);
+    auto bba2 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
+                                       g_cache.bar.barX, b2, prec1_arr, 0.0);
     for (int j = 0; j < g_n; ++j) {
         double V1 = 0.0, V2 = 0.0;
         for (int z = 0; z <= j; ++z) {
-            V1 += eq.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
-            V2 += eq.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
+            V1 += g_cache.eq.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
+            V2 += g_cache.eq.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
         }
-        V1_arr[j] = V1 * p2 * p2 * g_dt;
-        V2_arr[j] = V2 * p1 * p1 * g_dt;
+        g_cache.V1[j] = V1 * p2 * p2 * g_dt;
+        g_cache.V2[j] = V2 * p1 * p1 * g_dt;
     }
 
-    std::array<double, N_MAX> barD1_pi, barX_pi;
-    compute_perfect_info(b1, b2, barD1_pi, barX_pi);
+    compute_perfect_info(b1, b2, g_cache.barD1_pi, g_cache.barX_pi);
 
+    g_cache.p1 = p1; g_cache.p2 = p2;
+    g_cache.b1 = b1; g_cache.b2 = b2;
+    g_cache.r1 = r1; g_cache.r2 = r2;
+    g_cache.n = g_n; g_cache.T = g_T;
+    g_cache.valid = true;
+}
+
+// Serialize only the "light" data (bar solution, costs, wedges, residuals).
+// ~5KB JSON. Used by Equilibrium and Diagnostics tabs.
+static void serialize_light() {
     const auto& tg = t_grid();
+    const auto& eq = g_cache.eq;
+    const auto& bar = g_cache.bar;
+
     out("{");
     out_array("t", tg.data(), g_n);
     out(",\"residuals\":[");
@@ -142,21 +176,59 @@ const char* solve_single(double p1, double p2, double b1, double b2, double r1, 
         out("%s%.6g", i ? "," : "", eq.residuals[i]);
     out("],\"n_iters\":%zu", eq.residuals.size());
 
+    out(","); out_array("barD1", bar.barD1.data(), g_n);
+    out(","); out_array("barD2", bar.barD2.data(), g_n);
+    out(","); out_array("barX", bar.barX.data(), g_n);
+    out(",\"bar_residual\":%.6g", bar.bar_residual);
+    out(","); out_array("V1", g_cache.V1.data(), g_n);
+    out(","); out_array("V2", g_cache.V2.data(), g_n);
+    out(","); out_array("barD1_pi", g_cache.barD1_pi.data(), g_n);
+    out(","); out_array("barX_pi", g_cache.barX_pi.data(), g_n);
+    out(",\"J1\":%.6g,\"J2\":%.6g", g_cache.costs.J1, g_cache.costs.J2);
+    out(",\"p1\":%.6g,\"p2\":%.6g,\"b1\":%.6g,\"b2\":%.6g",
+        g_cache.p1, g_cache.p2, g_cache.b1, g_cache.b2);
+    out("}");
+}
+
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_set_grid(int n, double T) {
+    set_grid(n, T);
+    g_cache.valid = false;  // grid change invalidates cache
+}
+
+// Light solve: bar solution + costs + wedges + residuals. ~5KB JSON.
+// Used by Equilibrium tab and Diagnostics tab.
+EMSCRIPTEN_KEEPALIVE
+const char* solve_light(double p1, double p2, double b1, double b2, double r1, double r2) {
+    g_output.clear();
+    g_output.reserve(8 * 1024);
+    ensure_solve(p1, p2, b1, b2, r1, r2);
+    serialize_light();
+    return g_output.c_str();
+}
+
+// Full solve: light data + all kernel2d outputs. ~6MB JSON.
+// Used by Kernels tab.
+EMSCRIPTEN_KEEPALIVE
+const char* solve_full(double p1, double p2, double b1, double b2, double r1, double r2) {
+    g_output.clear();
+    g_output.reserve(256 * 1024);
+    ensure_solve(p1, p2, b1, b2, r1, r2);
+
+    const auto& tg = t_grid();
+    const auto& eq = g_cache.eq;
+    const auto& bar = g_cache.bar;
+
+    out("{");
+    out_array("t", tg.data(), g_n);
+
     out(","); out_kernel2d("X", eq.env.X);
     out(","); out_kernel2d("D1", eq.D1);
     out(","); out_kernel2d("D2", eq.D2);
     out(","); out_kernel2d("calD1", eq.calD1);
 
-    out(","); out_array("barD1", bar.barD1.data(), g_n);
-    out(","); out_array("barD2", bar.barD2.data(), g_n);
-    out(","); out_array("barX", bar.barX.data(), g_n);
-    out(",\"bar_residual\":%.6g", bar.bar_residual);
-    out(","); out_array("V1", V1_arr.data(), g_n);
-    out(","); out_array("V2", V2_arr.data(), g_n);
-    out(","); out_array("barD1_pi", barD1_pi.data(), g_n);
-    out(","); out_array("barX_pi", barX_pi.data(), g_n);
-    out(",\"J1\":%.6g,\"J2\":%.6g", costs.J1, costs.J2);
-    out(",\"p1\":%.6g,\"p2\":%.6g,\"b1\":%.6g,\"b2\":%.6g", p1, p2, b1, b2);
     out("}");
 
     return g_output.c_str();
@@ -228,20 +300,18 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     return g_output.c_str();
 }
 
-// Compute F kernel slices at t=T for both players. Returns JSON with F1 and F2.
+// Compute F kernel slices at t=T for both players. Reuses cached equilibrium.
 EMSCRIPTEN_KEEPALIVE
 const char* solve_f_kernel(double p1, double p2, double b1, double b2, double r1, double r2) {
     g_output.clear();
     g_output.reserve(128 * 1024);
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    ensure_solve(p1, p2, b1, b2, r1, r2);  // reuses cache — no re-solve if params match
 
-    auto eq = solve_equilibrium(p1, p2, false);
-
-    FSlice F1 = compute_F_slice_at_T(eq.env.Xtilde1, eq.env.A_store1,
-                                      eq.env.obs_gain1, eq.env.obs_idx1);
-    FSlice F2 = compute_F_slice_at_T(eq.env.Xtilde2, eq.env.A_store2,
-                                      eq.env.obs_gain2, eq.env.obs_idx2);
+    const auto& env = g_cache.eq.env;
+    FSlice F1 = compute_F_slice_at_T(env.Xtilde1, env.A_store1,
+                                      env.obs_gain1, env.obs_idx1);
+    FSlice F2 = compute_F_slice_at_T(env.Xtilde2, env.A_store2,
+                                      env.obs_gain2, env.obs_idx2);
 
     const auto& tg = t_grid();
     out("{");
