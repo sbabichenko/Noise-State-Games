@@ -49,32 +49,39 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
 // where gamma_a[s] = border_gt contribution (already computed for Gamma)
 //       partial_c_k = c_k - dot(Xtilde[k][k], X[j][k])
 // ============================================================
+// Projection helpers: Pi has a single 1 on the diagonal at obs_index.
+// Pi*v extracts one component; (I-Pi)*v zeros that component.
+static inline Vec3 apply_Pi(const Vec3& v, int obs_index) {
+    Vec3 r = Vec3::Zero();
+    r(obs_index) = v(obs_index);
+    return r;
+}
+static inline Vec3 apply_I_minus_Pi(const Vec3& v, int obs_index) {
+    Vec3 r = v;
+    r(obs_index) = 0.0;
+    return r;
+}
+
 static void compute_filter_kernels(
-    const Kernel2D& X, const Mat3& Pi, int obs_index,
+    const Kernel2D& X, const Mat3& /*Pi*/, int obs_index,
     double obs_gain_val,
     int filter_iters, double relax,
     Kernel2D& Xtilde, Kernel2D& A_store) {
 
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
-    Mat3 I_minus_Pi = Mat3::Identity() - Pi;
     double g = obs_gain_val;
     double prec = g * g;
     double dt2_prec = DT * DT * prec;
 
     for (int j = 0; j < N; ++j) {
-        int m = j + 1;
-
         if (j == 0) {
-            // Base case: no history
-            Xtilde[0][0] = I_minus_Pi * X[0][0];
+            Xtilde[0][0] = apply_I_minus_Pi(X[0][0], obs_index);
             A_store[0][0].setZero();
             continue;
         }
 
         // --- Compute c_k and partial_c_k for k = 0..j-1 ---
-        // c_k = sum_{u=0}^{k} dot(Xtilde[k][u], X[j][u])
-        // partial_c_k = c_k - dot(Xtilde[k][k], X[j][k]) = sum_{u=0}^{k-1} dot(Xtilde[k][u], X[j][u])
         std::array<double, N> c_k, partial_c_k;
         for (int k = 0; k < j; ++k) {
             double acc = 0.0;
@@ -85,13 +92,13 @@ static void compute_filter_kernels(
         }
 
         // --- coeff_a for gamma_a ---
-        // coeff_a[z] = X[j][z](obs_index) * g
         std::array<double, N> coeff_a;
         for (int z = 0; z < j; ++z)
             coeff_a[z] = X[j][z](obs_index) * g;
 
         // --- Merged computation per s: Q_corr + gamma_a + Xhat interior ---
-        // All iterate k = s+1..j-1, accessing Xtilde[k][s] and A_store[k][s]
+        // gamma_b (border_lt) is identically zero by causality:
+        // Xtilde[u][s] = 0 for s > u, so sum_{u<s} X[j][u]·Xtilde[u][s] = 0.
         std::array<Vec3, N> correction;
         std::array<Vec3, N> Xhat_const;
 
@@ -110,33 +117,22 @@ static void compute_filter_kernels(
             Vec3 Q_corr_s = dt2_prec * (c_k[s] * Xtilde[s][s] + q_upper);
             Vec3 gamma_a_s = DT * ga_acc;
 
-            // gamma_b iterates u < s; border_lt reuses partial_c_k[s]
-            double gb_acc = 0.0;
-            for (int u = 0; u < s; ++u)
-                gb_acc += X[j][u].dot(Xtilde[u][s]);
-
-            correction[s] = Q_corr_s + gamma_a_s + (DT * gb_acc * g) * e_i;
-            Xhat_const[s] = Pi * X[j][s] + gamma_a_s
+            correction[s] = Q_corr_s + gamma_a_s;
+            Xhat_const[s] = apply_Pi(X[j][s], obs_index) + gamma_a_s
                           + (DT * partial_c_k[s] * g) * e_i
                           + DT * xi_acc;
         }
 
-        // s = j: only gamma_b contributes to correction
-        {
-            double gb_acc = 0.0;
-            for (int z = 0; z < j; ++z)
-                gb_acc += X[j][z].dot(Xtilde[z][j]);
-            correction[j] = (DT * gb_acc * g) * e_i;
-        }
-
-        // --- Xtilde[j][s] = (I - Pi) * X[j][s] - correction[s] ---
-        for (int s = 0; s < m; ++s)
-            Xtilde[j][s] = I_minus_Pi * X[j][s] - correction[s];
+        // s = j: correction is zero (gamma_b is zero by causality)
+        // Xtilde[j][j] = (I-Pi)*X[j][j] directly
+        for (int s = 0; s < j; ++s)
+            Xtilde[j][s] = apply_I_minus_Pi(X[j][s], obs_index) - correction[s];
+        Xtilde[j][j] = apply_I_minus_Pi(X[j][j], obs_index);
 
         // --- Rank-1 filter iteration ---
         double sigma = 0.0;
         for (int u = 0; u < j; ++u)
-            sigma += Xtilde[j][u].dot(DT * X[j][u]);
+            sigma += DT * Xtilde[j][u].dot(X[j][u]);
 
         double alpha = relax * DT * prec;
         double beta = 1.0 - relax;
@@ -175,7 +171,7 @@ static void compute_filter_kernels(
 // ============================================================
 void primitive_control_kernel(
     const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
-    double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD) {
+    double obs_gain_val, int obs_index, const Mat3& /*Pi*/, Kernel2D& calD) {
 
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
@@ -183,13 +179,11 @@ void primitive_control_kernel(
 
     for (int j = 0; j < N; ++j) {
         if (j == 0) {
-            calD[0][0] = Pi * D[0][0];
+            calD[0][0] = apply_Pi(D[0][0], obs_index);
             continue;
         }
 
         // Precompute partial_d_k = sum_{u=0}^{k-1} dot(Xtilde[k][u], D[j][u])
-        // for k = 0..j.  partial_d_k[s] also equals the border_lt sum,
-        // so we reuse it below instead of recomputing.
         std::array<double, N> partial_d_k;
         partial_d_k[0] = 0.0;
         for (int k = 1; k <= j; ++k) {
@@ -205,7 +199,7 @@ void primitive_control_kernel(
             D_obs[u] = D[j][u](obs_index);
 
         for (int s = 0; s < j; ++s) {
-            Vec3 acc = Pi * D[j][s];
+            Vec3 acc = apply_Pi(D[j][s], obs_index);
 
             // border_gt + interior merged: both iterate k = s+1..j
             Vec3 bg_vec = Vec3::Zero();
@@ -223,7 +217,7 @@ void primitive_control_kernel(
         }
 
         // s = j: reuse partial_d_k[j]
-        calD[j][j] = Pi * D[j][j] + (DT * g * partial_d_k[j]) * e_i;
+        calD[j][j] = apply_Pi(D[j][j], obs_index) + (DT * g * partial_d_k[j]) * e_i;
     }
 }
 
@@ -241,8 +235,8 @@ void forward_environment(
     Kernel2D calD1, calD2;
     for (int j = 0; j < N; ++j) {
         for (int s = 0; s <= j; ++s) {
-            calD1[j][s] = Pi_1 * D1[j][s];
-            calD2[j][s] = Pi_2 * D2[j][s];
+            calD1[j][s] = apply_Pi(D1[j][s], obs_idx_1);
+            calD2[j][s] = apply_Pi(D2[j][s], obs_idx_2);
         }
     }
 
