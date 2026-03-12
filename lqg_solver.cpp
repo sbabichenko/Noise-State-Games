@@ -7,6 +7,17 @@
 #include "lqg_solver.h"
 #include <algorithm>
 
+// Runtime grid parameters
+int g_n = 40;
+double g_T = 1.0;
+double g_dt = 1.0 / 39.0;
+
+void set_grid(int n, double T) {
+    g_n = std::max(4, std::min(n, N_MAX));
+    g_T = T;
+    g_dt = g_T / (g_n - 1);
+}
+
 double g_b1 = B1_DEFAULT;
 double g_b2 = B2_DEFAULT;
 double g_r1 = RHO;
@@ -17,11 +28,11 @@ double g_r2 = RHO;
 void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
                             Kernel2D& X) {
     X.setZero();
-    for (int s = 0; s < N; ++s) {
+    for (int s = 0; s < g_n; ++s) {
         X[s][s] = E0();
         Vec3 cumsum = Vec3::Zero();
-        for (int t = s + 1; t < N; ++t) {
-            cumsum += DT * (calD1[t - 1][s] + calD2[t - 1][s]);
+        for (int t = s + 1; t < g_n; ++t) {
+            cumsum += g_dt * (calD1[t - 1][s] + calD2[t - 1][s]);
             X[t][s] = E0() + cumsum;
         }
     }
@@ -44,9 +55,9 @@ static void compute_filter_kernels(
 
     double g = obs_gain_val;
     double prec = g * g;
-    double dt2_prec = DT * DT * prec;
+    double dt2_prec = g_dt * g_dt * prec;
 
-    for (int j = 0; j < N; ++j) {
+    for (int j = 0; j < g_n; ++j) {
         if (j == 0) {
             Xtilde[0][0] = I_minus_Pi * X[0][0];
             A_store[0][0].setZero();
@@ -54,7 +65,7 @@ static void compute_filter_kernels(
         }
 
         // c_k = dot(Xtilde[k][0..k], X[j][0..k]),  partial_c_k = same but excluding u=k
-        std::array<double, N> c_k, partial_c_k;
+        std::array<double, N_MAX> c_k, partial_c_k;
         for (int k = 0; k < j; ++k) {
             double acc = 0.0;
             for (int u = 0; u < k; ++u)
@@ -64,12 +75,12 @@ static void compute_filter_kernels(
         }
 
         // coeff_a[z] = g * X[j][z](obs_index)  (for gamma_a accumulation)
-        std::array<double, N> coeff_a;
+        std::array<double, N_MAX> coeff_a;
         for (int z = 0; z < j; ++z)
             coeff_a[z] = g * X[j][z](obs_index);
 
         // Per-s: accumulate Q_corr, gamma_a, and Xhat_const in one pass over k
-        std::array<Vec3, N> correction, Xhat_const;
+        std::array<Vec3, N_MAX> correction, Xhat_const;
         for (int s = 0; s < j; ++s) {
             Vec3 q_upper = Vec3::Zero();
             Vec3 ga_acc = Vec3::Zero();
@@ -82,11 +93,11 @@ static void compute_filter_kernels(
                 xi_acc += partial_c_k[k] * A_store[k][s];
             }
 
-            Vec3 gamma_a_s = DT * ga_acc;
+            Vec3 gamma_a_s = g_dt * ga_acc;
             correction[s] = dt2_prec * (c_k[s] * Xtilde[s][s] + q_upper) + gamma_a_s;
 
-            Vec3 xhat = Pi * X[j][s] + gamma_a_s + DT * xi_acc;
-            xhat += DT * g * partial_c_k[s] * e_i;
+            Vec3 xhat = Pi * X[j][s] + gamma_a_s + g_dt * xi_acc;
+            xhat += g_dt * g * partial_c_k[s] * e_i;
             Xhat_const[s] = xhat;
         }
 
@@ -98,12 +109,12 @@ static void compute_filter_kernels(
         // Rank-1 filter iteration for A_store[j]
         double sigma = 0.0;
         for (int u = 0; u < j; ++u)
-            sigma += DT * Xtilde[j][u].dot(X[j][u]);
+            sigma += g_dt * Xtilde[j][u].dot(X[j][u]);
 
-        double alpha = relax * DT * prec;
+        double alpha = relax * g_dt * prec;
         double beta = 1.0 - relax;
 
-        std::array<Vec3, N> A;
+        std::array<Vec3, N_MAX> A;
         for (int s = 0; s < j; ++s)
             A[s].setZero();
 
@@ -120,7 +131,7 @@ static void compute_filter_kernels(
 
 // --- primitive_control_kernel (F-free) ---
 //
-// calD[j][s] = Pi*D[j][s] + DT * sum_u F[j][u][s]^T * D[j][u]
+// calD[j][s] = Pi*D[j][s] + g_dt * sum_u F[j][u][s]^T * D[j][u]
 // decomposed into border_gt, border_lt, and interior sums.
 
 void primitive_control_kernel(
@@ -130,16 +141,16 @@ void primitive_control_kernel(
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
     double g = obs_gain_val;
-    double DT_g = DT * g;
+    double DT_g = g_dt * g;
 
-    for (int j = 0; j < N; ++j) {
+    for (int j = 0; j < g_n; ++j) {
         if (j == 0) {
             calD[0][0] = Pi * D[0][0];
             continue;
         }
 
         // partial_d_k = sum_{u<k} dot(Xtilde[k][u], D[j][u])
-        std::array<double, N> partial_d_k;
+        std::array<double, N_MAX> partial_d_k;
         partial_d_k[0] = 0.0;
         for (int k = 1; k <= j; ++k) {
             double acc = 0.0;
@@ -149,7 +160,7 @@ void primitive_control_kernel(
         }
 
         // D_obs[u] = D[j][u](obs_index) for border_gt
-        std::array<double, N> D_obs;
+        std::array<double, N_MAX> D_obs;
         for (int u = 0; u <= j; ++u)
             D_obs[u] = D[j][u](obs_index);
 
@@ -162,7 +173,7 @@ void primitive_control_kernel(
                 bg += D_obs[k] * Xtilde[k][s];
                 ia += partial_d_k[k] * A_store[k][s];
             }
-            acc += DT_g * bg + DT * ia;
+            acc += DT_g * bg + g_dt * ia;
             acc += DT_g * partial_d_k[s] * e_i;  // border_lt
 
             calD[j][s] = acc;
@@ -184,7 +195,7 @@ void forward_environment(
     EnvironmentResult& env) {
 
     Kernel2D calD1, calD2;
-    for (int j = 0; j < N; ++j)
+    for (int j = 0; j < g_n; ++j)
         for (int s = 0; s <= j; ++s) {
             calD1[j][s] = Pi_1 * D1[j][s];
             calD2[j][s] = Pi_2 * D2[j][s];
@@ -218,7 +229,7 @@ void forward_environment(
         }
 
         state_kernel_from_calD(calD1_new, calD2_new, X_new);
-        for (int t = 0; t < N; ++t)
+        for (int t = 0; t < g_n; ++t)
             for (int s = 0; s <= t; ++s)
                 X[t][s] = 0.6 * X_new[t][s] + 0.4 * X[t][s];
     }
@@ -230,44 +241,70 @@ void forward_environment(
 
 // --- backward_kernels (ping-pong, no Kernel3D) ---
 //
-// Two N×N Mat3 slices (~230KB total) replace the 36MB Kernel3D.
+// Two N_MAX×N_MAX Mat3 slices replace the full Kernel3D.
 
-using HkSlice = std::array<std::array<Mat3, N>, N>;
+// Dynamically sized HkSlice: g_n × g_n Mat3 entries.
+struct HkSlice {
+    int n;
+    std::vector<Mat3> data;
+    HkSlice() : n(0) {}
+    void resize(int nn) {
+        if (n != nn) { n = nn; data.resize(nn * nn); }
+    }
+    Mat3& operator()(int z, int r) { return data[z * n + r]; }
+    const Mat3& operator()(int z, int r) const { return data[z * n + r]; }
+};
+
+// Thread-local HkSlice buffers — reused across backward_kernels calls within a
+// thread to avoid heap allocation churn.
+// thread_local is needed because OMP parallel sections call backward_kernels
+// concurrently from different threads.
+static thread_local std::unique_ptr<HkSlice> s_hk_buf0, s_hk_buf1;
+
+static void ensure_hk_buffers() {
+    if (!s_hk_buf0) s_hk_buf0 = std::make_unique<HkSlice>();
+    if (!s_hk_buf1) s_hk_buf1 = std::make_unique<HkSlice>();
+    s_hk_buf0->resize(g_n);
+    s_hk_buf1->resize(g_n);
+}
 
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
-                      const std::array<double, N>& prec_k,
+                      const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx) {
     Hx.setZero();
-    for (int s = 0; s < N; ++s)
-        Hx[N - 1][s] = -terminal_state_weight * X[N - 1][s];
+    for (int s = 0; s < g_n; ++s)
+        Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
 
-    HkSlice buf0{}, buf1;
-    for (auto& row : buf0) for (auto& m : row) m.setZero();
-    HkSlice* cur = &buf0;
-    HkSlice* nxt = &buf1;
+    ensure_hk_buffers();
+    // Only zero the portion we'll use (g_n rows × g_n cols)
+    for (int z = 0; z < g_n; ++z)
+        for (int r = 0; r < g_n; ++r)
+            (*s_hk_buf0)(z, r).setZero();
+    HkSlice* cur = s_hk_buf0.get();
+    HkSlice* nxt = s_hk_buf1.get();
 
-    for (int j = N - 2; j >= 0; --j) {
+    for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;  // t+1
         double Pk = prec_k[tp];
 
-        // W[r] = DT * Pk * sum_z Hk[tp][z][r]^T * Xtilde[tp][z]
-        std::array<Vec3, N> W;
+        // W[r] = g_dt * Pk * sum_z Hk[tp][z][r]^T * Xtilde[tp][z]
+        std::array<Vec3, N_MAX> W;
         for (int r = 0; r <= j; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z <= tp; ++z)
-                acc += (*cur)[z][r].transpose() * Xtildek[tp][z];
-            W[r] = DT * Pk * acc;
+                acc += (*cur)(z, r).transpose() * Xtildek[tp][z];
+            W[r] = g_dt * Pk * acc;
         }
 
         for (int r = 0; r <= j; ++r)
-            Hx[j][r] = Hx[tp][r] + DT * (X[tp][r] + W[r]);
+            Hx[j][r] = Hx[tp][r] + g_dt * (X[tp][r] + W[r]);
 
         for (int z = 0; z <= j; ++z)
             for (int r = 0; r <= j; ++r)
-                (*nxt)[z][r] = (*cur)[z][r]
-                    + DT * (Dk[tp][r] * Hx[tp][z].transpose()
+                (*nxt)(z, r) = (*cur)(z, r)
+                    + g_dt * (Dk[tp][r] * Hx[tp][z].transpose()
                           - X[tp][z] * W[r].transpose());
 
         std::swap(cur, nxt);
@@ -277,36 +314,36 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
 // Legacy version that also fills Hk (for figure output)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
-                      const std::array<double, N>& prec_k,
+                      const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx, Kernel3D& Hk) {
     Hx.setZero();
-    for (int s = 0; s < N; ++s)
-        Hx[N - 1][s] = -terminal_state_weight * X[N - 1][s];
+    for (int s = 0; s < g_n; ++s)
+        Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
 
-    for (int z = 0; z < N; ++z)
-        for (int r = 0; r < N; ++r)
-            Hk[N - 1][z][r].setZero();
+    for (int z = 0; z < g_n; ++z)
+        for (int r = 0; r < g_n; ++r)
+            Hk[g_n - 1][z][r].setZero();
 
-    for (int j = N - 2; j >= 0; --j) {
+    for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;
         double Pk = prec_k[tp];
 
-        std::array<Vec3, N> W;
+        std::array<Vec3, N_MAX> W;
         for (int r = 0; r <= j; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z <= tp; ++z)
                 acc += Hk[tp][z][r].transpose() * Xtildek[tp][z];
-            W[r] = DT * Pk * acc;
+            W[r] = g_dt * Pk * acc;
         }
 
         for (int r = 0; r <= j; ++r)
-            Hx[j][r] = Hx[tp][r] + DT * (X[tp][r] + W[r]);
+            Hx[j][r] = Hx[tp][r] + g_dt * (X[tp][r] + W[r]);
 
         for (int z = 0; z <= j; ++z)
             for (int r = 0; r <= j; ++r)
                 Hk[j][z][r] = Hk[tp][z][r]
-                    + DT * (Dk[tp][r] * Hx[tp][z].transpose()
+                    + g_dt * (Dk[tp][r] * Hx[tp][z].transpose()
                           - X[tp][z] * W[r].transpose());
     }
 }
@@ -315,28 +352,28 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
 
 BackwardBarResult backward_bar_adjoints(
     const Kernel2D& X, const Kernel2D& Xtildek, const Kernel2D& Dk,
-    const std::array<double, N>& barX, double b,
-    const std::array<double, N>& prec_k, double terminal_weight) {
+    const std::array<double, N_MAX>& barX, double b,
+    const std::array<double, N_MAX>& prec_k, double terminal_weight) {
 
     BackwardBarResult res;
     res.barHx.fill(0.0);
     res.barHk.setZero();
-    res.barHx[N - 1] = terminal_weight * (barX[N - 1] - b);
+    res.barHx[g_n - 1] = terminal_weight * (barX[g_n - 1] - b);
 
-    for (int j = N - 2; j >= 0; --j) {
+    for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;
         double Pk = prec_k[tp];
 
         double I_val = 0.0;
         for (int z = 0; z <= tp; ++z)
             I_val += Xtildek[tp][z].dot(res.barHk[tp][z]);
-        I_val *= DT * Pk;
+        I_val *= g_dt * Pk;
 
-        res.barHx[j] = res.barHx[tp] + DT * ((barX[tp] - b) + I_val);
+        res.barHx[j] = res.barHx[tp] + g_dt * ((barX[tp] - b) + I_val);
 
         for (int s = 0; s <= j; ++s)
             res.barHk[j][s] = res.barHk[tp][s]
-                + DT * (Dk[tp][s] * res.barHx[tp] - X[tp][s] * I_val);
+                + g_dt * (Dk[tp][s] * res.barHx[tp] - X[tp][s] * I_val);
     }
     return res;
 }
@@ -348,16 +385,16 @@ BarSolution solve_bar_equilibrium(
     double prec1, double prec2,
     int max_iters, double relax, double tol, bool /*verbose*/) {
 
-    std::array<double, N> barD1{}, barD2{};
+    std::array<double, N_MAX> barD1{}, barD2{};
     auto prec1_arr = make_constant_prec(prec1);
     auto prec2_arr = make_constant_prec(prec2);
     double last_err = 1e30;
 
     for (int it = 1; it <= max_iters; ++it) {
-        std::array<double, N> barX;
+        std::array<double, N_MAX> barX;
         barX[0] = X0;
-        for (int j = 0; j < N - 1; ++j)
-            barX[j + 1] = barX[j] + DT * (barD1[j] + barD2[j]);
+        for (int j = 0; j < g_n - 1; ++j)
+            barX[j + 1] = barX[j] + g_dt * (barD1[j] + barD2[j]);
 
         BackwardBarResult bba1, bba2;
         #pragma omp parallel sections
@@ -370,14 +407,14 @@ BarSolution solve_bar_equilibrium(
                                           barX, g_b2, prec1_arr, 0.0);
         }
 
-        std::array<double, N> barD1_new, barD2_new;
-        for (int j = 0; j < N; ++j) {
+        std::array<double, N_MAX> barD1_new, barD2_new;
+        for (int j = 0; j < g_n; ++j) {
             barD1_new[j] = -(1.0 / g_r1) * bba1.barHx[j];
             barD2_new[j] = -(1.0 / g_r2) * bba2.barHx[j];
         }
 
         double n1 = 0, d1 = 0, n2 = 0, d2 = 0;
-        for (int j = 0; j < N; ++j) {
+        for (int j = 0; j < g_n; ++j) {
             double diff1 = barD1_new[j] - barD1[j];
             double diff2 = barD2_new[j] - barD2[j];
             d1 += diff1 * diff1;  n1 += barD1_new[j] * barD1_new[j];
@@ -386,7 +423,7 @@ BarSolution solve_bar_equilibrium(
         last_err = std::max(std::sqrt(d1) / std::max(1.0, std::sqrt(n1)),
                             std::sqrt(d2) / std::max(1.0, std::sqrt(n2)));
 
-        for (int j = 0; j < N; ++j) {
+        for (int j = 0; j < g_n; ++j) {
             barD1[j] += relax * (barD1_new[j] - barD1[j]);
             barD2[j] += relax * (barD2_new[j] - barD2[j]);
         }
@@ -395,8 +432,8 @@ BarSolution solve_bar_equilibrium(
 
     BarSolution sol;
     sol.barX[0] = X0;
-    for (int j = 0; j < N - 1; ++j)
-        sol.barX[j + 1] = sol.barX[j] + DT * (barD1[j] + barD2[j]);
+    for (int j = 0; j < g_n - 1; ++j)
+        sol.barX[j + 1] = sol.barX[j] + g_dt * (barD1[j] + barD2[j]);
     sol.barD1 = barD1;
     sol.barD2 = barD2;
     sol.bar_residual = last_err;
@@ -407,7 +444,7 @@ BarSolution solve_bar_equilibrium(
 
 static double kernel_dot(const Kernel2D& a1, const Kernel2D& a2,
                          const Kernel2D& b1, const Kernel2D& b2) {
-    constexpr int FLAT = Kernel2D::TRI_SIZE * 3;
+    const int FLAT = g_n * (g_n + 1) / 2 * 3;
     Eigen::Map<const Eigen::VectorXd> va1(a1.data[0].data(), FLAT);
     Eigen::Map<const Eigen::VectorXd> vb1(b1.data[0].data(), FLAT);
     Eigen::Map<const Eigen::VectorXd> va2(a2.data[0].data(), FLAT);
@@ -439,10 +476,16 @@ EquilibriumResult solve_equilibrium(
     constexpr int AA_STORE = AA_M + 1;  // +1 so write slot doesn't collide with reads
     constexpr double AA_REG = 1e-12;
     constexpr double AA_BETA = 0.6;
-    constexpr int TRI = Kernel2D::TRI_SIZE;
+    const int TRI = g_n * (g_n + 1) / 2;
 
     struct AAEntry { Kernel2D f1, f2, g1, g2; };
-    std::vector<AAEntry> hist(AA_STORE);
+    // Thread-local AA history: avoids ~29MB alloc/free churn per solve at N=320.
+    static thread_local std::vector<AAEntry> hist;
+    if (static_cast<int>(hist.size()) != AA_STORE) hist.resize(AA_STORE);
+    // Ensure each entry is sized for current g_n
+    for (auto& e : hist) {
+        e.f1.resize(); e.f2.resize(); e.g1.resize(); e.g2.resize();
+    }
     int stored = 0;
 
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
@@ -566,17 +609,17 @@ CostPair compute_costs_general(const EnvironmentResult& env,
                                double r1_val, double r2_val,
                                double b1_val, double b2_val) {
     double J1 = 0.0, J2 = 0.0;
-    for (int j = 0; j < N; ++j) {
+    for (int j = 0; j < g_n; ++j) {
         double var_X = 0.0, var_D1 = 0.0, var_D2 = 0.0;
         for (int s = 0; s < j; ++s) {
-            var_X += DT * env.X[j][s].squaredNorm();
-            var_D1 += DT * calD1[j][s].squaredNorm();
-            var_D2 += DT * calD2[j][s].squaredNorm();
+            var_X += g_dt * env.X[j][s].squaredNorm();
+            var_D1 += g_dt * calD1[j][s].squaredNorm();
+            var_D2 += g_dt * calD2[j][s].squaredNorm();
         }
         double dx1 = bar_sol.barX[j] - b1_val;
         double dx2 = bar_sol.barX[j] - b2_val;
-        J1 += DT * (dx1*dx1 + var_X + r1_val * (bar_sol.barD1[j]*bar_sol.barD1[j] + var_D1));
-        J2 += DT * (dx2*dx2 + var_X + r2_val * (bar_sol.barD2[j]*bar_sol.barD2[j] + var_D2));
+        J1 += g_dt * (dx1*dx1 + var_X + r1_val * (bar_sol.barD1[j]*bar_sol.barD1[j] + var_D1));
+        J2 += g_dt * (dx2*dx2 + var_X + r2_val * (bar_sol.barD2[j]*bar_sol.barD2[j] + var_D2));
     }
     return {J1, J2};
 }
@@ -594,7 +637,7 @@ void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
     double g = obs_gain;
 
     F[0][0][0].setZero();
-    for (int j = 1; j < N; ++j) {
+    for (int j = 1; j < g_n; ++j) {
         for (int u = 0; u < j; ++u) {
             F[j][u][j] = g * Xtilde[j][u] * e_i.transpose();
             F[j][j][u] = g * e_i * Xtilde[j][u].transpose();
@@ -605,4 +648,43 @@ void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
             for (int s = 0; s < j; ++s)
                 F[j][u][s] = F[j - 1][u][s] + Xtilde[j][u] * A_store[j][s].transpose();
     }
+}
+
+// --- compute_F_slice_at_T (memory-efficient) ---
+//
+// Computes F[g_n-1][u][s] using ping-pong of two N_MAX×N_MAX slices
+// instead of the full 3D kernel. Memory: ~2 * N_MAX^2 * 72 bytes ≈ 0.9MB.
+
+std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
+                                              double obs_gain, int obs_index) {
+    Vec3 e_i = Vec3::Zero();
+    e_i(obs_index) = 1.0;
+    double g = obs_gain;
+
+    // Two slices for ping-pong: prev = F[j-1], cur = F[j]
+    // Heap-allocated; pointer swap avoids deep copy.
+    auto prev = std::make_unique<FSlice>();
+    auto cur  = std::make_unique<FSlice>();
+
+    // j = 0: F[0][0][0] = 0
+    (*prev)(0, 0).setZero();
+
+    for (int j = 1; j < g_n; ++j) {
+        // Borders
+        for (int u = 0; u < j; ++u) {
+            (*cur)(u, j) = g * Xtilde[j][u] * e_i.transpose();
+            (*cur)(j, u) = g * e_i * Xtilde[j][u].transpose();
+        }
+        (*cur)(j, j).setZero();
+
+        // Interior: F[j][u][s] = F[j-1][u][s] + Xtilde[j][u] * A_store[j][s]^T
+        for (int u = 0; u < j; ++u)
+            for (int s = 0; s < j; ++s)
+                (*cur)(u, s) = (*prev)(u, s) + Xtilde[j][u] * A_store[j][s].transpose();
+
+        std::swap(prev, cur);
+    }
+
+    // After the loop, prev holds F[g_n-1]
+    return prev;
 }

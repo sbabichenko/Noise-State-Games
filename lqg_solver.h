@@ -13,16 +13,28 @@
 #include <string>
 #include <vector>
 
-// ---------- compile-time constants ----------
-constexpr int T_VAL = 1;
-constexpr int N = 40;
-constexpr double DT = static_cast<double>(T_VAL) / (N - 1);
+// ---------- compile-time maximum ----------
+constexpr int N_MAX = 320;
+constexpr int D_W = 3;
+
+// Legacy 3D kernel max — kept small to avoid 320^3 * 72 B = 2.4 GB types.
+// Only used by generate_figures; the interactive solver never touches Kernel3D.
+constexpr int N_MAX_3D = 80;
+
+// ---------- runtime grid parameters ----------
+extern int g_n;        // current grid size (default 40, max N_MAX)
+extern double g_T;     // time horizon (default 1.0)
+extern double g_dt;    // = g_T / (g_n - 1)
+
+// Call this before any solver calls when changing N or T
+void set_grid(int n, double T);
+
+// ---------- default constants ----------
 constexpr double RHO = 0.1;
 constexpr double X0 = 0.0;
 constexpr double TERMINAL_STATE_WEIGHT = 0.0;
 constexpr double B1_DEFAULT = 1.0;
 constexpr double B2_DEFAULT = -1.0;
-constexpr int D_W = 3;
 
 constexpr int FORWARD_INNER_ITERS = 2;
 constexpr int FILTER_INNER_ITERS = 6;
@@ -43,10 +55,11 @@ using Mat3 = Eigen::Matrix3d;
 using VecN = Eigen::VectorXd;
 
 // 2D kernel: lower-triangular packed storage (s <= t only)
-// ~N*(N+1)/2*3*8 ≈ 19.7KB — half the memory of the full N×N layout
+// Dynamically sized to g_n*(g_n+1)/2 entries — safe on the stack at any N.
 struct Kernel2D {
-    static constexpr int TRI_SIZE = N * (N + 1) / 2;
-    std::array<Vec3, TRI_SIZE> data;
+    std::vector<Vec3> data;
+
+    Kernel2D() : data(g_n * (g_n + 1) / 2, Vec3::Zero()) {}
 
     struct RowProxy {
         Vec3* base;
@@ -64,11 +77,18 @@ struct Kernel2D {
     void setZero() {
         for (auto& v : data) v.setZero();
     }
+
+    // Resize to current g_n (used after set_grid changes)
+    void resize() {
+        data.resize(g_n * (g_n + 1) / 2, Vec3::Zero());
+    }
+
+    int tri_size() const { return static_cast<int>(data.size()); }
 };
 
-// 3D kernel: shape (N, N, N, D_W, D_W) → F[t][u][s] is a 3x3 matrix
-// ~N*N*N*9*8 = ~36MB — must be heap-allocated
-using Kernel3DRaw = std::array<std::array<std::array<Mat3, N>, N>, N>;
+// 3D kernel: shape (N_MAX_3D, N_MAX_3D, N_MAX_3D, D_W, D_W) → F[t][u][s] is a 3x3 matrix
+// Only used by legacy code paths (generate_figures). NOT used by interactive app.
+using Kernel3DRaw = std::array<std::array<std::array<Mat3, N_MAX_3D>, N_MAX_3D>, N_MAX_3D>;
 
 struct Kernel3D {
     std::unique_ptr<Kernel3DRaw> data;
@@ -87,14 +107,12 @@ struct Kernel3D {
 };
 
 // ---------- t_grid ----------
-inline std::array<double, N> make_t_grid() {
-    std::array<double, N> g;
-    for (int i = 0; i < N; ++i)
-        g[i] = static_cast<double>(i) * T_VAL / (N - 1);
-    return g;
-}
-inline const std::array<double, N>& t_grid() {
-    static auto g = make_t_grid();
+// Returns a pointer to g_n doubles representing the time grid.
+// Recomputed each call (cheap) to reflect current g_n/g_T.
+inline const std::array<double, N_MAX>& t_grid() {
+    static std::array<double, N_MAX> g;
+    for (int i = 0; i < g_n; ++i)
+        g[i] = static_cast<double>(i) * g_T / (g_n - 1);
     return g;
 }
 
@@ -128,16 +146,16 @@ struct EnvironmentResult {
 
 // ---------- bar solution ----------
 struct BarSolution {
-    std::array<double, N> barX;
-    std::array<double, N> barD1;
-    std::array<double, N> barD2;
+    std::array<double, N_MAX> barX;
+    std::array<double, N_MAX> barD1;
+    std::array<double, N_MAX> barD2;
     double bar_residual;
 };
 
 // ---------- backward adjoint result ----------
 struct BackwardBarResult {
-    std::array<double, N> barHx;
-    Kernel2D barHk; // (N, N, D_W)
+    std::array<double, N_MAX> barHx;
+    Kernel2D barHk; // (g_n, g_n, D_W)
 };
 
 // ---------- functions ----------
@@ -156,22 +174,22 @@ void forward_environment(
     const Mat3& Pi_2, int obs_idx_2,
     EnvironmentResult& env);
 
-// Hk-free version: uses internal ping-pong buffers (~230KB) instead of 36MB Kernel3D
+// Hk-free version: uses internal ping-pong buffers instead of 36MB Kernel3D
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
-                      const Kernel2D& Dk, const std::array<double, N>& prec_k,
+                      const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx);
 
 // Legacy version that also fills Hk (only needed for figure output)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
-                      const Kernel2D& Dk, const std::array<double, N>& prec_k,
+                      const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx, Kernel3D& Hk);
 
 BackwardBarResult backward_bar_adjoints(
     const Kernel2D& X, const Kernel2D& Xtildek, const Kernel2D& Dk,
-    const std::array<double, N>& barX, double b,
-    const std::array<double, N>& prec_k, double terminal_weight);
+    const std::array<double, N_MAX>& barX, double b,
+    const std::array<double, N_MAX>& prec_k, double terminal_weight);
 
 BarSolution solve_bar_equilibrium(
     const EnvironmentResult& env, const Kernel2D& D1, const Kernel2D& D2,
@@ -203,13 +221,27 @@ CostPair compute_costs_general(const EnvironmentResult& env,
                                double b1_val, double b2_val);
 
 // ---------- F materialization (for figure output only) ----------
-// Builds F[j][u][s] for ALL j from R + A_store. Writes into pre-allocated Kernel3D.
+// Builds F[j][u][s] for ALL j. Writes into pre-allocated Kernel3D.
 void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
                    double obs_gain, int obs_index, Kernel3D& F);
 
+// ---------- F slice computation (memory-efficient) ----------
+// Computes F[g_n-1][u][s] for all (u,s), returning a g_n x g_n array of Mat3.
+// Only allocates two g_n x g_n slices (ping-pong), NOT the full 3D kernel.
+struct FSlice {
+    int n;  // grid size at construction time
+    std::vector<Mat3> data;
+    FSlice() : n(g_n), data(g_n * g_n, Mat3::Zero()) {}
+    Mat3& operator()(int u, int s) { return data[u * n + s]; }
+    const Mat3& operator()(int u, int s) const { return data[u * n + s]; }
+};
+
+std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
+                                              double obs_gain, int obs_index);
+
 // ---------- utility ----------
-inline std::array<double, N> make_constant_prec(double val) {
-    std::array<double, N> a;
+inline std::array<double, N_MAX> make_constant_prec(double val) {
+    std::array<double, N_MAX> a;
     a.fill(val);
     return a;
 }

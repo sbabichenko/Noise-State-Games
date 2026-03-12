@@ -66,35 +66,38 @@ static BarSolution& cached_bar_solve(
 }
 
 // ---------- CSV helpers ----------
-// Write a 2D kernel (N x N x D_W) as CSV: columns t, s, ch0, ch1, ch2
+// Write a 2D kernel (g_n x g_n x D_W) as CSV: columns t, s, ch0, ch1, ch2
 // Only writes entries where s <= t (causal kernel)
 static void write_kernel2d(const std::string& path, const Kernel2D& K) {
     std::ofstream f(path);
     f << std::setprecision(12);
     f << "t_idx,s_idx,t,s,ch0,ch1,ch2\n";
     const auto& tg = t_grid();
-    for (int ti = 0; ti < N; ++ti)
+    for (int ti = 0; ti < g_n; ++ti)
         for (int si = 0; si <= ti; ++si)
             f << ti << "," << si << "," << tg[ti] << "," << tg[si] << ","
               << K[ti][si](0) << "," << K[ti][si](1) << "," << K[ti][si](2) << "\n";
 }
 
-// Write F1[T] kernel: F1[N-1][u][s](row, col) for all u, s, row, col
+// Write F1[T] kernel: F1[g_n-1][u][s](row, col) for all u, s, row, col
 static void write_F1_T(const std::string& path, const Kernel3D& F1) {
     std::ofstream f(path);
     f << std::setprecision(12);
     f << "u_idx,s_idx,u,s,row,col,value\n";
     const auto& tg = t_grid();
-    for (int u = 0; u < N; ++u)
-        for (int s = 0; s < N; ++s)
+    for (int u = 0; u < g_n; ++u)
+        for (int s = 0; s < g_n; ++s)
             for (int row = 0; row < D_W; ++row)
                 for (int col = 0; col < D_W; ++col)
                     f << u << "," << s << "," << tg[u] << "," << tg[s] << ","
-                      << row << "," << col << "," << F1[N-1][u][s](row, col) << "\n";
+                      << row << "," << col << "," << F1[g_n-1][u][s](row, col) << "\n";
 }
 
 // ---------- main ----------
 int main() {
+    // Initialize grid to default (N=40, T=1.0)
+    set_grid(40, 1.0);
+
     fs::create_directories(DATA_DIR);
     const auto& tg = t_grid();
 
@@ -228,21 +231,21 @@ int main() {
     std::cout << "Figure 8: Mean control vs precision ...\n";
 
     // Perfect-info benchmark
-    std::array<double, N> S_pi;
+    std::array<double, N_MAX> S_pi;
     S_pi.fill(0.0);
-    S_pi[N - 1] = TERMINAL_STATE_WEIGHT;
-    for (int j = N - 2; j >= 0; --j)
-        S_pi[j] = S_pi[j + 1] + DT * (1.0 - (2.0 / RHO) * S_pi[j + 1] * S_pi[j + 1]);
+    S_pi[g_n - 1] = TERMINAL_STATE_WEIGHT;
+    for (int j = g_n - 2; j >= 0; --j)
+        S_pi[j] = S_pi[j + 1] + g_dt * (1.0 - (2.0 / RHO) * S_pi[j + 1] * S_pi[j + 1]);
 
-    std::array<double, N> barD1_pi, barX_pi;
+    std::array<double, N_MAX> barD1_pi, barX_pi;
     barD1_pi.fill(0.0);
     barX_pi.fill(0.0);
     barX_pi[0] = X0;
-    for (int j = 0; j < N; ++j) {
+    for (int j = 0; j < g_n; ++j) {
         barD1_pi[j] = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - B1_DEFAULT);
         double barD2_pi_j = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - B2_DEFAULT);
-        if (j < N - 1)
-            barX_pi[j + 1] = barX_pi[j] + DT * (barD1_pi[j] + barD2_pi_j);
+        if (j < g_n - 1)
+            barX_pi[j + 1] = barX_pi[j] + g_dt * (barD1_pi[j] + barD2_pi_j);
     }
 
     {
@@ -253,7 +256,7 @@ int main() {
             f << ",p" << p;
         f << "\n";
 
-        std::map<int, std::array<double, N>> barD1_curves;
+        std::map<int, std::array<double, N_MAX>> barD1_curves;
 
         for (int p : p_values) {
             std::cout << "  Solving p=" << p << " ...\n";
@@ -263,7 +266,7 @@ int main() {
             std::cout << "    bar residual: " << bar_p.bar_residual << "\n";
         }
 
-        for (int i = 0; i < N; ++i) {
+        for (int i = 0; i < g_n; ++i) {
             f << tg[i] << "," << barD1_pi[i];
             for (int p : p_values)
                 f << "," << barD1_curves[p][i];
@@ -295,7 +298,7 @@ int main() {
                                            p1_fixed, p2v, 1, 2);
             std::cout << "    bar residual: " << bar_a.bar_residual << "\n";
 
-            for (int i = 0; i < N; ++i)
+            for (int i = 0; i < g_n; ++i)
                 f << tg[i] << "," << p2v << ","
                   << bar_a.barD1[i] << "," << bar_a.barD2[i] << ","
                   << bar_a.barX[i] << "\n";
@@ -305,7 +308,7 @@ int main() {
         std::ofstream fpi(DATA_DIR + "/fig10_perfect_info.csv");
         fpi << std::setprecision(12);
         fpi << "t,barD1_pi\n";
-        for (int i = 0; i < N; ++i)
+        for (int i = 0; i < g_n; ++i)
             fpi << tg[i] << "," << barD1_pi[i] << "\n";
     }
 
@@ -332,15 +335,15 @@ int main() {
             auto bba2 = backward_bar_adjoints(eq_a.env.X, eq_a.env.Xtilde1, eq_a.D1,
                                               bar_a.barX, B2_DEFAULT, prec1_arr, 0.0);
 
-            for (int j = 0; j < N; ++j) {
+            for (int j = 0; j < g_n; ++j) {
                 int m = j + 1;
                 double V1 = 0.0, V2 = 0.0;
                 for (int z = 0; z < m; ++z) {
                     V1 += eq_a.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
                     V2 += eq_a.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
                 }
-                V1 *= static_cast<double>(p2v * p2v) * DT;
-                V2 *= static_cast<double>(p1_fixed * p1_fixed) * DT;
+                V1 *= static_cast<double>(p2v * p2v) * g_dt;
+                V2 *= static_cast<double>(p1_fixed * p1_fixed) * g_dt;
 
                 f << tg[j] << "," << p2v << "," << V1 << "," << V2 << "\n";
             }
