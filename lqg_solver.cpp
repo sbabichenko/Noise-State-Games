@@ -112,16 +112,14 @@ static void compute_filter_kernels(
             Vec3 Q_corr_s = dt2_prec * (c_k[s] * R[s][s] + q_upper);
             Vec3 gamma_a_s = DT * ga_acc;
 
-            // gamma_b and border_lt (both iterate u < s)
-            double gb_acc = 0.0, bl_acc = 0.0;
-            for (int u = 0; u < s; ++u) {
+            // gamma_b iterates u < s; border_lt reuses partial_c_k[s]
+            double gb_acc = 0.0;
+            for (int u = 0; u < s; ++u)
                 gb_acc += X[j][u].dot(R[u][s]);
-                bl_acc += R[s][u].dot(X[j][u]);
-            }
 
             correction[s] = Q_corr_s + gamma_a_s + (DT * gb_acc * g) * e_i;
             Xhat_const[s] = Pi * X[j][s] + gamma_a_s
-                          + (DT * bl_acc * g) * e_i
+                          + (DT * partial_c_k[s] * g) * e_i
                           + DT * xi_acc;
         }
 
@@ -210,8 +208,10 @@ static void primitive_control_kernel(
         }
 
         // Precompute partial_d_k = sum_{u=0}^{k-1} dot(R[k][u], D[j][u])
-        // for k = 1..j
+        // for k = 0..j.  partial_d_k[s] also equals the border_lt sum,
+        // so we reuse it below instead of recomputing.
         std::array<double, N> partial_d_k;
+        partial_d_k[0] = 0.0;
         for (int k = 1; k <= j; ++k) {
             double acc = 0.0;
             for (int u = 0; u < k; ++u)
@@ -227,34 +227,23 @@ static void primitive_control_kernel(
         for (int s = 0; s < j; ++s) {
             Vec3 acc = Pi * D[j][s];
 
-            // border_gt: g * sum_{u=s+1}^{j} R[u][s] * D_obs[u]
+            // border_gt + interior merged: both iterate k = s+1..j
             Vec3 bg_vec = Vec3::Zero();
-            for (int u = s + 1; u <= j; ++u)
-                bg_vec += D_obs[u] * R[u][s];
-            acc += DT * g * bg_vec;
-
-            // border_lt: g * e_i * sum_{u<s} dot(R[s][u], D[j][u])
-            double bl_acc = 0.0;
-            for (int u = 0; u < s; ++u)
-                bl_acc += R[s][u].dot(D[j][u]);
-            acc += (DT * g * bl_acc) * e_i;
-
-            // interior: sum_{k=s+1}^{j} A_store[k][s] * partial_d_k[k]
             Vec3 int_acc = Vec3::Zero();
-            for (int k = s + 1; k <= j; ++k)
+            for (int k = s + 1; k <= j; ++k) {
+                bg_vec += D_obs[k] * R[k][s];
                 int_acc += partial_d_k[k] * A_store[k][s];
-            acc += DT * int_acc;
+            }
+            acc += DT * g * bg_vec + DT * int_acc;
+
+            // border_lt: reuse partial_d_k[s] instead of recomputing
+            acc += (DT * g * partial_d_k[s]) * e_i;
 
             calD[j][s] = acc;
         }
 
-        // s = j
-        {
-            double bl_acc = 0.0;
-            for (int u = 0; u < j; ++u)
-                bl_acc += R[j][u].dot(D[j][u]);
-            calD[j][j] = Pi * D[j][j] + (DT * g * bl_acc) * e_i;
-        }
+        // s = j: reuse partial_d_k[j]
+        calD[j][j] = Pi * D[j][j] + (DT * g * partial_d_k[j]) * e_i;
 
         for (int s = m; s < N; ++s)
             calD[j][s].setZero();
@@ -317,13 +306,10 @@ void forward_environment(
         for (int t = 0; t < N; ++t)
             for (int s = 0; s <= t; ++s)
                 X[t][s] = 0.6 * X_new[t][s] + 0.4 * X[t][s];
-
-        calD1 = calD1_new;
-        calD2 = calD2_new;
     }
 
     env.X = X;
-    env.calD1 = calD1; env.calD2 = calD2;
+    env.calD1 = calD1_new; env.calD2 = calD2_new;
     env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
     env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
 }
