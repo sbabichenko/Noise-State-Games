@@ -71,32 +71,7 @@ static void compute_perfect_info(double b1, double b2,
     }
 }
 
-// Serialize an FSlice as a 3x3 grid of 2D arrays: F_row_col[u][s]
-static void out_fslice(const char* name, const FSlice& F) {
-    char buf[32];
-    g_output += '"'; g_output += name; g_output += "\":{";
-    bool first = true;
-    for (int row = 0; row < 3; ++row) {
-        for (int col = 0; col < 3; ++col) {
-            if (!first) g_output += ',';
-            first = false;
-            g_output += "\"r"; g_output += ('0' + row);
-            g_output += "c"; g_output += ('0' + col); g_output += "\":[";
-            for (int u = 0; u < g_n; ++u) {
-                if (u) g_output += ',';
-                g_output += '[';
-                for (int s = 0; s < g_n; ++s) {
-                    if (s) g_output += ',';
-                    int n = snprintf(buf, sizeof(buf), "%.6g", F(u, s)(row, col));
-                    g_output.append(buf, n);
-                }
-                g_output += ']';
-            }
-            g_output += ']';
-        }
-    }
-    g_output += '}';
-}
+// (out_fslice removed — F kernel now uses binary transfer via solve_f_kernel_bin)
 
 // ============================================================
 // Solver result cache
@@ -114,6 +89,10 @@ static struct SolveCache {
     CostPair costs;
     std::array<double, N_MAX> V1, V2;
     std::array<double, N_MAX> barD1_pi, barX_pi;
+
+    // F kernel cache (computed lazily on first F kernel tab visit)
+    std::unique_ptr<FSlice> F1, F2;
+    bool f_valid;
 } g_cache = {};
 
 static bool cache_matches(double p1, double p2, double b1, double b2, double r1, double r2) {
@@ -160,6 +139,20 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     g_cache.r1 = r1; g_cache.r2 = r2;
     g_cache.n = g_n; g_cache.T = g_T;
     g_cache.valid = true;
+    g_cache.f_valid = false;  // F kernel depends on equilibrium; recompute lazily
+}
+
+// Compute F kernel slices if not cached. Requires ensure_solve() first.
+static void ensure_f_kernel(double p1, double p2, double b1, double b2, double r1, double r2) {
+    ensure_solve(p1, p2, b1, b2, r1, r2);
+    if (g_cache.f_valid) return;
+
+    const auto& env = g_cache.eq.env;
+    g_cache.F1 = compute_F_slice_at_T(env.Xtilde1, env.A_store1,
+                                       env.obs_gain1, env.obs_idx1);
+    g_cache.F2 = compute_F_slice_at_T(env.Xtilde2, env.A_store2,
+                                       env.obs_gain2, env.obs_idx2);
+    g_cache.f_valid = true;
 }
 
 // Serialize only the "light" data (bar solution, costs, wedges, residuals).
@@ -196,6 +189,7 @@ EMSCRIPTEN_KEEPALIVE
 void wasm_set_grid(int n, double T) {
     set_grid(n, T);
     g_cache.valid = false;  // grid change invalidates cache
+    g_cache.f_valid = false;
 }
 
 // Light solve: bar solution + costs + wedges + residuals. ~5KB JSON.
@@ -300,27 +294,36 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     return g_output.c_str();
 }
 
-// Compute F kernel slices at t=T for both players. Reuses cached equilibrium.
+// Binary F kernel: writes 2 * 9 * g_n * g_n doubles to a static buffer.
+// Layout: [F1_r0c0[0..n*n], F1_r0c1[..], ..., F1_r2c2[..], F2_r0c0[..], ..., F2_r2c2[..]]
+// Each block is row-major: F[u*n + s] for u=0..n-1, s=0..n-1.
+// JS reads directly from HEAPF64 — no JSON serialization or parsing.
+static std::vector<double> g_fkernel_buf;
+
 EMSCRIPTEN_KEEPALIVE
-const char* solve_f_kernel(double p1, double p2, double b1, double b2, double r1, double r2) {
-    g_output.clear();
-    g_output.reserve(128 * 1024);
-    ensure_solve(p1, p2, b1, b2, r1, r2);  // reuses cache — no re-solve if params match
+double* solve_f_kernel_bin(double p1, double p2, double b1, double b2, double r1, double r2) {
+    ensure_f_kernel(p1, p2, b1, b2, r1, r2);  // cached — no re-solve if params match
 
-    const auto& env = g_cache.eq.env;
-    FSlice F1 = compute_F_slice_at_T(env.Xtilde1, env.A_store1,
-                                      env.obs_gain1, env.obs_idx1);
-    FSlice F2 = compute_F_slice_at_T(env.Xtilde2, env.A_store2,
-                                      env.obs_gain2, env.obs_idx2);
+    const int n = g_n;
+    const int block = n * n;
+    g_fkernel_buf.resize(2 * 9 * block);
 
-    const auto& tg = t_grid();
-    out("{");
-    out_array("t", tg.data(), g_n);
-    out(","); out_fslice("F1", F1);
-    out(","); out_fslice("F2", F2);
-    out("}");
+    // Write F1 then F2
+    const FSlice* slices[2] = { g_cache.F1.get(), g_cache.F2.get() };
+    for (int p = 0; p < 2; ++p) {
+        const FSlice& F = *slices[p];
+        double* base = g_fkernel_buf.data() + p * 9 * block;
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                double* dst = base + (r * 3 + c) * block;
+                for (int u = 0; u < n; ++u)
+                    for (int s = 0; s < n; ++s)
+                        dst[u * n + s] = F.data[u][s](r, c);
+            }
+        }
+    }
 
-    return g_output.c_str();
+    return g_fkernel_buf.data();
 }
 
 } // extern "C"

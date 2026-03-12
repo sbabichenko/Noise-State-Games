@@ -625,8 +625,8 @@ void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
 // Computes F[g_n-1][u][s] using ping-pong of two N_MAX×N_MAX slices
 // instead of the full 3D kernel. Memory: ~2 * N_MAX^2 * 72 bytes ≈ 0.9MB.
 
-FSlice compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
-                             double obs_gain, int obs_index) {
+std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
+                                              double obs_gain, int obs_index) {
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
     double g = obs_gain;
@@ -656,5 +656,5 @@ FSlice compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
     }
 
     // After the loop, prev holds F[g_n-1]
-    return std::move(*prev);
+    return prev;
 }

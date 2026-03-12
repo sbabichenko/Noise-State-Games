@@ -225,8 +225,8 @@ struct FSlice {
     const Mat3& operator()(int u, int s) const { return data[u][s]; }
 };
 
-FSlice compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
-                             double obs_gain, int obs_index);
+std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
+                                              double obs_gain, int obs_index);
 
 // ---------- utility ----------
 inline std::array<double, N_MAX> make_constant_prec(double val) {
