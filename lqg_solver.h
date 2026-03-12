@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 // Decentralized LQG noise-state game solver
-// F-free optimized solver (no 36MB Kernel3D in filter/control)
+// F-free optimized solver with triangular Kernel2D storage
 // ============================================================
 
 #include <Eigen/Dense>
@@ -40,9 +40,29 @@ using Vec3 = Eigen::Vector3d;
 using Mat3 = Eigen::Matrix3d;
 using VecN = Eigen::VectorXd;
 
-// 2D kernel: shape (N, N, D_W) stored as array of arrays of Vec3
-// ~N*N*3*8 = ~38KB — fine on stack
-using Kernel2D = std::array<std::array<Vec3, N>, N>;
+// 2D kernel: lower-triangular packed storage (s <= t only)
+// ~N*(N+1)/2*3*8 ≈ 19.7KB — half the memory of the full N×N layout
+struct Kernel2D {
+    static constexpr int TRI_SIZE = N * (N + 1) / 2;
+    std::array<Vec3, TRI_SIZE> data;
+
+    struct RowProxy {
+        Vec3* base;
+        Vec3& operator[](int s) { return base[s]; }
+        const Vec3& operator[](int s) const { return base[s]; }
+    };
+    struct ConstRowProxy {
+        const Vec3* base;
+        const Vec3& operator[](int s) const { return base[s]; }
+    };
+
+    RowProxy operator[](int t) { return {&data[t * (t + 1) / 2]}; }
+    ConstRowProxy operator[](int t) const { return {&data[t * (t + 1) / 2]}; }
+
+    void setZero() {
+        for (auto& v : data) v.setZero();
+    }
+};
 
 // 3D kernel: shape (N, N, N, D_W, D_W) → F[t][u][s] is a 3x3 matrix
 // ~N*N*N*9*8 = ~36MB — must be heap-allocated

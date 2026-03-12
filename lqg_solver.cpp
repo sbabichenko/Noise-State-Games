@@ -22,9 +22,7 @@ double g_b2 = B2_DEFAULT;
 // ============================================================
 void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
                             Kernel2D& X) {
-    for (auto& row : X)
-        for (auto& v : row)
-            v.setZero();
+    X.setZero();
 
     for (int s = 0; s < N; ++s) {
         X[s][s] = E0();
@@ -70,7 +68,6 @@ static void compute_filter_kernels(
         if (j == 0) {
             // Base case: no history
             Xtilde[0][0] = I_minus_Pi * X[0][0];
-            for (int s = 1; s < N; ++s) Xtilde[0][s].setZero();
             A_store[0][0].setZero();
             continue;
         }
@@ -135,8 +132,6 @@ static void compute_filter_kernels(
         // --- Xtilde[j][s] = (I - Pi) * X[j][s] - correction[s] ---
         for (int s = 0; s < m; ++s)
             Xtilde[j][s] = I_minus_Pi * X[j][s] - correction[s];
-        for (int s = m; s < N; ++s)
-            Xtilde[j][s].setZero();
 
         // --- Rank-1 filter iteration ---
         double sigma = 0.0;
@@ -187,11 +182,8 @@ void primitive_control_kernel(
     double g = obs_gain_val;
 
     for (int j = 0; j < N; ++j) {
-        int m = j + 1;
-
         if (j == 0) {
             calD[0][0] = Pi * D[0][0];
-            for (int s = 1; s < N; ++s) calD[0][s].setZero();
             continue;
         }
 
@@ -232,9 +224,6 @@ void primitive_control_kernel(
 
         // s = j: reuse partial_d_k[j]
         calD[j][j] = Pi * D[j][j] + (DT * g * partial_d_k[j]) * e_i;
-
-        for (int s = m; s < N; ++s)
-            calD[j][s].setZero();
     }
 }
 
@@ -251,14 +240,9 @@ void forward_environment(
 
     Kernel2D calD1, calD2;
     for (int j = 0; j < N; ++j) {
-        int m = j + 1;
-        for (int s = 0; s < m; ++s) {
+        for (int s = 0; s <= j; ++s) {
             calD1[j][s] = Pi_1 * D1[j][s];
             calD2[j][s] = Pi_2 * D2[j][s];
-        }
-        for (int s = m; s < N; ++s) {
-            calD1[j][s].setZero();
-            calD2[j][s].setZero();
         }
     }
 
@@ -315,9 +299,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const std::array<double, N>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx) {
-    for (auto& row : Hx)
-        for (auto& v : row)
-            v.setZero();
+    Hx.setZero();
 
     for (int s = 0; s < N; ++s)
         Hx[N - 1][s] = -terminal_state_weight * X[N - 1][s];
@@ -366,9 +348,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const std::array<double, N>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx, Kernel3D& Hk) {
-    for (auto& row : Hx)
-        for (auto& v : row)
-            v.setZero();
+    Hx.setZero();
 
     for (int s = 0; s < N; ++s)
         Hx[N - 1][s] = -terminal_state_weight * X[N - 1][s];
@@ -414,9 +394,7 @@ BackwardBarResult backward_bar_adjoints(
 
     BackwardBarResult res;
     res.barHx.fill(0.0);
-    for (auto& row : res.barHk)
-        for (auto& v : row)
-            v.setZero();
+    res.barHk.setZero();
 
     res.barHx[N - 1] = terminal_weight * (barX[N - 1] - b);
 
@@ -534,8 +512,8 @@ EquilibriumResult solve_equilibrium(
     const Mat3& Pi_2, int obs_idx_2) {
 
     Kernel2D D1, D2;
-    for (auto& row : D1) for (auto& v : row) v.setZero();
-    for (auto& row : D2) for (auto& v : row) v.setZero();
+    D1.setZero();
+    D2.setZero();
 
     std::vector<double> residuals;
     double P1 = p1_val * p1_val;
