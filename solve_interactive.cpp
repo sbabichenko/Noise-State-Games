@@ -26,12 +26,12 @@ static void print_kernel2d(const char* name, const Kernel2D& K) {
         printf("%s\"ch%d\":[", first ? "" : ",", ch);
         first = false;
         bool first_row = true;
-        for (int ti = 0; ti < N; ++ti) {
+        for (int ti = 0; ti < g_n; ++ti) {
             printf("%s[", first_row ? "" : ",");
             first_row = false;
             for (int si = 0; si <= ti; ++si)
                 printf("%s%.12g", si ? "," : "", K[ti][si](ch));
-            for (int si = ti + 1; si < N; ++si)
+            for (int si = ti + 1; si < g_n; ++si)
                 printf(",0");
             printf("]");
         }
@@ -42,20 +42,20 @@ static void print_kernel2d(const char* name, const Kernel2D& K) {
 
 // Perfect-info Riccati solution (depends on b1, b2 for the bar dynamics)
 static void compute_perfect_info(double b1, double b2,
-                                  std::array<double, N>& barD1_pi,
-                                  std::array<double, N>& barX_pi) {
-    std::array<double, N> S_pi;
+                                  std::array<double, N_MAX>& barD1_pi,
+                                  std::array<double, N_MAX>& barX_pi) {
+    std::array<double, N_MAX> S_pi;
     S_pi.fill(0.0);
-    S_pi[N - 1] = TERMINAL_STATE_WEIGHT;
-    for (int j = N - 2; j >= 0; --j)
-        S_pi[j] = S_pi[j + 1] + DT * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
+    S_pi[g_n - 1] = TERMINAL_STATE_WEIGHT;
+    for (int j = g_n - 2; j >= 0; --j)
+        S_pi[j] = S_pi[j + 1] + g_dt * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
 
     barX_pi[0] = X0;
-    for (int j = 0; j < N; ++j) {
+    for (int j = 0; j < g_n; ++j) {
         barD1_pi[j] = -(1.0 / g_r1) * S_pi[j] * (barX_pi[j] - b1);
         double barD2_pi_j = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
-        if (j < N - 1)
-            barX_pi[j + 1] = barX_pi[j] + DT * (barD1_pi[j] + barD2_pi_j);
+        if (j < g_n - 1)
+            barX_pi[j + 1] = barX_pi[j] + g_dt * (barD1_pi[j] + barD2_pi_j);
     }
 }
 
@@ -82,23 +82,23 @@ static int run_single(int argc, char* argv[]) {
                                        bar.barX, b1, prec2_arr, 0.0);
     auto bba2 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde1, eq.D1,
                                        bar.barX, b2, prec1_arr, 0.0);
-    std::array<double, N> V1_arr, V2_arr;
-    for (int j = 0; j < N; ++j) {
+    std::array<double, N_MAX> V1_arr, V2_arr;
+    for (int j = 0; j < g_n; ++j) {
         double V1 = 0.0, V2 = 0.0;
         for (int z = 0; z <= j; ++z) {
             V1 += eq.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
             V2 += eq.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
         }
-        V1_arr[j] = V1 * p2 * p2 * DT;
-        V2_arr[j] = V2 * p1 * p1 * DT;
+        V1_arr[j] = V1 * p2 * p2 * g_dt;
+        V2_arr[j] = V2 * p1 * p1 * g_dt;
     }
 
-    std::array<double, N> barD1_pi, barX_pi;
+    std::array<double, N_MAX> barD1_pi, barX_pi;
     compute_perfect_info(b1, b2, barD1_pi, barX_pi);
 
     const auto& tg = t_grid();
     printf("{");
-    print_array("t", tg.data(), N);
+    print_array("t", tg.data(), g_n);
 
     printf(",\"residuals\":[");
     for (size_t i = 0; i < eq.residuals.size(); ++i)
@@ -113,16 +113,16 @@ static int run_single(int argc, char* argv[]) {
     printf(","); print_kernel2d("Xtilde1", eq.env.Xtilde1);
     printf(","); print_kernel2d("Xtilde2", eq.env.Xtilde2);
 
-    printf(","); print_array("barD1", bar.barD1.data(), N);
-    printf(","); print_array("barD2", bar.barD2.data(), N);
-    printf(","); print_array("barX", bar.barX.data(), N);
+    printf(","); print_array("barD1", bar.barD1.data(), g_n);
+    printf(","); print_array("barD2", bar.barD2.data(), g_n);
+    printf(","); print_array("barX", bar.barX.data(), g_n);
     printf(",\"bar_residual\":%.12g", bar.bar_residual);
 
-    printf(","); print_array("V1", V1_arr.data(), N);
-    printf(","); print_array("V2", V2_arr.data(), N);
+    printf(","); print_array("V1", V1_arr.data(), g_n);
+    printf(","); print_array("V2", V2_arr.data(), g_n);
 
-    printf(","); print_array("barD1_pi", barD1_pi.data(), N);
-    printf(","); print_array("barX_pi", barX_pi.data(), N);
+    printf(","); print_array("barD1_pi", barD1_pi.data(), g_n);
+    printf(","); print_array("barX_pi", barX_pi.data(), g_n);
 
     printf(",\"J1\":%.12g,\"J2\":%.12g", costs.J1, costs.J2);
     printf(",\"p1\":%.12g,\"p2\":%.12g,\"b1\":%.12g,\"b2\":%.12g", p1, p2, b1, b2);
@@ -146,13 +146,13 @@ static int run_sweep(int argc, char* argv[]) {
     for (int i = 0; i < n_p2; ++i)
         p2_vals[i] = atof(argv[7 + i]);
 
-    std::array<double, N> barD1_pi, barX_pi;
+    std::array<double, N_MAX> barD1_pi, barX_pi;
     compute_perfect_info(b1, b2, barD1_pi, barX_pi);
 
     const auto& tg = t_grid();
     printf("{");
-    print_array("t", tg.data(), N);
-    printf(","); print_array("barD1_pi", barD1_pi.data(), N);
+    print_array("t", tg.data(), g_n);
+    printf(","); print_array("barD1_pi", barD1_pi.data(), g_n);
     printf(",\"p1\":%.12g,\"b1\":%.12g,\"b2\":%.12g", p1, b1, b2);
 
     printf(",\"sweeps\":[");
@@ -168,9 +168,9 @@ static int run_sweep(int argc, char* argv[]) {
         auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
                                                  bar, r1, r2, b1, b2);
 
-        printf(","); print_array("barD1", bar.barD1.data(), N);
-        printf(","); print_array("barD2", bar.barD2.data(), N);
-        printf(","); print_array("barX", bar.barX.data(), N);
+        printf(","); print_array("barD1", bar.barD1.data(), g_n);
+        printf(","); print_array("barD2", bar.barD2.data(), g_n);
+        printf(","); print_array("barX", bar.barX.data(), g_n);
         printf(",\"J1_priv\":%.12g,\"J2_priv\":%.12g", costs_priv.J1, costs_priv.J2);
         printf(",\"n_iters\":%zu", eq.residuals.size());
 
@@ -194,18 +194,18 @@ static int run_sweep(int argc, char* argv[]) {
                                            bar.barX, b1, prec2_arr, 0.0);
         auto bba2 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde1, eq.D1,
                                            bar.barX, b2, prec1_arr, 0.0);
-        std::array<double, N> V1_arr, V2_arr;
-        for (int j = 0; j < N; ++j) {
+        std::array<double, N_MAX> V1_arr, V2_arr;
+        for (int j = 0; j < g_n; ++j) {
             double V1 = 0.0, V2 = 0.0;
             for (int z = 0; z <= j; ++z) {
                 V1 += eq.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
                 V2 += eq.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
             }
-            V1_arr[j] = V1 * p2 * p2 * DT;
-            V2_arr[j] = V2 * p1 * p1 * DT;
+            V1_arr[j] = V1 * p2 * p2 * g_dt;
+            V2_arr[j] = V2 * p1 * p1 * g_dt;
         }
-        printf(","); print_array("V1", V1_arr.data(), N);
-        printf(","); print_array("V2", V2_arr.data(), N);
+        printf(","); print_array("V1", V1_arr.data(), g_n);
+        printf(","); print_array("V2", V2_arr.data(), g_n);
 
         printf("}");
     }
@@ -214,6 +214,9 @@ static int run_sweep(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
+    // Initialize grid to default (N=40, T=1.0) — matches previous compile-time constants
+    set_grid(40, 1.0);
+
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <single|sweep> ...\n", argv[0]);
         return 1;
