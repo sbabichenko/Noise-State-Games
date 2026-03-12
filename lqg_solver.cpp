@@ -68,8 +68,6 @@ static void compute_filter_kernels(
     int filter_iters, double relax,
     Kernel2D& Xtilde, Kernel2D& A_store) {
 
-    Vec3 e_i = Vec3::Zero();
-    e_i(obs_index) = 1.0;
     double g = obs_gain_val;
     double prec = g * g;
     double dt2_prec = DT * DT * prec;
@@ -118,9 +116,9 @@ static void compute_filter_kernels(
             Vec3 gamma_a_s = DT * ga_acc;
 
             correction[s] = Q_corr_s + gamma_a_s;
-            Xhat_const[s] = apply_Pi(X[j][s], obs_index) + gamma_a_s
-                          + (DT * partial_c_k[s] * g) * e_i
-                          + DT * xi_acc;
+            Vec3 xhat = apply_Pi(X[j][s], obs_index) + gamma_a_s + DT * xi_acc;
+            xhat(obs_index) += DT * partial_c_k[s] * g;
+            Xhat_const[s] = xhat;
         }
 
         // s = j: correction is zero (gamma_b is zero by causality)
@@ -173,9 +171,8 @@ void primitive_control_kernel(
     const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
     double obs_gain_val, int obs_index, const Mat3& /*Pi*/, Kernel2D& calD) {
 
-    Vec3 e_i = Vec3::Zero();
-    e_i(obs_index) = 1.0;
     double g = obs_gain_val;
+    double DT_g = DT * g;
 
     for (int j = 0; j < N; ++j) {
         if (j == 0) {
@@ -208,16 +205,18 @@ void primitive_control_kernel(
                 bg_vec += D_obs[k] * Xtilde[k][s];
                 int_acc += partial_d_k[k] * A_store[k][s];
             }
-            acc += DT * g * bg_vec + DT * int_acc;
+            acc += DT_g * bg_vec + DT * int_acc;
 
-            // border_lt: reuse partial_d_k[s] instead of recomputing
-            acc += (DT * g * partial_d_k[s]) * e_i;
+            // border_lt: set obs_index component directly
+            acc(obs_index) += DT_g * partial_d_k[s];
 
             calD[j][s] = acc;
         }
 
-        // s = j: reuse partial_d_k[j]
-        calD[j][j] = apply_Pi(D[j][j], obs_index) + (DT * g * partial_d_k[j]) * e_i;
+        // s = j
+        Vec3 cj = apply_Pi(D[j][j], obs_index);
+        cj(obs_index) += DT_g * partial_d_k[j];
+        calD[j][j] = cj;
     }
 }
 
@@ -484,13 +483,16 @@ BarSolution solve_bar_equilibrium(
 // ============================================================
 // Anderson-accelerated inner product over causal triangle
 // ============================================================
+// Flat vectorized dot product over packed triangular data.
+// Eigen Map gives SIMD-optimized dot over 2460 contiguous doubles.
 static double kernel_dot(const Kernel2D& a1, const Kernel2D& a2,
                          const Kernel2D& b1, const Kernel2D& b2) {
-    double s = 0.0;
-    for (int t = 0; t < N; ++t)
-        for (int s2 = 0; s2 <= t; ++s2)
-            s += a1[t][s2].dot(b1[t][s2]) + a2[t][s2].dot(b2[t][s2]);
-    return s;
+    constexpr int FLAT = Kernel2D::TRI_SIZE * 3;
+    Eigen::Map<const Eigen::VectorXd> va1(a1.data[0].data(), FLAT);
+    Eigen::Map<const Eigen::VectorXd> vb1(b1.data[0].data(), FLAT);
+    Eigen::Map<const Eigen::VectorXd> va2(a2.data[0].data(), FLAT);
+    Eigen::Map<const Eigen::VectorXd> vb2(b2.data[0].data(), FLAT);
+    return va1.dot(vb1) + va2.dot(vb2);
 }
 
 // ============================================================
@@ -543,20 +545,21 @@ EquilibriumResult solve_equilibrium(
         }
 
         // Write G and F directly into the next history slot,
-        // eliminating 6 temporary Kernel2D (G1/G2, F1/F2, D1_aa/D2_aa)
+        // eliminating 6 temporary Kernel2D (G1/G2, F1/F2, D1_aa/D2_aa).
+        // Flat iteration over packed data avoids t*(t+1)/2 index math.
         constexpr double neg_inv_rho = -(1.0 / RHO);
+        constexpr int TRI = Kernel2D::TRI_SIZE;
         int store_idx = aa_stored % AA_STORE;
         auto& cur = aa_hist[store_idx];
         double norm_fn = 0.0, norm_gn = 0.0;
-        for (int t = 0; t < N; ++t)
-            for (int s = 0; s <= t; ++s) {
-                cur.g1[t][s] = neg_inv_rho * Hx1[t][s];
-                cur.g2[t][s] = neg_inv_rho * Hx2[t][s];
-                cur.f1[t][s] = cur.g1[t][s] - D1[t][s];
-                cur.f2[t][s] = cur.g2[t][s] - D2[t][s];
-                norm_fn += cur.f1[t][s].squaredNorm() + cur.f2[t][s].squaredNorm();
-                norm_gn += cur.g1[t][s].squaredNorm() + cur.g2[t][s].squaredNorm();
-            }
+        for (int i = 0; i < TRI; ++i) {
+            cur.g1.data[i] = neg_inv_rho * Hx1.data[i];
+            cur.g2.data[i] = neg_inv_rho * Hx2.data[i];
+            cur.f1.data[i] = cur.g1.data[i] - D1.data[i];
+            cur.f2.data[i] = cur.g2.data[i] - D2.data[i];
+            norm_fn += cur.f1.data[i].squaredNorm() + cur.f2.data[i].squaredNorm();
+            norm_gn += cur.g1.data[i].squaredNorm() + cur.g2.data[i].squaredNorm();
+        }
 
         double err = std::sqrt(norm_fn) / std::max(1.0, std::sqrt(norm_gn));
         residuals.push_back(err);
@@ -607,33 +610,39 @@ EquilibriumResult solve_equilibrium(
 
             Eigen::VectorXd gamma = H.ldlt().solve(rhs);
 
-            // Anderson mixing computed directly into D (no D_aa temporaries):
-            // D_aa = G - Σ γ_i * (G - g_hist[i])
-            // D_new = (1-β)*D + β*D_aa
+            // Anderson mixing: D_aa = G - Σ γ_i * (G - g_hist[i])
+            //                  D_new = (1-β)*D + β*D_aa
+            // Precompute history pointers + coefficients to hoist from inner loop
             constexpr double AA_BETA = 0.6;
-            for (int t = 0; t < N; ++t)
-                for (int s = 0; s <= t; ++s) {
-                    Vec3 d1_aa = cur.g1[t][s];
-                    Vec3 d2_aa = cur.g2[t][s];
-                    for (int i = 0; i < m; ++i) {
-                        int idx = (aa_stored - 1 - i + AA_STORE) % AA_STORE;
-                        double gi = gamma(i);
-                        d1_aa -= gi * (cur.g1[t][s] - aa_hist[idx].g1[t][s]);
-                        d2_aa -= gi * (cur.g2[t][s] - aa_hist[idx].g2[t][s]);
-                    }
-                    D1[t][s] = (1.0 - AA_BETA) * D1[t][s] + AA_BETA * d1_aa;
-                    D2[t][s] = (1.0 - AA_BETA) * D2[t][s] + AA_BETA * d2_aa;
+            std::array<const Vec3*, AA_M> g1_ptrs, g2_ptrs;
+            std::array<double, AA_M> gamma_arr;
+            for (int i = 0; i < m; ++i) {
+                int idx = (aa_stored - 1 - i + AA_STORE) % AA_STORE;
+                g1_ptrs[i] = aa_hist[idx].g1.data.data();
+                g2_ptrs[i] = aa_hist[idx].g2.data.data();
+                gamma_arr[i] = gamma(i);
+            }
+            const Vec3* cg1 = cur.g1.data.data();
+            const Vec3* cg2 = cur.g2.data.data();
+            for (int i = 0; i < TRI; ++i) {
+                Vec3 d1_aa = cg1[i];
+                Vec3 d2_aa = cg2[i];
+                for (int k = 0; k < m; ++k) {
+                    d1_aa -= gamma_arr[k] * (cg1[i] - g1_ptrs[k][i]);
+                    d2_aa -= gamma_arr[k] * (cg2[i] - g2_ptrs[k][i]);
                 }
+                D1.data[i] = (1.0 - AA_BETA) * D1.data[i] + AA_BETA * d1_aa;
+                D2.data[i] = (1.0 - AA_BETA) * D2.data[i] + AA_BETA * d2_aa;
+            }
             did_anderson = true;
         }
 
         if (!did_anderson) {
             // Simple relaxation for first iteration
-            for (int t = 0; t < N; ++t)
-                for (int s = 0; s <= t; ++s) {
-                    D1[t][s] += PICARD_RELAX * cur.f1[t][s];
-                    D2[t][s] += PICARD_RELAX * cur.f2[t][s];
-                }
+            for (int i = 0; i < TRI; ++i) {
+                D1.data[i] += PICARD_RELAX * cur.f1.data[i];
+                D2.data[i] += PICARD_RELAX * cur.f2.data[i];
+            }
         }
 
         aa_stored++;
