@@ -21,3 +21,13 @@ target_compile_options(generate_figures PRIVATE -O3 -march=native -Wall -Wextra)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(generate_figures PRIVATE OpenMP::OpenMP_CXX)
 endif()
+
+add_executable(solve_interactive
+    solve_interactive.cpp
+    lqg_solver.cpp
+)
+target_link_libraries(solve_interactive PRIVATE Eigen3::Eigen)
+target_compile_options(solve_interactive PRIVATE -O3 -march=native -Wall -Wextra)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(solve_interactive PRIVATE OpenMP::OpenMP_CXX)
+endif()

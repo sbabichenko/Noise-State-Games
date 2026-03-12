@@ -24,8 +24,8 @@ constexpr double B1_DEFAULT = 1.0;
 constexpr double B2_DEFAULT = -1.0;
 constexpr int D_W = 3;
 
-constexpr int FORWARD_INNER_ITERS = 5;
-constexpr int FILTER_INNER_ITERS = 8;
+constexpr int FORWARD_INNER_ITERS = 2;
+constexpr int FILTER_INNER_ITERS = 6;
 constexpr double FILTER_RELAX = 0.55;
 constexpr int MAX_PICARD_ITERS = 10000;
 constexpr double PICARD_RELAX = 0.15;
