@@ -290,6 +290,7 @@ void forward_environment(
 
     Kernel2D R1, R2, Xhat1, Xhat2;
     Kernel2D A_store1, A_store2;
+    Kernel2D calD1_new, calD2_new, X_new;
 
     for (int it = 0; it < inner_iters; ++it) {
         compute_filter_kernels(X, Pi_1, obs_idx_1, obs_gain1,
@@ -299,15 +300,13 @@ void forward_environment(
                                FILTER_INNER_ITERS, FILTER_RELAX,
                                R2, A_store2, Xhat2);
 
-        Kernel2D calD1_new, calD2_new;
         primitive_control_kernel(D1, R1, A_store1, obs_gain1, obs_idx_1, Pi_1, calD1_new);
         primitive_control_kernel(D2, R2, A_store2, obs_gain2, obs_idx_2, Pi_2, calD2_new);
 
-        Kernel2D X_new;
         state_kernel_from_calD(calD1_new, calD2_new, X_new);
 
         for (int t = 0; t < N; ++t)
-            for (int s = 0; s < N; ++s)
+            for (int s = 0; s <= t; ++s)
                 X[t][s] = 0.6 * X_new[t][s] + 0.4 * X[t][s];
 
         calD1 = calD1_new;
@@ -324,8 +323,65 @@ void forward_environment(
 }
 
 // ============================================================
-// backward_kernels
+// backward_kernels — ping-pong version (no Kernel3D allocation)
+//
+// Uses two N×N Mat3 slices (~115KB each, 230KB total) instead of
+// the 36MB Kernel3D. Only the previous time-step's Hk slice is
+// needed at each backward step.
 // ============================================================
+using HkSlice = std::array<std::array<Mat3, N>, N>;
+
+void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
+                      const Kernel2D& Dk,
+                      const std::array<double, N>& prec_k,
+                      double terminal_state_weight,
+                      Kernel2D& Hx) {
+    for (auto& row : Hx)
+        for (auto& v : row)
+            v.setZero();
+
+    for (int s = 0; s < N; ++s)
+        Hx[N - 1][s] = -terminal_state_weight * X[N - 1][s];
+
+    // Ping-pong buffers: cur holds Hk[t_idx], nxt receives Hk[j]
+    HkSlice buf0, buf1;
+    for (int z = 0; z < N; ++z)
+        for (int r = 0; r < N; ++r)
+            buf0[z][r].setZero();
+
+    HkSlice* cur = &buf0;
+    HkSlice* nxt = &buf1;
+
+    for (int j = N - 2; j >= 0; --j) {
+        int t_idx = j + 1;
+        double Pk = prec_k[t_idx];
+        int m = j + 1;
+        int mz = t_idx + 1;
+
+        std::array<Vec3, N> W;
+        for (int r = 0; r < m; ++r) {
+            Vec3 acc = Vec3::Zero();
+            for (int z = 0; z < mz; ++z)
+                acc += (*cur)[z][r].transpose() * Rk[t_idx][z];
+            W[r] = DT * Pk * acc;
+        }
+
+        for (int r = 0; r < m; ++r)
+            Hx[j][r] = Hx[t_idx][r] + DT * (X[t_idx][r] + W[r]);
+
+        for (int z = 0; z < m; ++z) {
+            for (int r = 0; r < m; ++r) {
+                Mat3 first = Dk[t_idx][r] * Hx[t_idx][z].transpose();
+                Mat3 ck = X[t_idx][z] * W[r].transpose();
+                (*nxt)[z][r] = (*cur)[z][r] + DT * (first - ck);
+            }
+        }
+
+        std::swap(cur, nxt);
+    }
+}
+
+// Legacy version that also fills Hk (for figure output)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
                       const Kernel2D& Dk,
                       const std::array<double, N>& prec_k,
@@ -488,7 +544,6 @@ EquilibriumResult solve_equilibrium(
     auto prec2 = make_constant_prec(P2);
 
     EnvironmentResult env;
-    Kernel3D Hk1, Hk2;
 
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
         forward_environment(D1, D2, p1_val, p2_val,
@@ -496,15 +551,16 @@ EquilibriumResult solve_equilibrium(
                             Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
         Kernel2D Hx1, Hx2;
-        backward_kernels(env.X, env.R2, D2, prec2, 0.0, Hx1, Hk1);
-        backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2, Hk2);
+        backward_kernels(env.X, env.R2, D2, prec2, 0.0, Hx1);
+        backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2);
 
         // Merged: compute D_new, norms, and relaxation in one pass
+        // Only iterate over causal triangle (s <= t) — upper triangle is always zero
         constexpr double neg_inv_rho = -(1.0 / RHO);
         double norm_d1n = 0.0, norm_d1d = 0.0;
         double norm_d2n = 0.0, norm_d2d = 0.0;
         for (int t = 0; t < N; ++t)
-            for (int s = 0; s < N; ++s) {
+            for (int s = 0; s <= t; ++s) {
                 Vec3 d1n = neg_inv_rho * Hx1[t][s];
                 Vec3 d2n = neg_inv_rho * Hx2[t][s];
                 norm_d1d += (d1n - D1[t][s]).squaredNorm();

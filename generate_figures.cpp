@@ -9,10 +9,30 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <tuple>
 
 namespace fs = std::filesystem;
 
 static const std::string DATA_DIR = "data";
+
+// ---------- equilibrium cache ----------
+// Many figures solve the same (p1, p2, obs_config) equilibria.
+// Cache them to avoid redundant ~0.1s solves.
+static std::map<std::tuple<int,int,int,int>, EquilibriumResult> eq_cache;
+
+static EquilibriumResult& cached_solve(
+    double p1, double p2, bool verbose = false,
+    const Mat3& Pi_1 = Pi1(), int obs1 = 1,
+    const Mat3& Pi_2 = Pi2(), int obs2 = 2) {
+    auto key = std::make_tuple(
+        static_cast<int>(p1 * 1000000), static_cast<int>(p2 * 1000000),
+        obs1, obs2);
+    auto it = eq_cache.find(key);
+    if (it != eq_cache.end()) return it->second;
+    auto [ins, _] = eq_cache.emplace(key,
+        solve_equilibrium(p1, p2, verbose, Pi_1, obs1, Pi_2, obs2));
+    return ins->second;
+}
 
 // ---------- CSV helpers ----------
 // Write a 2D kernel (N x N x D_W) as CSV: columns t, s, ch0, ch1, ch2
@@ -53,7 +73,7 @@ int main() {
     std::cout << std::string(60, '=') << "\n";
     std::cout << "Solving symmetric benchmark p1=p2=3 ...\n";
 
-    auto eq = solve_equilibrium(3, 3);
+    auto& eq = cached_solve(3, 3, true);
     auto& D1 = eq.D1;
     auto& D2 = eq.D2;
     auto& env = eq.env;
@@ -141,7 +161,7 @@ int main() {
 
         for (int p : p_values) {
             std::cout << "  Solving p=" << p << " ...\n";
-            auto eq_p = solve_equilibrium(p, p, false);
+            auto& eq_p = cached_solve(p, p);
             auto bar_p = solve_bar_equilibrium(eq_p.env, eq_p.D1, eq_p.D2,
                                                p * p, p * p, 2000, 0.08, 1e-10);
             barD1_curves[p] = bar_p.barD1;
@@ -177,7 +197,7 @@ int main() {
 
         for (int p2v : p2_values) {
             std::cout << "  Solving p1=" << p1_fixed << ", p2=" << p2v << " ...\n";
-            auto eq_a = solve_equilibrium(p1_fixed, p2v, false);
+            auto& eq_a = cached_solve(p1_fixed, p2v);
             auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
                                                p1_fixed * p1_fixed, p2v * p2v,
                                                2000, 0.08, 1e-10);
@@ -208,7 +228,7 @@ int main() {
 
         for (int p2v : p2_values) {
             std::cout << "  Computing wedges for p1=" << p1_fixed << ", p2=" << p2v << " ...\n";
-            auto eq_a = solve_equilibrium(p1_fixed, p2v, false);
+            auto& eq_a = cached_solve(p1_fixed, p2v);
             auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
                                                p1_fixed * p1_fixed, p2v * p2v,
                                                2000, 0.08, 1e-10);
@@ -265,7 +285,7 @@ int main() {
             for (int p2v : p_values) {
                 // Private
                 std::cout << "    Private: p2=" << p2v << " ...\n";
-                auto eq_a = solve_equilibrium(p1_fixed, p2v, false);
+                auto& eq_a = cached_solve(p1_fixed, p2v);
                 auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
                                                    p1_fixed * p1_fixed, p2v * p2v,
                                                    2000, 0.08, 1e-10);
@@ -274,8 +294,8 @@ int main() {
                 // Pooled
                 double p_common = std::sqrt(p1_fixed * p1_fixed + p2v * p2v);
                 std::cout << "    Pooled: p_common=" << p_common << " ...\n";
-                auto eq_c = solve_equilibrium(p_common, p_common, false,
-                                              Pi1(), 1, Pi1(), 1);
+                auto& eq_c = cached_solve(p_common, p_common, false,
+                                          Pi1(), 1, Pi1(), 1);
                 auto bar_c = solve_bar_equilibrium(eq_c.env, eq_c.D1, eq_c.D2,
                                                    p_common * p_common, p_common * p_common,
                                                    2000, 0.08, 1e-10);

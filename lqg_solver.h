@@ -132,6 +132,13 @@ void forward_environment(
     const Mat3& Pi_2, int obs_idx_2,
     EnvironmentResult& env);
 
+// Hk-free version: uses internal ping-pong buffers (~230KB) instead of 36MB Kernel3D
+void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
+                      const Kernel2D& Dk, const std::array<double, N>& prec_k,
+                      double terminal_state_weight,
+                      Kernel2D& Hx);
+
+// Legacy version that also fills Hk (only needed for figure output)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
                       const Kernel2D& Dk, const std::array<double, N>& prec_k,
                       double terminal_state_weight,
