@@ -11,6 +11,7 @@ Usage:
 import json
 import os
 import subprocess
+import time
 
 import numpy as np
 import plotly.graph_objects as go
@@ -20,11 +21,14 @@ from dash import Dash, Input, Output, callback, dcc, html
 N = 40
 SOLVER = os.path.join(os.path.dirname(__file__), "build", "solve_interactive")
 
+# Sweep grid for Figures 8 and 12
+SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20]
+
 # --------------- solver interface ---------------
 
-def run_solver(p1, p2, b1, b2):
+def run_single(p1, p2, b1, b2):
     result = subprocess.run(
-        [SOLVER, str(p1), str(p2), str(b1), str(b2)],
+        [SOLVER, "single", str(p1), str(p2), str(b1), str(b2)],
         capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0:
@@ -32,21 +36,27 @@ def run_solver(p1, p2, b1, b2):
     return json.loads(result.stdout)
 
 
+def run_sweep(p1, b1, b2, p2_values=SWEEP_P2):
+    cmd = [SOLVER, "sweep", str(p1), str(b1), str(b2)]
+    cmd += [str(p) for p in p2_values]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError(f"Sweep failed: {result.stderr}")
+    return json.loads(result.stdout)
+
+
 def kernel_to_array(kernel_dict):
-    """Convert {ch0: [[...]], ch1: ..., ch2: ...} to (N, N, 3) numpy array."""
     arr = np.zeros((N, N, 3))
     for ch in range(3):
         arr[:, :, ch] = np.array(kernel_dict[f"ch{ch}"])
     return arr
 
 
-# --------------- color scales ---------------
+# --------------- color helpers ---------------
 
 def viridis_color(frac):
-    """Map fraction [0,1] to a viridis-ish hex color."""
     import colorsys
-    # Simple approximation: blue → teal → yellow
-    h = 0.75 - 0.55 * frac  # hue from blue to yellow-green
+    h = 0.75 - 0.55 * frac
     s = 0.7 + 0.2 * (1 - abs(2 * frac - 1))
     v = 0.5 + 0.4 * frac
     r, g, b = colorsys.hsv_to_rgb(max(0, min(1, h)), s, v)
@@ -55,11 +65,19 @@ def viridis_color(frac):
 
 VIRIDIS_COLORS = [viridis_color(i / (N - 1)) for i in range(N)]
 
+# Plasma-ish scale for sweep curves (p2 coloring)
+def plasma_color(frac):
+    import colorsys
+    h = 0.83 - 0.75 * frac  # purple → yellow
+    s = 0.85
+    v = 0.5 + 0.45 * frac
+    r, g, b = colorsys.hsv_to_rgb(max(0, min(1, h)), s, v)
+    return f"rgb({int(r*255)},{int(g*255)},{int(b*255)})"
 
-# --------------- figure builders ---------------
+
+# --------------- single-solve figure builders ---------------
 
 def make_kernel_fig(t, kernel_arr, title, n_curves=15):
-    """3-channel kernel plot with colored t-slices."""
     ch_labels = ["W⁰", "W¹", "W²"]
     fig = make_subplots(rows=1, cols=3, subplot_titles=[
         f"{title} channel {ch_labels[ch]}" for ch in range(3)
@@ -70,7 +88,8 @@ def make_kernel_fig(t, kernel_arr, title, n_curves=15):
             fig.add_trace(go.Scatter(
                 x=t[:ti + 1], y=kernel_arr[ti, :ti + 1, ch],
                 mode="lines", line=dict(color=VIRIDIS_COLORS[ti], width=1.5),
-                showlegend=False, hovertemplate=f"t={t[ti]:.3f}<br>s=%{{x:.3f}}<br>val=%{{y:.4g}}",
+                showlegend=False,
+                hovertemplate=f"t={t[ti]:.3f}<br>s=%{{x:.3f}}<br>val=%{{y:.4g}}",
             ), row=1, col=ch + 1)
     fig.update_xaxes(title_text="s")
     fig.update_layout(height=350, margin=dict(t=40, b=40, l=50, r=20))
@@ -80,8 +99,7 @@ def make_kernel_fig(t, kernel_arr, title, n_curves=15):
 def make_residual_fig(data):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=list(range(len(data["residuals"]))),
-        y=data["residuals"],
+        x=list(range(len(data["residuals"]))), y=data["residuals"],
         mode="lines", line=dict(width=2),
     ))
     fig.update_yaxes(type="log", title_text="Relative residual")
@@ -98,8 +116,6 @@ def make_controls_fig(data):
     fig = make_subplots(rows=1, cols=3, subplot_titles=[
         "Mean Controls", "Mean State Path", "Aggregate Effort"
     ])
-
-    # Panel 1: barD1, barD2
     fig.add_trace(go.Scatter(x=t, y=data["barD1"], name="D̄¹",
                              line=dict(width=2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=t, y=data["barD2"], name="D̄²",
@@ -107,7 +123,6 @@ def make_controls_fig(data):
     fig.add_trace(go.Scatter(x=t, y=data["barD1_pi"], name="Perfect info",
                              line=dict(width=1.5, dash="dot", color="gray")), row=1, col=1)
 
-    # Panel 2: barX
     fig.add_trace(go.Scatter(x=t, y=data["barX"], name="X̄",
                              line=dict(width=2), showlegend=False), row=1, col=2)
     fig.add_trace(go.Scatter(x=t, y=data["barX_pi"], name="X̄ perfect",
@@ -118,7 +133,6 @@ def make_controls_fig(data):
     fig.add_hline(y=data["b2"], line_dash="dot", line_color="rgba(0,0,0,0.3)",
                   annotation_text=f"b₂={data['b2']:.1f}", row=1, col=2)
 
-    # Panel 3: aggregate effort
     effort = np.abs(data["barD1"]) + np.abs(data["barD2"])
     effort_pi = 2 * np.abs(np.array(data["barD1_pi"]))
     fig.add_trace(go.Scatter(x=t, y=effort.tolist(), name="|D̄¹|+|D̄²|",
@@ -126,7 +140,6 @@ def make_controls_fig(data):
     fig.add_trace(go.Scatter(x=t, y=effort_pi.tolist(), name="Perfect info",
                              line=dict(width=1.5, dash="dot", color="gray"),
                              showlegend=False), row=1, col=3)
-
     fig.update_xaxes(title_text="t")
     fig.update_layout(height=350, margin=dict(t=40, b=40, l=50, r=20))
     return fig
@@ -144,6 +157,115 @@ def make_wedges_fig(data):
     fig.add_hline(y=0, line_dash="dot", line_color="gray")
     fig.update_xaxes(title_text="t")
     fig.update_layout(height=300, margin=dict(t=40, b=40, l=50, r=20))
+    return fig
+
+
+# --------------- sweep figure builders ---------------
+
+def make_barD1_sweep_fig(sweep_data):
+    """Fig 8: barD1(t) curves for each p2 in sweep, plus perfect info."""
+    t = sweep_data["t"]
+    sweeps = sweep_data["sweeps"]
+    p2_vals = [s["p2"] for s in sweeps]
+    p2_min, p2_max = min(p2_vals), max(p2_vals)
+
+    fig = go.Figure()
+    for s in sweeps:
+        frac = (s["p2"] - p2_min) / max(1, p2_max - p2_min)
+        fig.add_trace(go.Scatter(
+            x=t, y=s["barD1"], name=f"p₂={s['p2']:.1f}",
+            line=dict(width=2, color=plasma_color(frac)),
+            hovertemplate=f"p₂={s['p2']:.1f}<br>t=%{{x:.3f}}<br>D̄¹=%{{y:.4g}}",
+        ))
+    fig.add_trace(go.Scatter(
+        x=t, y=sweep_data["barD1_pi"], name="Perfect info",
+        line=dict(width=2, dash="dash", color="gray"),
+    ))
+    fig.update_xaxes(title_text="t")
+    fig.update_yaxes(title_text="D̄¹(t)")
+    fig.update_layout(
+        title=f"Fig 8: Mean Control D̄¹(t) — p₁={sweep_data['p1']:.1f} fixed, p₂ varies",
+        height=400, margin=dict(t=50, b=40, l=60, r=20),
+        legend=dict(x=1.02, y=1, font=dict(size=10)),
+    )
+    return fig
+
+
+def make_costs_fig(sweep_data):
+    """Fig 12: Private vs pooled costs as p2 varies."""
+    sweeps = sweep_data["sweeps"]
+    p2_vals = [s["p2"] for s in sweeps]
+    J1_priv = [s["J1_priv"] for s in sweeps]
+    J2_priv = [s["J2_priv"] for s in sweeps]
+    J1_pool = [s["J1_pool"] for s in sweeps]
+    J2_pool = [s["J2_pool"] for s in sweeps]
+
+    fig = make_subplots(rows=1, cols=2, subplot_titles=[
+        "Player 1 Cost J¹", "Player 2 Cost J²"
+    ])
+
+    # Player 1
+    fig.add_trace(go.Scatter(
+        x=p2_vals, y=J1_priv, name="J¹ private", mode="lines+markers",
+        line=dict(width=2, color="#1f77b4"), marker=dict(size=7),
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=p2_vals, y=J1_pool, name="J¹ pooled", mode="lines+markers",
+        line=dict(width=2, color="#1f77b4", dash="dash"), marker=dict(size=7, symbol="square"),
+    ), row=1, col=1)
+
+    # Player 2
+    fig.add_trace(go.Scatter(
+        x=p2_vals, y=J2_priv, name="J² private", mode="lines+markers",
+        line=dict(width=2, color="#d62728"), marker=dict(size=7),
+    ), row=1, col=2)
+    fig.add_trace(go.Scatter(
+        x=p2_vals, y=J2_pool, name="J² pooled", mode="lines+markers",
+        line=dict(width=2, color="#d62728", dash="dash"), marker=dict(size=7, symbol="square"),
+    ), row=1, col=2)
+
+    fig.update_xaxes(title_text="p₂")
+    fig.update_yaxes(title_text="Cost")
+    fig.update_layout(
+        title=(f"Fig 12: Equilibrium Costs — p₁={sweep_data['p1']:.1f}, "
+               f"b₁={sweep_data['b1']:.1f}, b₂={sweep_data['b2']:.1f} "
+               f"(solid=private, dashed=pooled)"),
+        height=400, margin=dict(t=50, b=40, l=60, r=20),
+    )
+    return fig
+
+
+def make_wedges_sweep_fig(sweep_data):
+    """Fig 11: Information wedges V1(t), V2(t) for each p2 in sweep."""
+    t = sweep_data["t"]
+    sweeps = sweep_data["sweeps"]
+    p2_vals = [s["p2"] for s in sweeps]
+    p2_min, p2_max = min(p2_vals), max(p2_vals)
+
+    fig = make_subplots(rows=1, cols=2, subplot_titles=[
+        "Player 1 wedge V¹(t)", "Player 2 wedge V²(t)"
+    ])
+    for s in sweeps:
+        frac = (s["p2"] - p2_min) / max(1, p2_max - p2_min)
+        color = plasma_color(frac)
+        fig.add_trace(go.Scatter(
+            x=t, y=s["V1"], name=f"p₂={s['p2']:.1f}",
+            line=dict(width=1.8, color=color), showlegend=True,
+            legendgroup=f"p2_{s['p2']}",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=t, y=s["V2"], name=f"p₂={s['p2']:.1f}",
+            line=dict(width=1.8, color=color), showlegend=False,
+            legendgroup=f"p2_{s['p2']}",
+        ), row=1, col=2)
+
+    fig.add_hline(y=0, line_dash="dot", line_color="gray")
+    fig.update_xaxes(title_text="t")
+    fig.update_layout(
+        title=f"Fig 11: Information Wedges — p₁={sweep_data['p1']:.1f} fixed",
+        height=380, margin=dict(t=50, b=40, l=60, r=20),
+        legend=dict(x=1.02, y=1, font=dict(size=10)),
+    )
     return fig
 
 
@@ -192,7 +314,23 @@ app.layout = html.Div([
         "fontFamily": "monospace", "fontSize": "13px", "color": "#555",
     }),
 
-    # Figures
+    # --- Sweep figures (depend on p1, b1, b2 only) ---
+    html.H3("Sweep over p₂", style={"textAlign": "center", "marginTop": "20px",
+                                      "color": "#333", "borderTop": "2px solid #ddd",
+                                      "paddingTop": "15px"}),
+    html.Div(id="sweep-status", style={
+        "textAlign": "center", "padding": "3px",
+        "fontFamily": "monospace", "fontSize": "12px", "color": "#888",
+    }),
+    dcc.Graph(id="fig-costs"),
+    dcc.Graph(id="fig-barD1-sweep"),
+    dcc.Graph(id="fig-wedges-sweep"),
+
+    # --- Single-solve figures (depend on all 4 params) ---
+    html.H3("Single Equilibrium Detail", style={
+        "textAlign": "center", "marginTop": "20px", "color": "#333",
+        "borderTop": "2px solid #ddd", "paddingTop": "15px",
+    }),
     dcc.Graph(id="fig-residual"),
     dcc.Graph(id="fig-controls"),
     dcc.Graph(id="fig-X"),
@@ -204,7 +342,34 @@ app.layout = html.Div([
 ], style={"maxWidth": "1400px", "margin": "0 auto", "fontFamily": "sans-serif"})
 
 
-# --------------- callback ---------------
+# --------------- callbacks ---------------
+
+@callback(
+    Output("fig-costs", "figure"),
+    Output("fig-barD1-sweep", "figure"),
+    Output("fig-wedges-sweep", "figure"),
+    Output("sweep-status", "children"),
+    Input("p1", "value"),
+    Input("b1", "value"),
+    Input("b2", "value"),
+)
+def update_sweep_figures(p1, b1, b2):
+    t0 = time.perf_counter()
+    try:
+        sweep = run_sweep(p1, b1, b2)
+    except Exception as e:
+        empty = go.Figure()
+        return empty, empty, empty, f"Sweep error: {e}"
+
+    elapsed = time.perf_counter() - t0
+    fig_costs = make_costs_fig(sweep)
+    fig_barD1 = make_barD1_sweep_fig(sweep)
+    fig_wedges = make_wedges_sweep_fig(sweep)
+
+    n_pts = len(sweep["sweeps"])
+    status = f"Sweep: {n_pts} p₂ values solved in {elapsed:.3f}s"
+    return fig_costs, fig_barD1, fig_wedges, status
+
 
 @callback(
     Output("fig-residual", "figure"),
@@ -220,12 +385,10 @@ app.layout = html.Div([
     Input("b1", "value"),
     Input("b2", "value"),
 )
-def update_figures(p1, p2, b1, b2):
-    import time
+def update_single_figures(p1, p2, b1, b2):
     t0 = time.perf_counter()
-
     try:
-        data = run_solver(p1, p2, b1, b2)
+        data = run_single(p1, p2, b1, b2)
     except Exception as e:
         empty = go.Figure()
         return empty, empty, empty, empty, empty, empty, empty, f"Error: {e}"
@@ -248,7 +411,6 @@ def update_figures(p1, p2, b1, b2):
         f"bar resid={data['bar_residual']:.2e} | "
         f"solved in {elapsed:.3f}s"
     )
-
     return fig_resid, fig_controls, fig_X, fig_D1, fig_D2, fig_calD1, fig_wedges, status
 
 
