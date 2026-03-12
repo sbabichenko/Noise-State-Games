@@ -3,8 +3,9 @@
 //
 // Key optimization: the 36MB Kernel3D F is never materialized during
 // the solver loop. Instead, products like sum_u F[j][u][s]^T * v[u]
-// are computed directly from the rank-1 decomposition:
-//   F[j][u][s] = border[u][s] + sum_k R[k][u] * A_store[k][s]^T
+// are computed directly from the rank-1 decomposition
+// using the filter kernel Xtilde and rank-1 factors A_store:
+//   F[j][u][s] = border[u][s] + sum_k Xtilde[k][u] * A_store[k][s]^T
 //
 // This eliminates the dominant O(N^3) F copy per filter call and
 // removes 72MB of heap allocation from EnvironmentResult.
@@ -38,23 +39,23 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
 // ============================================================
 // compute_filter_kernels — F-free implementation
 //
-// Computes R[j][s] and A_store[j][s] without materializing
-// the 3D filter kernel F.  Xhat is not computed since X = Xhat + R
+// Computes Xtilde[j][s] and A_store[j][s] without materializing
+// the 3D filter kernel F.  Xhat is not computed since X = Xhat + Xtilde
 // makes it redundant (and it is unused downstream).
 //
 // Xhat_const is computed from A_store history:
 //   Xhat_const[s] = Pi*X[j][s] + gamma_a[s]
-//                 + DT*g*e_i * sum_{u<s} dot(R[s][u], X[j][u])
+//                 + DT*g*e_i * sum_{u<s} dot(Xtilde[s][u], X[j][u])
 //                 + DT * sum_{k=s+1}^{j-1} partial_c_k * A_store[k][s]
 //
 // where gamma_a[s] = border_gt contribution (already computed for Gamma)
-//       partial_c_k = c_k - dot(R[k][k], X[j][k])
+//       partial_c_k = c_k - dot(Xtilde[k][k], X[j][k])
 // ============================================================
 static void compute_filter_kernels(
     const Kernel2D& X, const Mat3& Pi, int obs_index,
     double obs_gain_val,
     int filter_iters, double relax,
-    Kernel2D& R, Kernel2D& A_store) {
+    Kernel2D& Xtilde, Kernel2D& A_store) {
 
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
@@ -68,22 +69,22 @@ static void compute_filter_kernels(
 
         if (j == 0) {
             // Base case: no history
-            R[0][0] = I_minus_Pi * X[0][0];
-            for (int s = 1; s < N; ++s) R[0][s].setZero();
+            Xtilde[0][0] = I_minus_Pi * X[0][0];
+            for (int s = 1; s < N; ++s) Xtilde[0][s].setZero();
             A_store[0][0].setZero();
             continue;
         }
 
         // --- Compute c_k and partial_c_k for k = 0..j-1 ---
-        // c_k = sum_{u=0}^{k} dot(R[k][u], X[j][u])
-        // partial_c_k = c_k - dot(R[k][k], X[j][k]) = sum_{u=0}^{k-1} dot(R[k][u], X[j][u])
+        // c_k = sum_{u=0}^{k} dot(Xtilde[k][u], X[j][u])
+        // partial_c_k = c_k - dot(Xtilde[k][k], X[j][k]) = sum_{u=0}^{k-1} dot(Xtilde[k][u], X[j][u])
         std::array<double, N> c_k, partial_c_k;
         for (int k = 0; k < j; ++k) {
             double acc = 0.0;
             for (int u = 0; u < k; ++u)
-                acc += R[k][u].dot(X[j][u]);
+                acc += Xtilde[k][u].dot(X[j][u]);
             partial_c_k[k] = acc;
-            c_k[k] = acc + R[k][k].dot(X[j][k]);
+            c_k[k] = acc + Xtilde[k][k].dot(X[j][k]);
         }
 
         // --- coeff_a for gamma_a ---
@@ -93,7 +94,7 @@ static void compute_filter_kernels(
             coeff_a[z] = X[j][z](obs_index) * g;
 
         // --- Merged computation per s: Q_corr + gamma_a + Xhat interior ---
-        // All iterate k = s+1..j-1, accessing R[k][s] and A_store[k][s]
+        // All iterate k = s+1..j-1, accessing Xtilde[k][s] and A_store[k][s]
         std::array<Vec3, N> correction;
         std::array<Vec3, N> Xhat_const;
 
@@ -103,19 +104,19 @@ static void compute_filter_kernels(
             Vec3 xi_acc = Vec3::Zero();
 
             for (int k = s + 1; k < j; ++k) {
-                Vec3 Rks = R[k][s];
-                q_upper += c_k[k] * Rks;
-                ga_acc += coeff_a[k] * Rks;
+                Vec3 Xtks = Xtilde[k][s];
+                q_upper += c_k[k] * Xtks;
+                ga_acc += coeff_a[k] * Xtks;
                 xi_acc += partial_c_k[k] * A_store[k][s];
             }
 
-            Vec3 Q_corr_s = dt2_prec * (c_k[s] * R[s][s] + q_upper);
+            Vec3 Q_corr_s = dt2_prec * (c_k[s] * Xtilde[s][s] + q_upper);
             Vec3 gamma_a_s = DT * ga_acc;
 
             // gamma_b iterates u < s; border_lt reuses partial_c_k[s]
             double gb_acc = 0.0;
             for (int u = 0; u < s; ++u)
-                gb_acc += X[j][u].dot(R[u][s]);
+                gb_acc += X[j][u].dot(Xtilde[u][s]);
 
             correction[s] = Q_corr_s + gamma_a_s + (DT * gb_acc * g) * e_i;
             Xhat_const[s] = Pi * X[j][s] + gamma_a_s
@@ -127,20 +128,20 @@ static void compute_filter_kernels(
         {
             double gb_acc = 0.0;
             for (int z = 0; z < j; ++z)
-                gb_acc += X[j][z].dot(R[z][j]);
+                gb_acc += X[j][z].dot(Xtilde[z][j]);
             correction[j] = (DT * gb_acc * g) * e_i;
         }
 
-        // --- R[j][s] = (I - Pi) * X[j][s] - correction[s] ---
+        // --- Xtilde[j][s] = (I - Pi) * X[j][s] - correction[s] ---
         for (int s = 0; s < m; ++s)
-            R[j][s] = I_minus_Pi * X[j][s] - correction[s];
+            Xtilde[j][s] = I_minus_Pi * X[j][s] - correction[s];
         for (int s = m; s < N; ++s)
-            R[j][s].setZero();
+            Xtilde[j][s].setZero();
 
         // --- Rank-1 filter iteration ---
         double sigma = 0.0;
         for (int u = 0; u < j; ++u)
-            sigma += R[j][u].dot(DT * X[j][u]);
+            sigma += Xtilde[j][u].dot(DT * X[j][u]);
 
         double alpha = relax * DT * prec;
         double beta = 1.0 - relax;
@@ -166,19 +167,19 @@ static void compute_filter_kernels(
 //
 // calD[j][s] = Pi*D[j][s] + DT * sum_u F[j][u][s]^T * D[j][u]
 //
-// Decomposed using F[j][u][s] = border + sum_k R[k][u]*A_store[k][s]^T:
+// Decomposed using F[j][u][s] = border + sum_k Xtilde[k][u]*A_store[k][s]^T:
 //
 // For s < j:
-//   border_gt = g * sum_{u=s+1}^{j} R[u][s] * D[j][u](obs_index)
-//   border_lt = g * e_i * sum_{u<s} dot(R[s][u], D[j][u])
+//   border_gt = g * sum_{u=s+1}^{j} Xtilde[u][s] * D[j][u](obs_index)
+//   border_lt = g * e_i * sum_{u<s} dot(Xtilde[s][u], D[j][u])
 //   interior  = sum_{k=s+1}^{j} A_store[k][s] * partial_d_k
-//     where partial_d_k = sum_{u<k} dot(R[k][u], D[j][u])
+//     where partial_d_k = sum_{u<k} dot(Xtilde[k][u], D[j][u])
 //
 // For s = j:
-//   calD[j][j] = Pi*D[j][j] + DT*g*e_i * sum_{u<j} dot(R[j][u], D[j][u])
+//   calD[j][j] = Pi*D[j][j] + DT*g*e_i * sum_{u<j} dot(Xtilde[j][u], D[j][u])
 // ============================================================
 static void primitive_control_kernel(
-    const Kernel2D& D, const Kernel2D& R, const Kernel2D& A_store,
+    const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
     double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD) {
 
     Vec3 e_i = Vec3::Zero();
@@ -194,7 +195,7 @@ static void primitive_control_kernel(
             continue;
         }
 
-        // Precompute partial_d_k = sum_{u=0}^{k-1} dot(R[k][u], D[j][u])
+        // Precompute partial_d_k = sum_{u=0}^{k-1} dot(Xtilde[k][u], D[j][u])
         // for k = 0..j.  partial_d_k[s] also equals the border_lt sum,
         // so we reuse it below instead of recomputing.
         std::array<double, N> partial_d_k;
@@ -202,7 +203,7 @@ static void primitive_control_kernel(
         for (int k = 1; k <= j; ++k) {
             double acc = 0.0;
             for (int u = 0; u < k; ++u)
-                acc += R[k][u].dot(D[j][u]);
+                acc += Xtilde[k][u].dot(D[j][u]);
             partial_d_k[k] = acc;
         }
 
@@ -218,7 +219,7 @@ static void primitive_control_kernel(
             Vec3 bg_vec = Vec3::Zero();
             Vec3 int_acc = Vec3::Zero();
             for (int k = s + 1; k <= j; ++k) {
-                bg_vec += D_obs[k] * R[k][s];
+                bg_vec += D_obs[k] * Xtilde[k][s];
                 int_acc += partial_d_k[k] * A_store[k][s];
             }
             acc += DT * g * bg_vec + DT * int_acc;
@@ -273,19 +274,19 @@ void forward_environment(
             #pragma omp section
             compute_filter_kernels(X, Pi_1, obs_idx_1, obs_gain1,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.R1, env.A_store1);
+                                   env.Xtilde1, env.A_store1);
             #pragma omp section
             compute_filter_kernels(X, Pi_2, obs_idx_2, obs_gain2,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.R2, env.A_store2);
+                                   env.Xtilde2, env.A_store2);
         }
 
         #pragma omp parallel sections
         {
             #pragma omp section
-            primitive_control_kernel(D1, env.R1, env.A_store1, obs_gain1, obs_idx_1, Pi_1, calD1_new);
+            primitive_control_kernel(D1, env.Xtilde1, env.A_store1, obs_gain1, obs_idx_1, Pi_1, calD1_new);
             #pragma omp section
-            primitive_control_kernel(D2, env.R2, env.A_store2, obs_gain2, obs_idx_2, Pi_2, calD2_new);
+            primitive_control_kernel(D2, env.Xtilde2, env.A_store2, obs_gain2, obs_idx_2, Pi_2, calD2_new);
         }
 
         state_kernel_from_calD(calD1_new, calD2_new, X_new);
@@ -310,7 +311,7 @@ void forward_environment(
 // ============================================================
 using HkSlice = std::array<std::array<Mat3, N>, N>;
 
-void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
                       const std::array<double, N>& prec_k,
                       double terminal_state_weight,
@@ -341,7 +342,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
         for (int r = 0; r < m; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z < mz; ++z)
-                acc += (*cur)[z][r].transpose() * Rk[t_idx][z];
+                acc += (*cur)[z][r].transpose() * Xtildek[t_idx][z];
             W[r] = DT * Pk * acc;
         }
 
@@ -361,7 +362,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
 }
 
 // Legacy version that also fills Hk (for figure output)
-void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
                       const std::array<double, N>& prec_k,
                       double terminal_state_weight,
@@ -387,7 +388,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
         for (int r = 0; r < m; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z < mz; ++z)
-                acc += Hk[t_idx][z][r].transpose() * Rk[t_idx][z];
+                acc += Hk[t_idx][z][r].transpose() * Xtildek[t_idx][z];
             W[r] = DT * Pk * acc;
         }
 
@@ -408,7 +409,7 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
 // backward_bar_adjoints
 // ============================================================
 BackwardBarResult backward_bar_adjoints(
-    const Kernel2D& X, const Kernel2D& Rk, const Kernel2D& Dk,
+    const Kernel2D& X, const Kernel2D& Xtildek, const Kernel2D& Dk,
     const std::array<double, N>& barX, double b,
     const std::array<double, N>& prec_k, double terminal_weight) {
 
@@ -428,7 +429,7 @@ BackwardBarResult backward_bar_adjoints(
 
         double I_val = 0.0;
         for (int z = 0; z < mz; ++z)
-            I_val += Rk[t_idx][z].dot(res.barHk[t_idx][z]);
+            I_val += Xtildek[t_idx][z].dot(res.barHk[t_idx][z]);
         I_val *= DT * Pk;
 
         res.barHx[j] = res.barHx[t_idx] + DT * ((barX[t_idx] - b) + I_val);
@@ -469,9 +470,9 @@ BarSolution solve_bar_equilibrium(
         #pragma omp parallel sections
         {
             #pragma omp section
-            bba1 = backward_bar_adjoints(env.X, env.R2, D2, barX, g_b1, prec2_arr, 0.0);
+            bba1 = backward_bar_adjoints(env.X, env.Xtilde2, D2, barX, g_b1, prec2_arr, 0.0);
             #pragma omp section
-            bba2 = backward_bar_adjoints(env.X, env.R1, D1, barX, g_b2, prec1_arr, 0.0);
+            bba2 = backward_bar_adjoints(env.X, env.Xtilde1, D1, barX, g_b2, prec1_arr, 0.0);
         }
 
         std::array<double, N> barD1_new, barD2_new;
@@ -562,9 +563,9 @@ EquilibriumResult solve_equilibrium(
         #pragma omp parallel sections
         {
             #pragma omp section
-            backward_kernels(env.X, env.R2, D2, prec2, 0.0, Hx1);
+            backward_kernels(env.X, env.Xtilde2, D2, prec2, 0.0, Hx1);
             #pragma omp section
-            backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2);
+            backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2);
         }
 
         // Compute Picard image G and residual F = G - D
@@ -707,22 +708,22 @@ CostPair compute_costs_general(const EnvironmentResult& env,
 }
 
 // ============================================================
-// materialize_F — builds F[j][u][s] from R + A_store for figure output
+// materialize_F — builds F[j][u][s] from Xtilde + A_store for figure output
 //
 // F[j][u][s] for u,s < j:
-//   border + sum_{k=max(u,s)+1}^{j} R[k][u] * A_store[k][s]^T
+//   border + sum_{k=max(u,s)+1}^{j} Xtilde[k][u] * A_store[k][s]^T
 //
 // Border at step max(u,s):
-//   u > s: F[u][u][s] = g*e_i*R[u][s]^T
-//   u < s: F[s][u][s] = g*R[s][u]*e_i^T
+//   u > s: F[u][u][s] = g*e_i*Xtilde[u][s]^T
+//   u < s: F[s][u][s] = g*Xtilde[s][u]*e_i^T
 //   u = s: 0
 //
 // Border row/col at step j:
-//   F[j][u][j] = g*R[j][u]*e_i^T  (u < j)
-//   F[j][j][s] = g*e_i*R[j][s]^T  (s < j)
+//   F[j][u][j] = g*Xtilde[j][u]*e_i^T  (u < j)
+//   F[j][j][s] = g*e_i*Xtilde[j][s]^T  (s < j)
 //   F[j][j][j] = 0
 // ============================================================
-void materialize_F(const Kernel2D& R, const Kernel2D& A_store,
+void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
                    double obs_gain, int obs_index, Kernel3D& F) {
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
@@ -734,14 +735,14 @@ void materialize_F(const Kernel2D& R, const Kernel2D& A_store,
     for (int j = 1; j < N; ++j) {
         // Set borders
         for (int u = 0; u < j; ++u) {
-            F[j][u][j] = g * R[j][u] * e_i.transpose();
-            F[j][j][u] = g * e_i * R[j][u].transpose();
+            F[j][u][j] = g * Xtilde[j][u] * e_i.transpose();
+            F[j][j][u] = g * e_i * Xtilde[j][u].transpose();
         }
         F[j][j][j].setZero();
 
-        // Interior: F[j][u][s] = F[j-1][u][s] + R[j][u] * A_store[j][s]^T
+        // Interior: F[j][u][s] = F[j-1][u][s] + Xtilde[j][u] * A_store[j][s]^T
         for (int u = 0; u < j; ++u)
             for (int s = 0; s < j; ++s)
-                F[j][u][s] = F[j - 1][u][s] + R[j][u] * A_store[j][s].transpose();
+                F[j][u][s] = F[j - 1][u][s] + Xtilde[j][u] * A_store[j][s].transpose();
     }
 }

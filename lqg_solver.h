@@ -96,7 +96,7 @@ inline Mat3 Pi2() {
 // ---------- environment result ----------
 struct EnvironmentResult {
     Kernel2D X;
-    Kernel2D R1, R2;
+    Kernel2D Xtilde1, Xtilde2;
     Kernel2D calD1, calD2;
     // Rank-1 filter factorization: A_store[k][s] for s < k
     Kernel2D A_store1, A_store2;
@@ -132,19 +132,19 @@ void forward_environment(
     EnvironmentResult& env);
 
 // Hk-free version: uses internal ping-pong buffers (~230KB) instead of 36MB Kernel3D
-void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk, const std::array<double, N>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx);
 
 // Legacy version that also fills Hk (only needed for figure output)
-void backward_kernels(const Kernel2D& X, const Kernel2D& Rk,
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk, const std::array<double, N>& prec_k,
                       double terminal_state_weight,
                       Kernel2D& Hx, Kernel3D& Hk);
 
 BackwardBarResult backward_bar_adjoints(
-    const Kernel2D& X, const Kernel2D& Rk, const Kernel2D& Dk,
+    const Kernel2D& X, const Kernel2D& Xtildek, const Kernel2D& Dk,
     const std::array<double, N>& barX, double b,
     const std::array<double, N>& prec_k, double terminal_weight);
 
@@ -176,7 +176,7 @@ CostPair compute_costs_general(const EnvironmentResult& env,
 
 // ---------- F materialization (for figure output only) ----------
 // Builds F[j][u][s] for ALL j from R + A_store. Writes into pre-allocated Kernel3D.
-void materialize_F(const Kernel2D& R, const Kernel2D& A_store,
+void materialize_F(const Kernel2D& Xtilde, const Kernel2D& A_store,
                    double obs_gain, int obs_index, Kernel3D& F);
 
 // ---------- utility ----------

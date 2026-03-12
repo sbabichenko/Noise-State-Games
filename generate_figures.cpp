@@ -180,7 +180,7 @@ int main() {
 
     // Backward bar adjoints for Figure 9
     auto prec9 = make_constant_prec(9.0);
-    auto bba = backward_bar_adjoints(env.X, env.R2, D2, bar_sol.barX, g_b1, prec9, 0.0);
+    auto bba = backward_bar_adjoints(env.X, env.Xtilde2, D2, bar_sol.barX, g_b1, prec9, 0.0);
 
     // ============================================================
     // FIGURE 3: Picard residual
@@ -218,7 +218,7 @@ int main() {
     std::cout << "Figure 7: Filtering kernel F1 at t=T ...\n";
     {
         Kernel3D F1;
-        materialize_F(env.R1, env.A_store1, env.obs_gain1, env.obs_idx1, F1);
+        materialize_F(env.Xtilde1, env.A_store1, env.obs_gain1, env.obs_idx1, F1);
         write_F1_T(DATA_DIR + "/fig7_F1_T.csv", F1);
     }
 
@@ -272,11 +272,11 @@ int main() {
     }
 
     // ============================================================
-    // FIGURE 9: barH2 and R2
+    // FIGURE 9: barH2 and Xtilde2
     // ============================================================
-    std::cout << "Figure 9: Opponent adjoint barH2 and gain R2 ...\n";
+    std::cout << "Figure 9: Opponent adjoint barH2 and gain Xtilde2 ...\n";
     write_kernel2d(DATA_DIR + "/fig9_barH2.csv", bba.barHk);
-    write_kernel2d(DATA_DIR + "/fig9_R2.csv", env.R2);
+    write_kernel2d(DATA_DIR + "/fig9_R2.csv", env.Xtilde2);
 
     // ============================================================
     // FIGURE 10: Asymmetric equilibrium panels (p1=3, p2 varies)
@@ -327,17 +327,17 @@ int main() {
             auto prec2_arr = make_constant_prec(static_cast<double>(p2v * p2v));
             auto prec1_arr = make_constant_prec(static_cast<double>(p1_fixed * p1_fixed));
 
-            auto bba1 = backward_bar_adjoints(eq_a.env.X, eq_a.env.R2, eq_a.D2,
+            auto bba1 = backward_bar_adjoints(eq_a.env.X, eq_a.env.Xtilde2, eq_a.D2,
                                               bar_a.barX, B1_DEFAULT, prec2_arr, 0.0);
-            auto bba2 = backward_bar_adjoints(eq_a.env.X, eq_a.env.R1, eq_a.D1,
+            auto bba2 = backward_bar_adjoints(eq_a.env.X, eq_a.env.Xtilde1, eq_a.D1,
                                               bar_a.barX, B2_DEFAULT, prec1_arr, 0.0);
 
             for (int j = 0; j < N; ++j) {
                 int m = j + 1;
                 double V1 = 0.0, V2 = 0.0;
                 for (int z = 0; z < m; ++z) {
-                    V1 += eq_a.env.R2[j][z].dot(bba1.barHk[j][z]);
-                    V2 += eq_a.env.R1[j][z].dot(bba2.barHk[j][z]);
+                    V1 += eq_a.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
+                    V2 += eq_a.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
                 }
                 V1 *= static_cast<double>(p2v * p2v) * DT;
                 V2 *= static_cast<double>(p1_fixed * p1_fixed) * DT;

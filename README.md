@@ -6,7 +6,7 @@ shared Brownian noise and must choose feedback controls without knowing the
 other player's observation.
 
 The solver computes infinite-dimensional kernel-valued fixed points
-(feedback kernels **D**, state kernels **X**, filter kernels **R**) on
+(feedback kernels **D**, state kernels **X**, filter kernels **X̃**) on
 a discrete time grid, then derives mean-field trajectories and player costs.
 
 ## Quick start
@@ -30,7 +30,7 @@ The equilibrium is found by a three-level nested iteration:
 2. **Forward environment** (`forward_environment`):
    given D₁, D₂, iterate the coupled filter–control system
    for `FORWARD_INNER_ITERS` (= 5) steps to obtain the state kernel X,
-   filter gains R, rank-1 factors A, and primitive control kernels calD.
+   filter gains X̃, rank-1 factors A, and primitive control kernels calD.
 
 3. **Rank-1 filter iteration** (inside `compute_filter_kernels`):
    solve for the filter kernel's A factor via
@@ -47,10 +47,10 @@ The 3-D filter kernel F\[j\]\[u\]\[s\] (an N × N × N array of 3 × 3 matrices,
 the form  Σ_u F\[j\]\[u\]\[s\]ᵀ v\[u\]  is evaluated directly from
 
 ```
-F[j][u][s] = border(u, s) + Σ_{k>max(u,s)}  R[k][u] · A[k][s]ᵀ
+F[j][u][s] = border(u, s) + Σ_{k>max(u,s)}  X̃[k][u] · A[k][s]ᵀ
 ```
 
-using the already-available rank-1 factors R and A.  This eliminates
+using the already-available rank-1 factors X̃ and A.  This eliminates
 the dominant memory allocation and the O(N³) copy that was required to
 populate F at every filter call.  F is only materialised once, for
 Figure 7 output (`materialize_F`).
