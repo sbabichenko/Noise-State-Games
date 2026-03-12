@@ -537,7 +537,23 @@ BarSolution solve_bar_equilibrium(
 }
 
 // ============================================================
-// solve_equilibrium
+// Anderson-accelerated inner product over causal triangle
+// ============================================================
+static double kernel_dot(const Kernel2D& a1, const Kernel2D& a2,
+                         const Kernel2D& b1, const Kernel2D& b2) {
+    double s = 0.0;
+    for (int t = 0; t < N; ++t)
+        for (int s2 = 0; s2 <= t; ++s2)
+            s += a1[t][s2].dot(b1[t][s2]) + a2[t][s2].dot(b2[t][s2]);
+    return s;
+}
+
+// ============================================================
+// solve_equilibrium — Anderson-accelerated Picard iteration
+//
+// Anderson(m) acceleration uses the last m residuals to find
+// optimal mixing coefficients that extrapolate toward the fixed
+// point, typically reducing iteration count by 2-3x.
 // ============================================================
 EquilibriumResult solve_equilibrium(
     double p1_val, double p2_val, bool verbose,
@@ -557,6 +573,13 @@ EquilibriumResult solve_equilibrium(
 
     EnvironmentResult env;
 
+    // Anderson acceleration state
+    constexpr int AA_M = 5;
+    constexpr double AA_REG = 1e-12;
+    struct AAEntry { Kernel2D f1, f2, g1, g2; };
+    std::vector<AAEntry> aa_hist(AA_M);
+    int aa_stored = 0;
+
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
         forward_environment(D1, D2, p1_val, p2_val,
                             FORWARD_INNER_ITERS,
@@ -571,25 +594,21 @@ EquilibriumResult solve_equilibrium(
             backward_kernels(env.X, env.R1, D1, prec1, 0.0, Hx2);
         }
 
-        // Merged: compute D_new, norms, and relaxation in one pass
-        // Only iterate over causal triangle (s <= t) — upper triangle is always zero
+        // Compute Picard image G and residual F = G - D
         constexpr double neg_inv_rho = -(1.0 / RHO);
-        double norm_d1n = 0.0, norm_d1d = 0.0;
-        double norm_d2n = 0.0, norm_d2d = 0.0;
+        Kernel2D G1, G2, F1, F2;
+        double norm_fn = 0.0, norm_gn = 0.0;
         for (int t = 0; t < N; ++t)
             for (int s = 0; s <= t; ++s) {
-                Vec3 d1n = neg_inv_rho * Hx1[t][s];
-                Vec3 d2n = neg_inv_rho * Hx2[t][s];
-                norm_d1d += (d1n - D1[t][s]).squaredNorm();
-                norm_d1n += d1n.squaredNorm();
-                norm_d2d += (d2n - D2[t][s]).squaredNorm();
-                norm_d2n += d2n.squaredNorm();
-                D1[t][s] += PICARD_RELAX * (d1n - D1[t][s]);
-                D2[t][s] += PICARD_RELAX * (d2n - D2[t][s]);
+                G1[t][s] = neg_inv_rho * Hx1[t][s];
+                G2[t][s] = neg_inv_rho * Hx2[t][s];
+                F1[t][s] = G1[t][s] - D1[t][s];
+                F2[t][s] = G2[t][s] - D2[t][s];
+                norm_fn += F1[t][s].squaredNorm() + F2[t][s].squaredNorm();
+                norm_gn += G1[t][s].squaredNorm() + G2[t][s].squaredNorm();
             }
-        double err = std::max(
-            std::sqrt(norm_d1d) / std::max(1.0, std::sqrt(norm_d1n)),
-            std::sqrt(norm_d2d) / std::max(1.0, std::sqrt(norm_d2n)));
+
+        double err = std::sqrt(norm_fn) / std::max(1.0, std::sqrt(norm_gn));
         residuals.push_back(err);
 
         if (!std::isfinite(err)) break;
@@ -602,11 +621,87 @@ EquilibriumResult solve_equilibrium(
                 std::cout << "  Converged at iteration " << it << std::endl;
             break;
         }
+
+        // Anderson acceleration
+        int m = std::min(aa_stored, AA_M);
+        bool did_anderson = false;
+
+        if (m >= 1) {
+            // ΔF_i = F_curr - f_hist[i], for i = 0..m-1 (most recent first)
+            // Gram matrix H[i][j] = <ΔF_i, ΔF_j>, rhs[i] = <ΔF_i, F_curr>
+            // Using: <ΔF_i, ΔF_j> = <F,F> - <F,f_j> - <f_i,F> + <f_i,f_j>
+            double FF = norm_fn;
+            Eigen::VectorXd Ffi(m);
+            for (int i = 0; i < m; ++i) {
+                int idx = (aa_stored - 1 - i + AA_M) % AA_M;
+                Ffi(i) = kernel_dot(F1, F2, aa_hist[idx].f1, aa_hist[idx].f2);
+            }
+
+            Eigen::MatrixXd H(m, m);
+            Eigen::VectorXd rhs(m);
+            for (int i = 0; i < m; ++i) {
+                rhs(i) = FF - Ffi(i);
+                for (int j = 0; j <= i; ++j) {
+                    int ii = (aa_stored - 1 - i + AA_M) % AA_M;
+                    int jj = (aa_stored - 1 - j + AA_M) % AA_M;
+                    double fifj = kernel_dot(aa_hist[ii].f1, aa_hist[ii].f2,
+                                             aa_hist[jj].f1, aa_hist[jj].f2);
+                    H(i, j) = FF - Ffi(i) - Ffi(j) + fifj;
+                    H(j, i) = H(i, j);
+                }
+            }
+
+            // Tikhonov regularization
+            for (int i = 0; i < m; ++i)
+                H(i, i) += AA_REG * (1.0 + H(i, i));
+
+            Eigen::VectorXd gamma = H.ldlt().solve(rhs);
+
+            // x_{k+1} = G - Σ γ_i * (G - g_hist[i])
+            //         = (1 - Σγ) * G + Σ γ_i * g_hist[i]
+            Kernel2D D1_aa = G1, D2_aa = G2;
+            for (int i = 0; i < m; ++i) {
+                int idx = (aa_stored - 1 - i + AA_M) % AA_M;
+                double gi = gamma(i);
+                for (int t = 0; t < N; ++t)
+                    for (int s = 0; s <= t; ++s) {
+                        D1_aa[t][s] -= gi * (G1[t][s] - aa_hist[idx].g1[t][s]);
+                        D2_aa[t][s] -= gi * (G2[t][s] - aa_hist[idx].g2[t][s]);
+                    }
+            }
+
+            // Damped Anderson: blend with simple relaxation for stability
+            // x_{k+1} = (1-β)*D + β*D_aa, with β tuned for the problem
+            constexpr double AA_BETA = 0.6;
+            for (int t = 0; t < N; ++t)
+                for (int s = 0; s <= t; ++s) {
+                    D1[t][s] = (1.0 - AA_BETA) * D1[t][s] + AA_BETA * D1_aa[t][s];
+                    D2[t][s] = (1.0 - AA_BETA) * D2[t][s] + AA_BETA * D2_aa[t][s];
+                }
+            did_anderson = true;
+        }
+
+        if (!did_anderson) {
+            // Simple relaxation for first iteration
+            for (int t = 0; t < N; ++t)
+                for (int s = 0; s <= t; ++s) {
+                    D1[t][s] += PICARD_RELAX * F1[t][s];
+                    D2[t][s] += PICARD_RELAX * F2[t][s];
+                }
+        }
+
+        // Store in ring buffer
+        int store_idx = aa_stored % AA_M;
+        aa_hist[store_idx].f1 = F1;
+        aa_hist[store_idx].f2 = F2;
+        aa_hist[store_idx].g1 = G1;
+        aa_hist[store_idx].g2 = G2;
+        aa_stored++;
     }
 
-    forward_environment(D1, D2, p1_val, p2_val,
-                        FORWARD_INNER_ITERS,
-                        Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
+    // env is already computed for the converged D1/D2 — the convergence
+    // check breaks BEFORE the Anderson update modifies D, so no final
+    // forward_environment is needed.
 
     return {D1, D2, std::move(env), residuals};
 }
