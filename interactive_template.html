@@ -545,13 +545,18 @@ function plotKernel(divId, t, kernelData, title) {
             });
         }
     }
+    const annotations = chLabels.map((l, i) => ({
+        text: l, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    annotations.push({
+        text: title, xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+    });
     const layout = {
-        height: 300, margin,
+        height: 320, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 3, pattern: 'independent'},
-        annotations: chLabels.map((l, i) => ({
-            text: `${title} ${l}`, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
-        })),
+        annotations,
     };
     for (let i = 1; i <= 3; i++) {
         layout['xaxis' + i] = {title: 's'};
