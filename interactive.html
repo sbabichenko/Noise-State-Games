@@ -145,7 +145,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">State dynamics</h3>
     <p>The state evolves as</p>
-    $$dX_t = \bigl(d_t^1 + d_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
+    $$dX_t = \bigl(D_t^1 + D_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
     <p>where $W^0$ is common noise observed by neither player.</p>
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
@@ -160,7 +160,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Cost functionals</h3>
     <p>Player $i$ minimizes</p>
-    $$J^i = \mathbb{E}\!\int_0^T \!\Bigl[\,(X_t - b_i)^2 + r_i\,(d_t^i)^2\,\Bigr]\,dt,$$
+    $$J^i = \mathbb{E}\!\int_0^T \!\Bigl[\,(X_t - b_i)^2 + r_i\,(D_t^i)^2\,\Bigr]\,dt,$$
     <p>
       where $b_i$ is player $i$'s bliss point (target state) and
       $r_i > 0$ is the control cost weight.
@@ -171,7 +171,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       We look for a Nash equilibrium in causal linear strategies.
       Each player's control is a linear functional of their past signal:
     </p>
-    $$d_t^i = \int_0^t D^i(t,s)\,dY_s^i,$$
+    $$D_t^i = \int_0^t D^i(t,s)\,dY_s^i,$$
     <p>
       where $D^i(t,s)$ is the <em>feedback kernel</em>.
       The solver finds $D^1, D^2$ such that neither player can
