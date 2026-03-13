@@ -43,6 +43,7 @@ static void print_kernel2d(const char* name, const Kernel2D& K) {
 // Perfect-info Riccati solution (depends on b1, b2 for the bar dynamics)
 static void compute_perfect_info(double b1, double b2,
                                   std::array<double, N_MAX>& barD1_pi,
+                                  std::array<double, N_MAX>& barD2_pi,
                                   std::array<double, N_MAX>& barX_pi) {
     std::array<double, N_MAX> S_pi;
     S_pi.fill(0.0);
@@ -53,9 +54,9 @@ static void compute_perfect_info(double b1, double b2,
     barX_pi[0] = X0;
     for (int j = 0; j < g_n; ++j) {
         barD1_pi[j] = -(1.0 / g_r1) * S_pi[j] * (barX_pi[j] - b1);
-        double barD2_pi_j = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
+        barD2_pi[j] = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
         if (j < g_n - 1)
-            barX_pi[j + 1] = barX_pi[j] + g_dt * (barD1_pi[j] + barD2_pi_j);
+            barX_pi[j + 1] = barX_pi[j] + g_dt * (barD1_pi[j] + barD2_pi[j]);
     }
 }
 
@@ -93,8 +94,8 @@ static int run_single(int argc, char* argv[]) {
         V2_arr[j] = V2 * p1 * p1 * g_dt;
     }
 
-    std::array<double, N_MAX> barD1_pi, barX_pi;
-    compute_perfect_info(b1, b2, barD1_pi, barX_pi);
+    std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
+    compute_perfect_info(b1, b2, barD1_pi, barD2_pi, barX_pi);
 
     const auto& tg = t_grid();
     printf("{");
@@ -122,6 +123,7 @@ static int run_single(int argc, char* argv[]) {
     printf(","); print_array("V2", V2_arr.data(), g_n);
 
     printf(","); print_array("barD1_pi", barD1_pi.data(), g_n);
+    printf(","); print_array("barD2_pi", barD2_pi.data(), g_n);
     printf(","); print_array("barX_pi", barX_pi.data(), g_n);
 
     printf(",\"J1\":%.12g,\"J2\":%.12g", costs.J1, costs.J2);
@@ -146,13 +148,14 @@ static int run_sweep(int argc, char* argv[]) {
     for (int i = 0; i < n_p2; ++i)
         p2_vals[i] = atof(argv[7 + i]);
 
-    std::array<double, N_MAX> barD1_pi, barX_pi;
-    compute_perfect_info(b1, b2, barD1_pi, barX_pi);
+    std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
+    compute_perfect_info(b1, b2, barD1_pi, barD2_pi, barX_pi);
 
     const auto& tg = t_grid();
     printf("{");
     print_array("t", tg.data(), g_n);
     printf(","); print_array("barD1_pi", barD1_pi.data(), g_n);
+    printf(","); print_array("barD2_pi", barD2_pi.data(), g_n);
     printf(",\"p1\":%.12g,\"b1\":%.12g,\"b2\":%.12g", p1, b1, b2);
 
     printf(",\"sweeps\":[");
