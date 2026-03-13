@@ -265,7 +265,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveSweepPoint, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -352,17 +352,6 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
         return JSON.parse(json);
     } catch (e) {
         console.error('callSweep failed:', e);
-        return null;
-    }
-}
-
-function callSweepPoint(p1, p2, b1, b2, r1, r2) {
-    try {
-        const ptr = solveSweepPoint(p1, p2, b1, b2, r1, r2);
-        const json = Module.UTF8ToString(ptr);
-        return JSON.parse(json);
-    } catch (e) {
-        console.error('callSweepPoint failed:', e);
         return null;
     }
 }
@@ -675,81 +664,13 @@ function ensureFull(p) {
     return fullData;
 }
 
-// Incremental sweep: solves one p2 at a time, updating plots between solves.
-// Returns immediately with partial data; caller should not block on completion.
-let sweepRunning = false;
-let sweepCancelToken = 0;  // incremented to cancel in-progress sweep
-
-function startIncrementalSweep(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key === sweepKey && sweepData && sweepData.sweeps.length === SWEEP_P2.length) return; // already complete
-
-    // Cancel any in-progress sweep
-    const token = ++sweepCancelToken;
-
-    // Compute time grid and perfect-info baseline
-    const n = p.N;
-    const t = Array.from({length: n}, (_, i) => i * p.T / (n - 1));
-
-    // Compute perfect-info barD1 via a lightweight Riccati solve
-    // (reuse existing light solve data if available)
-    const lightResult = ensureLight(p);
-    const barD1_pi = lightResult ? lightResult.barD1_pi : Array(n).fill(0);
-
-    // Initialize sweep data structure for incremental building
-    sweepData = {t, barD1_pi, p1: p.p1, b1: p.b1, b2: p.b2, sweeps: []};
-    sweepKey = key + ':partial';
-
-    let idx = 0;
-    sweepRunning = true;
-
-    function solveNext() {
-        if (token !== sweepCancelToken) { sweepRunning = false; return; } // cancelled
-        if (idx >= SWEEP_P2.length) {
-            sweepKey = key; // mark as complete
-            sweepRunning = false;
-            document.getElementById('status').textContent =
-                document.getElementById('status').textContent.replace(/Sweep.*$/, `Sweep complete (${SWEEP_P2.length}/${SWEEP_P2.length})`);
-            return;
-        }
-
-        const p2val = SWEEP_P2[idx];
-        const statusEl = document.getElementById('status');
-        statusEl.textContent = `Sweep: solving p\u2082=${p2val.toFixed(1)} (${idx + 1}/${SWEEP_P2.length})...`;
-
-        // Yield to browser, then solve one point
-        setTimeout(() => {
-            if (token !== sweepCancelToken) { sweepRunning = false; return; }
-
-            const point = callSweepPoint(p.p1, p2val, p.b1, p.b2, p.r1, p.r2);
-            if (point) {
-                sweepData.sweeps.push(point);
-                // Update plots with partial data
-                if (sweepData.sweeps.length >= 2) {
-                    try {
-                        plotCosts('plot-costs', sweepData);
-                        plotBarD1Sweep('plot-barD1-sweep', sweepData);
-                        plotWedgesSweep('plot-wedges-sweep', sweepData);
-                    } catch (e) { console.error('Incremental sweep plot error:', e); }
-                }
-            }
-
-            idx++;
-            solveNext();
-        }, 0);
-    }
-
-    solveNext();
-}
-
-// Legacy ensureSweep — still used if sweep data is already complete
+// Ensure sweep result is fresh (sweep doesn't depend on p2)
 function ensureSweep(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
     if (key !== sweepKey) {
-        // Start incremental sweep (returns immediately)
-        startIncrementalSweep(p);
+        const result = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
+        if (result) { sweepData = result; sweepKey = key; }
     }
     return sweepData;
 }
@@ -792,14 +713,11 @@ function renderTab(tab, p) {
                 break;
             }
             case 'tab-statics': {
-                // Start incremental sweep (plots update after each solve)
-                startIncrementalSweep(p);
-                // If we have partial data already, render it now
-                if (sweepData && sweepData.sweeps.length >= 2) {
-                    plotCosts('plot-costs', sweepData);
-                    plotBarD1Sweep('plot-barD1-sweep', sweepData);
-                    plotWedgesSweep('plot-wedges-sweep', sweepData);
-                }
+                const sweep = ensureSweep(p);
+                if (!sweep) break;
+                plotCosts('plot-costs', sweep);
+                plotBarD1Sweep('plot-barD1-sweep', sweep);
+                plotWedgesSweep('plot-wedges-sweep', sweep);
                 break;
             }
             case 'tab-diagnostics': {
@@ -859,9 +777,8 @@ function updateActive() {
 
 function onSliderChange() {
     updateLabels();
-    // Mark all tabs dirty and cancel any in-progress sweep
+    // Mark all tabs dirty
     for (const k in dirty) dirty[k] = true;
-    sweepCancelToken++;
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(updateActive, 150);
 }
@@ -877,7 +794,6 @@ SolverModule().then(mod => {
     solveLight = mod.cwrap('solve_light', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
-    solveSweepPoint = mod.cwrap('solve_sweep_point', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmMalloc = mod._malloc;
