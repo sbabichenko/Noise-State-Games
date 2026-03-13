@@ -14,10 +14,10 @@
 #include <vector>
 
 // ---------- compile-time maximum ----------
-constexpr int N_MAX = 320;
+constexpr int N_MAX = 160;
 constexpr int D_W = 3;
 
-// Legacy 3D kernel max — kept small to avoid 320^3 * 72 B = 2.4 GB types.
+// Legacy 3D kernel max — kept small to avoid 160^3 * 72 B memory usage.
 // Only used by generate_figures; the interactive solver never touches Kernel3D.
 constexpr int N_MAX_3D = 80;
 
@@ -78,9 +78,12 @@ struct Kernel2D {
         for (auto& v : data) v.setZero();
     }
 
-    // Resize to current g_n (used after set_grid changes)
+    // Resize to current g_n (used after set_grid changes).
+    // Skips reallocation when size already matches.
     void resize() {
-        data.resize(g_n * (g_n + 1) / 2, Vec3::Zero());
+        const int need = g_n * (g_n + 1) / 2;
+        if (static_cast<int>(data.size()) == need) return;
+        data.assign(need, Vec3::Zero());
     }
 
     int tri_size() const { return static_cast<int>(data.size()); }
@@ -108,11 +111,17 @@ struct Kernel3D {
 
 // ---------- t_grid ----------
 // Returns a pointer to g_n doubles representing the time grid.
-// Recomputed each call (cheap) to reflect current g_n/g_T.
+// Cached: only recomputed when g_n or g_T change.
 inline const std::array<double, N_MAX>& t_grid() {
     static std::array<double, N_MAX> g;
-    for (int i = 0; i < g_n; ++i)
-        g[i] = static_cast<double>(i) * g_T / (g_n - 1);
+    static int cached_n = -1;
+    static double cached_T = -1.0;
+    if (cached_n != g_n || cached_T != g_T) {
+        cached_n = g_n;
+        cached_T = g_T;
+        for (int i = 0; i < g_n; ++i)
+            g[i] = static_cast<double>(i) * g_T / (g_n - 1);
+    }
     return g;
 }
 
