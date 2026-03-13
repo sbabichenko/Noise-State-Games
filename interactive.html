@@ -484,18 +484,22 @@ function plotFKernel(divId, t, fData, title) {
     const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
     const traces = [];
     const annotations = [];
+    const viridis = makeViridis(N);
+    const step = Math.max(1, Math.floor(N / 12));
     for (let row = 0; row < 3; row++) {
         for (let col = 0; col < 3; col++) {
             const idx = row * 3 + col + 1;
             const key = `r${row}c${col}`;
-            const z = fData[key];
-            traces.push({
-                z: z, x: t, y: t, type: 'heatmap',
-                colorscale: 'RdBu', zmid: 0,
-                showscale: (row === 0 && col === 2),
-                xaxis: 'x' + idx, yaxis: 'y' + idx,
-                hovertemplate: 'u=%{y:.3f}<br>s=%{x:.3f}<br>val=%{z:.4g}<extra></extra>',
-            });
+            const z = fData[key]; // NxN array: z[u][s]
+            for (let ui = 0; ui < N; ui += step) {
+                traces.push({
+                    x: t.slice(0, ui + 1), y: z[ui].slice(0, ui + 1),
+                    mode: 'lines', line: {color: viridis[ui], width: 1.2},
+                    showlegend: false,
+                    xaxis: 'x' + idx, yaxis: 'y' + idx,
+                    hovertemplate: `u=${t[ui].toFixed(3)}<br>s=%{x:.3f}<br>val=%{y:.4g}`,
+                });
+            }
             annotations.push({
                 text: `${chNames[row]}\u2190${chNames[col]}`,
                 xref: 'paper', yref: 'paper',
