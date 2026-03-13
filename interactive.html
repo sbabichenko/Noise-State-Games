@@ -145,22 +145,22 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">State dynamics</h3>
     <p>The state evolves as</p>
-    $$dX_t = \bigl(u_t^1 + u_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
+    $$dX_t = \bigl(d_t^1 + d_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
     <p>where $W^0$ is common noise observed by neither player.</p>
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
     <p>Player $i$ continuously observes a private signal</p>
-    $$dZ_t^i = p_i\,dW_t^i, \qquad i=1,2,$$
+    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + E^i\,dW_t^i, \qquad i=1,2,$$
     <p>
       where $W^1, W^2$ are independent Brownian motions (also independent of $W^0$),
       and $p_i > 0$ is the signal precision.
-      Player 1 sees only $Z^1$; player 2 sees only $Z^2$.
+      Player 1 sees only $Y^1$; player 2 sees only $Y^2$.
       Neither player observes the state $X_t$ directly.
     </p>
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Cost functionals</h3>
     <p>Player $i$ minimizes</p>
-    $$J^i = \mathbb{E}\!\int_0^T \!\Bigl[\,(X_t - b_i)^2 + r_i\,(u_t^i)^2\,\Bigr]\,dt,$$
+    $$J^i = \mathbb{E}\!\int_0^T \!\Bigl[\,(X_t - b_i)^2 + r_i\,(d_t^i)^2\,\Bigr]\,dt,$$
     <p>
       where $b_i$ is player $i$'s bliss point (target state) and
       $r_i > 0$ is the control cost weight.
@@ -171,7 +171,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       We look for a Nash equilibrium in causal linear strategies.
       Each player's control is a linear functional of their past signal:
     </p>
-    $$u_t^i = \int_0^t D^i(t,s)\,dZ_s^i,$$
+    $$d_t^i = \int_0^t D^i(t,s)\,dY_s^i,$$
     <p>
       where $D^i(t,s)$ is the <em>feedback kernel</em>.
       The solver finds $D^1, D^2$ such that neither player can
@@ -181,7 +181,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Parameters</h3>
     <table style="border-collapse:collapse; margin:6px 0; font-size:0.95em;">
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$p_1, p_2$</td>
-          <td>Signal precisions &mdash; how well each player observes their noise component</td></tr>
+          <td>Signal precisions &mdash; how well each player observes the state</td></tr>
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$b_1, b_2$</td>
           <td>Bliss points &mdash; each player's preferred state level</td></tr>
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$r_1, r_2$</td>
