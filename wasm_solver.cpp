@@ -55,13 +55,19 @@ static void compute_perfect_info(double b1, double b2,
 // ============================================================
 // Solver result cache
 // ============================================================
-// Avoids redundant solve_equilibrium calls when switching between tabs
-// (e.g. Equilibrium → Kernels → F Kernel all need the same solve).
+// Two-level cache: the equilibrium solve depends only on (p1, p2, r1, r2, N, T).
+// The bar solution, costs, and wedges additionally depend on (b1, b2).
+// This avoids re-solving the expensive equilibrium when only b changes.
 
 static struct SolveCache {
-    double p1, p2, b1, b2, r1, r2;
+    // Equilibrium-level cache key (does NOT depend on b1, b2)
+    double p1, p2, r1, r2;
     int n; double T;
-    bool valid;
+    bool eq_valid;
+
+    // Full cache key (includes b1, b2)
+    double b1, b2;
+    bool bar_valid;
 
     EquilibriumResult eq;
     BarSolution bar;
@@ -74,22 +80,37 @@ static struct SolveCache {
     bool f_valid;
 } g_cache = {};
 
-static bool cache_matches(double p1, double p2, double b1, double b2, double r1, double r2) {
-    return g_cache.valid &&
+static bool eq_cache_matches(double p1, double p2, double r1, double r2) {
+    return g_cache.eq_valid &&
            g_cache.p1 == p1 && g_cache.p2 == p2 &&
-           g_cache.b1 == b1 && g_cache.b2 == b2 &&
            g_cache.r1 == r1 && g_cache.r2 == r2 &&
            g_cache.n == g_n && g_cache.T == g_T;
 }
 
+static bool full_cache_matches(double p1, double p2, double b1, double b2, double r1, double r2) {
+    return eq_cache_matches(p1, p2, r1, r2) &&
+           g_cache.bar_valid &&
+           g_cache.b1 == b1 && g_cache.b2 == b2;
+}
+
 // Run the full solve pipeline if not cached. After this, g_cache holds all results.
 static void ensure_solve(double p1, double p2, double b1, double b2, double r1, double r2) {
-    if (cache_matches(p1, p2, b1, b2, r1, r2)) return;
+    if (full_cache_matches(p1, p2, b1, b2, r1, r2)) return;
 
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
 
-    g_cache.eq = solve_equilibrium(p1, p2, false);
+    // Only re-solve equilibrium if p1, p2, r1, r2, N, or T changed
+    if (!eq_cache_matches(p1, p2, r1, r2)) {
+        g_cache.eq = solve_equilibrium(p1, p2, false);
+        g_cache.p1 = p1; g_cache.p2 = p2;
+        g_cache.r1 = r1; g_cache.r2 = r2;
+        g_cache.n = g_n; g_cache.T = g_T;
+        g_cache.eq_valid = true;
+        g_cache.f_valid = false;  // F kernel depends on equilibrium
+    }
+
+    // Bar solution, costs, wedges depend on b1, b2 too
     g_cache.bar = solve_bar_equilibrium(g_cache.eq.env, g_cache.eq.D1, g_cache.eq.D2,
                                          p1*p1, p2*p2, 2000, 0.08, 1e-10);
     g_cache.costs = compute_costs_general(g_cache.eq.env, g_cache.eq.calD1, g_cache.eq.calD2,
@@ -113,12 +134,8 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
 
     compute_perfect_info(b1, b2, g_cache.barD1_pi, g_cache.barX_pi);
 
-    g_cache.p1 = p1; g_cache.p2 = p2;
     g_cache.b1 = b1; g_cache.b2 = b2;
-    g_cache.r1 = r1; g_cache.r2 = r2;
-    g_cache.n = g_n; g_cache.T = g_T;
-    g_cache.valid = true;
-    g_cache.f_valid = false;  // F kernel depends on equilibrium; recompute lazily
+    g_cache.bar_valid = true;
 }
 
 // Compute F kernel slices if not cached. Requires ensure_solve() first.
@@ -167,7 +184,8 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE
 void wasm_set_grid(int n, double T) {
     set_grid(n, T);
-    g_cache.valid = false;  // grid change invalidates cache
+    g_cache.eq_valid = false;  // grid change invalidates all caches
+    g_cache.bar_valid = false;
     g_cache.f_valid = false;
 }
 
@@ -279,6 +297,58 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
         out("}");
     }
     out("]}");
+
+    return g_output.c_str();
+}
+
+// Single-point sweep: solve for one p2 value and return JSON for that point.
+// Called repeatedly from JS with yields between calls to allow UI repaint.
+EMSCRIPTEN_KEEPALIVE
+const char* solve_sweep_point(double p1, double p2, double b1, double b2, double r1, double r2) {
+    g_output.clear();
+    g_output.reserve(8 * 1024);
+    g_b1 = b1; g_b2 = b2;
+    g_r1 = r1; g_r2 = r2;
+
+    out("{\"p2\":%.6g", p2);
+
+    auto eq = solve_equilibrium(p1, p2, false);
+    auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
+                                      p1*p1, p2*p2, 2000, 0.08, 1e-10);
+    auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
+                                             bar, r1, r2, b1, b2);
+    out(","); out_array("barD1", bar.barD1.data(), g_n);
+    out(",\"J1_priv\":%.6g,\"J2_priv\":%.6g", costs_priv.J1, costs_priv.J2);
+
+    double p_common = std::sqrt(p1*p1 + p2*p2);
+    auto eq_pool = solve_equilibrium(p_common, p_common, false,
+                                      Pi1(), 1, Pi1(), 1);
+    auto bar_pool = solve_bar_equilibrium(eq_pool.env, eq_pool.D1, eq_pool.D2,
+                                           p_common*p_common, p_common*p_common,
+                                           2000, 0.08, 1e-10);
+    auto costs_pool = compute_costs_general(eq_pool.env, eq_pool.calD1, eq_pool.calD2,
+                                             bar_pool, r1, r2, b1, b2);
+    out(",\"J1_pool\":%.6g,\"J2_pool\":%.6g", costs_pool.J1, costs_pool.J2);
+
+    auto prec2_arr = make_constant_prec(p2 * p2);
+    auto prec1_arr = make_constant_prec(p1 * p1);
+    auto bba1 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde2, eq.D2,
+                                       bar.barX, b1, prec2_arr, 0.0);
+    auto bba2 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde1, eq.D1,
+                                       bar.barX, b2, prec1_arr, 0.0);
+    std::array<double, N_MAX> V1_arr, V2_arr;
+    for (int j = 0; j < g_n; ++j) {
+        double V1 = 0.0, V2 = 0.0;
+        for (int z = 0; z <= j; ++z) {
+            V1 += eq.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
+            V2 += eq.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
+        }
+        V1_arr[j] = V1 * p2 * p2 * g_dt;
+        V2_arr[j] = V2 * p1 * p1 * g_dt;
+    }
+    out(","); out_array("V1", V1_arr.data(), g_n);
+    out(","); out_array("V2", V2_arr.data(), g_n);
+    out("}");
 
     return g_output.c_str();
 }
