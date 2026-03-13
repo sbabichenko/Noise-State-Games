@@ -211,9 +211,9 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-wedges" class="plot"></div>
     <div class="figure-caption">
-      Information wedges for the current (p&#x2081;, p&#x2082;) pair. V&#xB9; measures
-      player 1's marginal gain from improving their opponent's signal; V&#xB2; is the
-      symmetric quantity for player 2.
+      Information wedges for the current (p&#x2081;, p&#x2082;) pair. V&#xB9; prices the marginal value
+      to player 1 of shifting player 2's posterior; V&#xB2; is the symmetric quantity.
+      Both vanish at the terminal date and when signals are exogenous to controls.
     </div>
   </div>
 </div>
@@ -261,14 +261,15 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-Xtilde1" class="plot"></div>
     <div class="figure-caption">
-      Player 1's filter kernel X&#x0303;&#xB9;(t,s): the conditional expectation kernel mapping
-      noise innovations to player 1's state estimate.
+      Player 1's unresolved state kernel X&#x0303;&#xB9;(t,s): the component of the state's impulse
+      response to the s-th shock that player 1 has not yet resolved at time t. Large when
+      the shock is recent or the observation channel weak, shrinking as observations accumulate.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-Xtilde2" class="plot"></div>
     <div class="figure-caption">
-      Player 2's filter kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
+      Player 2's unresolved state kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
     </div>
   </div>
   <div class="figure-block">
