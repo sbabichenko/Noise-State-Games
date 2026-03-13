@@ -50,14 +50,14 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 <!-- Primary sliders (always visible) -->
 <div class="sliders">
   <div class="slider-group">
-    <label>p&#x2081; (player 1 precision)</label>
+    <label>p&#x2081; (player 1 root-precision)</label>
     <div class="slider-row">
       <input type="range" id="sl-p1" min="0.5" max="20" step="0.5" value="3">
       <span class="val" id="val-p1">3.0</span>
     </div>
   </div>
   <div class="slider-group">
-    <label>p&#x2082; (player 2 precision)</label>
+    <label>p&#x2082; (player 2 root-precision)</label>
     <div class="slider-row">
       <input type="range" id="sl-p2" min="0.5" max="20" step="0.5" value="3">
       <span class="val" id="val-p2">3.0</span>
@@ -150,10 +150,10 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
     <p>Player $i$ continuously observes a private signal</p>
-    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + E^i\,dW_t, \qquad i=1,2,$$
+    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + dW_t^i, \qquad i=1,2,$$
     <p>
       where $W^1, W^2$ are independent Brownian motions (also independent of $W^0$),
-      and $p_i > 0$ is the signal precision.
+      and $p_i > 0$ is the signal root-precision (observation precision is $p_i^2$).
       Player 1 sees only $Y^1$; player 2 sees only $Y^2$.
       Neither player observes the state $X_t$ directly.
     </p>
@@ -184,7 +184,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Parameters</h3>
     <table style="border-collapse:collapse; margin:6px 0; font-size:0.95em;">
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$p_1, p_2$</td>
-          <td>Signal precisions &mdash; how well each player observes the state</td></tr>
+          <td>Signal root-precisions &mdash; observation precision is $p_i^2$; the observation equation uses $\sqrt{p_i}$</td></tr>
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$b_1, b_2$</td>
           <td>Bliss points &mdash; each player's preferred state level</td></tr>
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$r_1, r_2$</td>
@@ -225,14 +225,19 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   </div>
 </div>
 
-<!-- Tab 2: Kernels -->
+<!-- Tab 2: State/Control Kernels -->
 <div id="tab-kernels" class="tab-panel">
+  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
+    All kernel plots show three sub-panels for noise channels W&#x2070; (system), W&#xB9; (player 1 observation),
+    W&#xB2; (player 2 observation). Curves are colored by evaluation time t from purple (early) to yellow (late).
+    Each curve traces the kernel value as a function of source-noise time s &#x2208; [0,&thinsp;t] &mdash;
+    the causal constraint means later-time curves (yellow) extend further.
+  </p>
   <div class="figure-block">
     <div id="plot-X" class="plot"></div>
     <div class="figure-caption">
-      State kernel X(t,s): the primitive-noise impulse response of the state. Each curve
-      traces X(t,s) as a function of s for a fixed evaluation time t (colored by t, purple=early,
-      yellow=late). The W&#x2070; channel starts at 1 (direct shock) and decays as both players
+      State kernel X(t,s): the primitive-noise impulse response of the state.
+      The W&#x2070; channel starts at 1 (direct shock) and decays as both players
       jointly stabilize older shocks. The W&#xB9; and W&#xB2; channels are zero at s and build up
       through drift-based inference as controls feed back through the state.
     </div>
@@ -347,8 +352,11 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-residual" class="plot"></div>
     <div class="figure-caption">
-      Anderson-accelerated Picard iteration residual. The solver converges to a relative
-      tolerance of 10&#x207B;&#x2075; in the D&#xB9;, D&#xB2; kernel space.
+      Relative residual &#x2016;G(D)&#x2212;D&#x2016;/&#x2016;G(D)&#x2016; of the Anderson-accelerated
+      Picard iteration on the best-response map (Definition C.2). Convergence to
+      10&#x207B;&#x2075; typically requires 19&#x2013;47 iterations. The trace may be non-monotonic
+      &mdash; Anderson mixing is not a descent method and can overshoot before converging,
+      especially at small r (large control gains).
     </div>
   </div>
 </div>
