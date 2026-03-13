@@ -224,6 +224,9 @@ const char* solve_light(double p1, double p2, double b1, double b2, double r1, d
 static std::vector<double> g_full_buf;
 
 EMSCRIPTEN_KEEPALIVE
+int full_kernel_count() { return 7; }
+
+EMSCRIPTEN_KEEPALIVE
 double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, double r2) {
     ensure_solve(p1, p2, b1, b2, r1, r2);
 

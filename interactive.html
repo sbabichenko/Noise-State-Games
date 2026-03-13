@@ -418,7 +418,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree, wasmFullKernelCount;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -465,19 +465,17 @@ function callLight(p1, p2, b1, b2, r1, r2) {
 function callFull(p1, p2, b1, b2, r1, r2) {
     try {
         // Binary transfer: returns pointer to kernels × 3 channels × N×N doubles
-        // Old WASM outputs 5 kernels; new WASM (after recompilation) outputs 7 (with Xtilde1/2)
+        // After recompilation, WASM outputs 7 kernels (X, D1, D2, calD1, calD2, Xtilde1, Xtilde2).
+        // Detect count via wasm_full_kernel_count if available, otherwise assume 5 (old WASM).
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
         const block = n * n;
-        const heapBytes = Module.HEAPF64.buffer.byteLength;
-        const has7 = (ptr + 7 * 3 * block * 8) <= heapBytes;
-        const numKernels = has7 ? 7 : 5;
+        const numKernels = (typeof wasmFullKernelCount === 'function') ? wasmFullKernelCount() : 5;
         const total = numKernels * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-    const kernelNames = has7
-        ? ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2']
-        : ['X', 'D1', 'D2', 'calD1', 'calD2'];
+    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
+    if (numKernels >= 7) kernelNames.push('Xtilde1', 'Xtilde2');
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -1002,6 +1000,7 @@ SolverModule().then(mod => {
     wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmMalloc = mod._malloc;
     wasmFree = mod._free;
+    try { wasmFullKernelCount = mod.cwrap('full_kernel_count', 'number', []); } catch(e) {}
 
     // Set initial grid
     wasmSetGrid(40, 1.0);
