@@ -14,10 +14,10 @@
 #include <vector>
 
 // ---------- compile-time maximum ----------
-constexpr int N_MAX = 320;
+constexpr int N_MAX = 160;
 constexpr int D_W = 3;
 
-// Legacy 3D kernel max — kept small to avoid 320^3 * 72 B = 2.4 GB types.
+// Legacy 3D kernel max — kept small to avoid 160^3 * 72 B memory usage.
 // Only used by generate_figures; the interactive solver never touches Kernel3D.
 constexpr int N_MAX_3D = 80;
 

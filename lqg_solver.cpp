@@ -479,7 +479,7 @@ EquilibriumResult solve_equilibrium(
     const int TRI = g_n * (g_n + 1) / 2;
 
     struct AAEntry { Kernel2D f1, f2, g1, g2; };
-    // Thread-local AA history: avoids ~29MB alloc/free churn per solve at N=320.
+    // Thread-local AA history: avoids alloc/free churn per solve at N=160.
     static thread_local std::vector<AAEntry> hist;
     if (static_cast<int>(hist.size()) != AA_STORE) hist.resize(AA_STORE);
     // Ensure each entry is sized for current g_n

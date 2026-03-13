@@ -123,7 +123,6 @@ int main() {
 
     // Test larger N to verify dynamic sizing
     bench(160, 1.0, 3.0, 3.0, 1.0, -1.0, 0.1, 0.1);
-    bench(320, 1.0, 3.0, 3.0, 1.0, -1.0, 0.1, 0.1);
 
     return 0;
 }
