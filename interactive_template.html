@@ -178,6 +178,13 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       primitive noise innovations rather than filtered observations.
     </div>
   </div>
+  <div class="figure-block">
+    <div id="plot-calD2" class="plot"></div>
+    <div class="figure-caption">
+      Primitive control kernel &#x1D4D3;&#xB2;(t,s): player 2's control expressed in terms of
+      primitive noise innovations rather than filtered observations.
+    </div>
+  </div>
 </div>
 
 <!-- Tab 3: F Kernel -->
@@ -322,10 +329,10 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
         const block = n * n;
-        const total = 4 * 3 * block;
+        const total = 5 * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-    const kernelNames = ['X', 'D1', 'D2', 'calD1'];
+    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -740,6 +747,7 @@ function renderTab(tab, p) {
                 plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback D\u00B9(t,s)');
                 plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback D\u00B2(t,s)');
                 plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control \uD835\uDCD3\u00B9(t,s)');
+                plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control \uD835\uDCD3\u00B2(t,s)');
                 break;
             }
             case 'tab-fkernel': {
