@@ -126,8 +126,8 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="tab-model">Model</button>
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
-  <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
-  <button class="tab-btn" data-tab="tab-fkernel">F Kernel</button>
+  <button class="tab-btn" data-tab="tab-kernels">State/Control Kernels</button>
+  <button class="tab-btn" data-tab="tab-fkernel">Filter Kernels</button>
   <button class="tab-btn" data-tab="tab-statics">Comparative Statics</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
@@ -145,7 +145,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">State dynamics</h3>
     <p>The state evolves as</p>
-    $$dX_t = \bigl(d_t^1 + d_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
+    $$dX_t = \bigl(D_t^1 + D_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
     <p>where $W^0$ is common noise observed by neither player.</p>
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
@@ -160,7 +160,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Cost functionals</h3>
     <p>Player $i$ minimizes</p>
-    $$J^i = \mathbb{E}\!\int_0^T \!\Bigl[\,(X_t - b_i)^2 + r_i\,(d_t^i)^2\,\Bigr]\,dt,$$
+    $$J^i = \mathbb{E}\!\int_0^T \!\Bigl[\,(X_t - b_i)^2 + r_i\,(D_t^i)^2\,\Bigr]\,dt,$$
     <p>
       where $b_i$ is player $i$'s bliss point (target state) and
       $r_i > 0$ is the control cost weight.
@@ -168,14 +168,17 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Equilibrium concept</h3>
     <p>
-      We look for a Nash equilibrium in causal linear strategies.
-      Each player's control is a linear functional of their past signal:
+      We look for a Nash equilibrium amongst all admissible strategies.
+      In equilibrium, each player's control decomposes into a deterministic
+      mean path and a feedback response to their innovation process:
     </p>
-    $$d_t^i = \int_0^t D^i(t,s)\,dY_s^i,$$
+    $$D_t^i = \bar{D}^i(t) + \int_0^t D^i(t,s)\,d\widehat{W}^i_t(s),$$
     <p>
-      where $D^i(t,s)$ is the <em>feedback kernel</em>.
-      The solver finds $D^1, D^2$ such that neither player can
-      reduce their cost by deviating.
+      where $\bar{D}^i(t)$ is the <em>mean control</em>,
+      $D^i(t,s)$ is the <em>feedback kernel</em>, and
+      $\widehat{W}^i$ is player $i$'s innovation process.
+      The solver finds $\bar{D}^1, \bar{D}^2, D^1, D^2$ such that
+      neither player can reduce their cost by deviating.
     </p>
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Parameters</h3>
@@ -253,19 +256,32 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   </div>
 </div>
 
-<!-- Tab 3: F Kernel -->
+<!-- Tab 3: Filter Kernels -->
 <div id="tab-fkernel" class="tab-panel">
+  <div class="figure-block">
+    <div id="plot-Xtilde1" class="plot"></div>
+    <div class="figure-caption">
+      Player 1's filter kernel X&#x0303;&#xB9;(t,s): the conditional expectation kernel mapping
+      noise innovations to player 1's state estimate.
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-Xtilde2" class="plot"></div>
+    <div class="figure-caption">
+      Player 2's filter kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
+    </div>
+  </div>
   <div class="figure-block">
     <div id="plot-F1" class="plot"></div>
     <div class="figure-caption">
-      Player 1's filtering kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
+      Player 1's filtration kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
       mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as slice curves over s, colored by u.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-F2" class="plot"></div>
     <div class="figure-caption">
-      Player 2's filtering kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;.
+      Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;.
     </div>
   </div>
 </div>
@@ -391,14 +407,14 @@ function callLight(p1, p2, b1, b2, r1, r2) {
 
 function callFull(p1, p2, b1, b2, r1, r2) {
     try {
-        // Binary transfer: returns pointer to 4 kernels × 3 channels × N×N doubles
+        // Binary transfer: returns pointer to 7 kernels × 3 channels × N×N doubles
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
         const block = n * n;
-        const total = 5 * 3 * block;
+        const total = 7 * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
+    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2'];
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -818,10 +834,14 @@ function renderTab(tab, p) {
                 break;
             }
             case 'tab-fkernel': {
+                const data = ensureFull(p);
+                if (!data) { ok = false; break; }
+                plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Filter Kernel X\u0303\u00B9(t,s)');
+                plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Filter Kernel X\u0303\u00B2(t,s)');
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filter Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filter Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
