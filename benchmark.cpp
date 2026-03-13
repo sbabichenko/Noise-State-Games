@@ -5,6 +5,8 @@
 #include "lqg_solver.h"
 #include <chrono>
 #include <cstdio>
+#include <fstream>
+#include <string>
 
 using Clock = std::chrono::high_resolution_clock;
 
@@ -115,6 +117,16 @@ static void bench(int n, double T, double p1, double p2, double b1, double b2, d
     double total = eq_ms + bar_ms + cost_ms + wedge_ms + f1_ms + f2_ms;
     printf("  TOTAL computation:    %7.1f ms\n", total);
     printf("  J1=%.4f J2=%.4f\n", costs.J1, costs.J2);
+
+    // Report peak memory from /proc
+    std::ifstream proc("/proc/self/status");
+    std::string line;
+    while (std::getline(proc, line)) {
+        if (line.find("VmPeak") != std::string::npos ||
+            line.find("VmRSS") != std::string::npos) {
+            printf("  %s\n", line.c_str());
+        }
+    }
 }
 
 int main() {
