@@ -203,17 +203,24 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-controls" class="plot"></div>
     <div class="figure-caption">
-      Left: mean optimal controls D&#x0304;&#xB9; (blue) and D&#x0304;&#xB2; (red), with perfect-information benchmarks (dotted, same colors).
+      Left: mean equilibrium controls D&#x0304;&#xB9; (blue) and D&#x0304;&#xB2; (red), with perfect-information
+      Riccati benchmarks (dotted, same colors). The gap between solid and dotted lines is
+      the mean-channel distortion driven by the information wedge; it vanishes as
+      precision &#x2192; &#x221E;.
       Center: mean state path X&#x0304;(t) with bliss-point targets b&#x2081; and b&#x2082; (dashed).
-      Right: aggregate effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|, showing how information friction increases total control cost.
+      Right: aggregate mean effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|. The gap above the perfect-information
+      benchmark is the deadweight loss from bilateral belief manipulation.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-wedges" class="plot"></div>
     <div class="figure-caption">
-      Information wedges for the current (p&#x2081;, p&#x2082;) pair. V&#xB9; prices the marginal value
-      to player 1 of shifting player 2's posterior; V&#xB2; is the symmetric quantity.
-      Both vanish at the terminal date and when signals are exogenous to controls.
+      Mean information wedges V&#x0304;&#xB9;(t) and V&#x0304;&#xB2;(t). V&#x0304;&#x2071;(t) prices the
+      marginal value to player i of shifting the opponent's posterior at time t &mdash;
+      the additional costate term from bilateral belief manipulation (Theorem 3.2).
+      Both wedges are hump-shaped: zero at t=0 (no inference yet) and t=T (terminal
+      condition on the belief adjoint). Higher opponent precision amplifies the wedge,
+      since a better-informed opponent reacts more sharply to drift perturbations.
     </div>
   </div>
 </div>
@@ -223,35 +230,44 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-X" class="plot"></div>
     <div class="figure-caption">
-      State kernel X(t,s): the linear response of the state at time t to Brownian noise
-      at time s, decomposed across the three noise channels W&#x2070;, W&#xB9;, W&#xB2;.
+      State kernel X(t,s): the primitive-noise impulse response of the state. Each curve
+      traces X(t,s) as a function of s for a fixed evaluation time t (colored by t, purple=early,
+      yellow=late). The W&#x2070; channel starts at 1 (direct shock) and decays as both players
+      jointly stabilize older shocks. The W&#xB9; and W&#xB2; channels are zero at s and build up
+      through drift-based inference as controls feed back through the state.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-D1" class="plot"></div>
     <div class="figure-caption">
-      Player 1's feedback kernel D&#xB9;(t,s): the linear response of player 1's control
-      at time t to noise at time s.
+      Player 1's noise-state feedback kernel D&#xB9;(t,s): governs how player 1's control
+      at time t responds to their noise-state estimate at source time s (in filtered
+      coordinates). The W&#x2070; channel dominates because fundamental shocks are most
+      relevant for state tracking; the W&#xB9;, W&#xB2; channels reflect drift-based inference
+      about the opponent's behavior.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-D2" class="plot"></div>
     <div class="figure-caption">
-      Player 2's feedback kernel D&#xB2;(t,s): symmetric counterpart to D&#xB9;.
+      Player 2's noise-state feedback kernel D&#xB2;(t,s): symmetric counterpart to D&#xB9;,
+      with players 1&#x2194;2 swapped.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-calD1" class="plot"></div>
     <div class="figure-caption">
       Primitive control kernel &#x1D4D3;&#xB9;(t,s): player 1's control expressed in terms of
-      primitive noise innovations rather than filtered observations.
+      primitive (unobserved) Brownian shocks W rather than filtered observations.
+      Obtained from D&#xB9; by convolving with the filtration kernel F&#xB9;.
+      This is the kernel that enters the state dynamics and determines equilibrium volatility.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-calD2" class="plot"></div>
     <div class="figure-caption">
-      Primitive control kernel &#x1D4D3;&#xB2;(t,s): player 2's control expressed in terms of
-      primitive noise innovations rather than filtered observations.
+      Primitive control kernel &#x1D4D3;&#xB2;(t,s): symmetric counterpart to &#x1D4D3;&#xB9;,
+      with players 1&#x2194;2 swapped.
     </div>
   </div>
 </div>
