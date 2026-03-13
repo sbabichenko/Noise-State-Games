@@ -134,9 +134,9 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-controls" class="plot"></div>
     <div class="figure-caption">
-      Left: mean optimal controls D&#x0304;&#xB9; (solid) and D&#x0304;&#xB2; (dashed) vs perfect-information benchmark (dotted).
-      Center: mean state path X&#x0304;(t) with target lines at b&#x2081; and b&#x2082;.
-      Right: total effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|, showing how information friction increases aggregate control cost.
+      Left: mean optimal controls D&#x0304;&#xB9; (blue) and D&#x0304;&#xB2; (red), with perfect-information benchmarks (dotted, same colors).
+      Center: mean state path X&#x0304;(t) with bliss-point targets b&#x2081; and b&#x2082; (dashed).
+      Right: aggregate effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|, showing how information friction increases total control cost.
     </div>
   </div>
   <div class="figure-block">
@@ -186,7 +186,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div id="plot-F1" class="plot"></div>
     <div class="figure-caption">
       Player 1's filtering kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
-      mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as a heatmap over (u,s).
+      mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as slice curves over s, colored by u.
     </div>
   </div>
   <div class="figure-block">
@@ -432,23 +432,28 @@ function plotResidual(divId, data) {
 function plotControls(divId, data, b1, b2) {
     const t = data.t;
     const effort = data.barD1.map((d, i) => Math.abs(d) + Math.abs(data.barD2[i]));
-    const effortPi = data.barD1_pi.map(d => 2 * Math.abs(d));
+    const effortPi = data.barD1_pi.map((d, i) => Math.abs(d) + Math.abs(data.barD2_pi[i]));
 
     const traces = [
-        {x: t, y: data.barD1, name: '\u0044\u0304\u00B9', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD2, name: '\u0044\u0304\u00B2', line: {width: 2, dash: 'dash'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD1_pi, name: 'Perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD1, name: '\u0044\u0304\u00B9', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2, name: '\u0044\u0304\u00B2', line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD1_pi, name: '\u0044\u0304\u00B9 perfect', line: {width: 1.5, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2_pi, name: '\u0044\u0304\u00B2 perfect', line: {width: 1.5, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
         {x: t, y: data.barX, name: '\u0058\u0304', line: {width: 2}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
-        {x: t, y: data.barX_pi, line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.barX_pi, name: '\u0058\u0304 perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
         {x: t, y: effort, name: 'Effort', line: {width: 2}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
-        {x: t, y: effortPi, line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
+        {x: t, y: effortPi, name: 'Effort perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
     ];
     const tmax = t[t.length - 1];
     const layout = {
         height: 300, margin, grid: {rows: 1, columns: 3, pattern: 'independent'},
-        annotations: ['Mean Controls', 'Mean State', 'Aggregate Effort'].map((l, i) => ({
+        annotations: [
+            `Mean Controls \u0044\u0304\u00B9, \u0044\u0304\u00B2 (dotted = perfect info)`,
+            `Mean State \u0058\u0304(t) (dashed = targets b\u2081=${b1}, b\u2082=${b2})`,
+            `Aggregate Effort |\u0044\u0304\u00B9|+|\u0044\u0304\u00B2|`,
+        ].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+            x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 11},
         })),
         shapes: [
             {type: 'line', x0: t[0], x1: tmax, y0: b1, y1: b1,
@@ -469,9 +474,12 @@ function plotWedges(divId, data) {
         {x: t, y: data.V2, name: 'V\u00B2', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
     ], {
         height: 270, margin, grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['Player 1 wedge V\u00B9(t)', 'Player 2 wedge V\u00B2(t)'].map((l, i) => ({
+        annotations: [
+            `Player 1 Information Wedge V\u00B9(t)`,
+            `Player 2 Information Wedge V\u00B2(t)`,
+        ].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+            x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 12},
         })),
         xaxis1: {title: 't'}, xaxis2: {title: 't'},
         shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x1', yref: 'y1'},
@@ -539,9 +547,9 @@ function plotCosts(divId, sweep) {
         height: 350, margin: {...margin, t: 50},
         title: `Costs: p\u2081=${sweep.p1.toFixed(1)}, b\u2081=${sweep.b1.toFixed(1)}, b\u2082=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['Player 1 Cost J\u00B9', 'Player 2 Cost J\u00B2'].map((l, i) => ({
+        annotations: ['Player 1 Cost J\u00B9(p\u2082)', 'Player 2 Cost J\u00B2(p\u2082)'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 13},
+            x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 12},
         })),
         xaxis1: {title: 'p\u2082'}, xaxis2: {title: 'p\u2082'},
         yaxis1: {title: 'Cost'}, yaxis2: {title: 'Cost'},
@@ -700,10 +708,10 @@ function renderTab(tab, p) {
             case 'tab-kernels': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotKernel('plot-X', data.t, data.X, 'X(t,s)');
-                plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
-                plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
-                plotKernel('plot-calD1', data.t, data.calD1, '\uD835\uDCD3\u00B9(t,s)');
+                plotKernel('plot-X', data.t, data.X, 'State Kernel X(t,s)');
+                plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback D\u00B9(t,s)');
+                plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback D\u00B2(t,s)');
+                plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control \uD835\uDCD3\u00B9(t,s)');
                 break;
             }
             case 'tab-fkernel': {
@@ -758,12 +766,15 @@ function updateActive() {
             // Update status line with light-solve info (cheap — cached)
             const data = ensureLight(p);
             if (data) {
+                const warn = data.converged === false ? ' | NOT CONVERGED' : '';
                 statusEl.textContent =
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-                    `${totalMs.toFixed(0)}ms`;
+                    `${totalMs.toFixed(0)}ms${warn}`;
+                statusEl.style.color = data.converged === false ? '#d62728' : '';
             } else {
                 statusEl.textContent = `Solver failed for N=${p.N}, T=${p.T}`;
+                statusEl.style.color = '#d62728';
             }
         } catch (e) {
             console.error('updateActive failed:', e);

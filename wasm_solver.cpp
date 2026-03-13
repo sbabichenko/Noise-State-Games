@@ -8,6 +8,7 @@
 
 #include "lqg_solver.h"
 #include <emscripten/emscripten.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -24,10 +25,17 @@ static void out(const char* fmt, ...) {
     g_output += buf;
 }
 
+static void out_val(double v) {
+    if (std::isfinite(v)) out("%.6g", v);
+    else out("null");
+}
+
 static void out_array(const char* name, const double* arr, int n) {
     out("\"%s\":[", name);
-    for (int i = 0; i < n; ++i)
-        out("%s%.6g", i ? "," : "", arr[i]);
+    for (int i = 0; i < n; ++i) {
+        if (i) out(",");
+        out_val(arr[i]);
+    }
     out("]");
 }
 
@@ -35,6 +43,7 @@ static void out_array(const char* name, const double* arr, int n) {
 
 static void compute_perfect_info(double b1, double b2,
                                   std::array<double, N_MAX>& barD1_pi,
+                                  std::array<double, N_MAX>& barD2_pi,
                                   std::array<double, N_MAX>& barX_pi) {
     std::array<double, N_MAX> S_pi;
     S_pi.fill(0.0);
@@ -44,9 +53,9 @@ static void compute_perfect_info(double b1, double b2,
     barX_pi[0] = X0;
     for (int j = 0; j < g_n; ++j) {
         barD1_pi[j] = -(1.0 / g_r1) * S_pi[j] * (barX_pi[j] - b1);
-        double barD2_pi_j = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
+        barD2_pi[j] = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
         if (j < g_n - 1)
-            barX_pi[j + 1] = barX_pi[j] + g_dt * (barD1_pi[j] + barD2_pi_j);
+            barX_pi[j + 1] = barX_pi[j] + g_dt * (barD1_pi[j] + barD2_pi[j]);
     }
 }
 
@@ -73,7 +82,7 @@ static struct SolveCache {
     BarSolution bar;
     CostPair costs;
     std::array<double, N_MAX> V1, V2;
-    std::array<double, N_MAX> barD1_pi, barX_pi;
+    std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
 
     // F kernel cache (computed lazily on first F kernel tab visit)
     std::unique_ptr<FSlice> F1, F2;
@@ -132,7 +141,7 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
         g_cache.V2[j] = V2 * p1 * p1 * g_dt;
     }
 
-    compute_perfect_info(b1, b2, g_cache.barD1_pi, g_cache.barX_pi);
+    compute_perfect_info(b1, b2, g_cache.barD1_pi, g_cache.barD2_pi, g_cache.barX_pi);
 
     g_cache.b1 = b1; g_cache.b2 = b2;
     g_cache.bar_valid = true;
@@ -161,19 +170,27 @@ static void serialize_light() {
     out("{");
     out_array("t", tg.data(), g_n);
     out(",\"residuals\":[");
-    for (size_t i = 0; i < eq.residuals.size(); ++i)
-        out("%s%.6g", i ? "," : "", eq.residuals[i]);
+    for (size_t i = 0; i < eq.residuals.size(); ++i) {
+        if (i) out(",");
+        out_val(eq.residuals[i]);
+    }
     out("],\"n_iters\":%zu", eq.residuals.size());
 
     out(","); out_array("barD1", bar.barD1.data(), g_n);
     out(","); out_array("barD2", bar.barD2.data(), g_n);
     out(","); out_array("barX", bar.barX.data(), g_n);
-    out(",\"bar_residual\":%.6g", bar.bar_residual);
+    out(",\"bar_residual\":"); out_val(bar.bar_residual);
     out(","); out_array("V1", g_cache.V1.data(), g_n);
     out(","); out_array("V2", g_cache.V2.data(), g_n);
     out(","); out_array("barD1_pi", g_cache.barD1_pi.data(), g_n);
+    out(","); out_array("barD2_pi", g_cache.barD2_pi.data(), g_n);
     out(","); out_array("barX_pi", g_cache.barX_pi.data(), g_n);
-    out(",\"J1\":%.6g,\"J2\":%.6g", g_cache.costs.J1, g_cache.costs.J2);
+    out(",\"J1\":"); out_val(g_cache.costs.J1);
+    out(",\"J2\":"); out_val(g_cache.costs.J2);
+    // Convergence flag: true if final residual < tolerance
+    bool converged = !eq.residuals.empty() &&
+        std::isfinite(eq.residuals.back()) && eq.residuals.back() < PICARD_TOL;
+    out(",\"converged\":%s", converged ? "true" : "false");
     out(",\"p1\":%.6g,\"p2\":%.6g,\"b1\":%.6g,\"b2\":%.6g",
         g_cache.p1, g_cache.p2, g_cache.b1, g_cache.b2);
     out("}");
@@ -240,11 +257,15 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
                          const double* p2_vals, int n_p2) {
     g_output.clear();
     g_output.reserve(32 * 1024);
+
+    // Save/restore globals so sweep doesn't leave stale state
+    const double saved_b1 = g_b1, saved_b2 = g_b2;
+    const double saved_r1 = g_r1, saved_r2 = g_r2;
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
 
-    std::array<double, N_MAX> barD1_pi, barX_pi;
-    compute_perfect_info(b1, b2, barD1_pi, barX_pi);
+    std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
+    compute_perfect_info(b1, b2, barD1_pi, barD2_pi, barX_pi);
 
     const auto& tg = t_grid();
     out("{");
@@ -298,6 +319,8 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     }
     out("]}");
 
+    g_b1 = saved_b1; g_b2 = saved_b2;
+    g_r1 = saved_r1; g_r2 = saved_r2;
     return g_output.c_str();
 }
 
@@ -307,6 +330,9 @@ EMSCRIPTEN_KEEPALIVE
 const char* solve_sweep_point(double p1, double p2, double b1, double b2, double r1, double r2) {
     g_output.clear();
     g_output.reserve(8 * 1024);
+
+    const double saved_b1 = g_b1, saved_b2 = g_b2;
+    const double saved_r1 = g_r1, saved_r2 = g_r2;
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
 
@@ -350,6 +376,8 @@ const char* solve_sweep_point(double p1, double p2, double b1, double b2, double
     out(","); out_array("V2", V2_arr.data(), g_n);
     out("}");
 
+    g_b1 = saved_b1; g_b2 = saved_b2;
+    g_r1 = saved_r1; g_r2 = saved_r2;
     return g_output.c_str();
 }
 
