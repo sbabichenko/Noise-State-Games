@@ -338,7 +338,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const block = n * n;
         const total = 4 * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
-        const t = Array.from({length: n}, (_, i) => i * currentT / n);
+        const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
         const kernelNames = ['X', 'D1', 'D2', 'calD1'];
         const result = {t};
         let offset = 0;
@@ -386,7 +386,7 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
         const total = 2 * 9 * block;
         // ptr is byte offset; HEAPF64 is indexed by float64 offset
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
-        const t = Array.from({length: n}, (_, i) => i * currentT / n);
+        const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
         const result = {t, F1: {}, F2: {}};
         let offset = 0;
         for (const player of ['F1', 'F2']) {
@@ -709,17 +709,18 @@ function ensureFKernel(p) {
 
 function renderTab(tab, p) {
     try {
+        let ok = true;
         switch (tab) {
             case 'tab-equilibrium': {
                 const data = ensureLight(p);
-                if (!data) break;
+                if (!data) { ok = false; break; }
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
                 break;
             }
             case 'tab-kernels': {
                 const data = ensureFull(p);
-                if (!data) break;
+                if (!data) { ok = false; break; }
                 plotKernel('plot-X', data.t, data.X, 'X(t,s)');
                 plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
                 plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
@@ -728,14 +729,14 @@ function renderTab(tab, p) {
             }
             case 'tab-fkernel': {
                 const fk = ensureFKernel(p);
-                if (!fk) break;
+                if (!fk) { ok = false; break; }
                 plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filter Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filter Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
                 const sweep = ensureSweep(p);
-                if (!sweep) break;
+                if (!sweep) { ok = false; break; }
                 plotCosts('plot-costs', sweep);
                 plotBarD1Sweep('plot-barD1-sweep', sweep);
                 plotWedgesSweep('plot-wedges-sweep', sweep);
@@ -743,12 +744,12 @@ function renderTab(tab, p) {
             }
             case 'tab-diagnostics': {
                 const data = ensureLight(p);
-                if (!data) break;
+                if (!data) { ok = false; break; }
                 plotResidual('plot-residual', data);
                 break;
             }
         }
-        dirty[tab] = false;
+        if (ok) dirty[tab] = false;
     } catch (e) {
         console.error('renderTab failed:', e);
         document.getElementById('status').textContent = `Error rendering ${tab}: ${e.message}`;
@@ -781,6 +782,8 @@ function updateActive() {
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
                     `${totalMs.toFixed(0)}ms`;
+            } else {
+                statusEl.textContent = `Solver failed for N=${p.N}, T=${p.T}`;
             }
         } catch (e) {
             console.error('updateActive failed:', e);
