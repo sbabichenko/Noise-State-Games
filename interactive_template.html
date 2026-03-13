@@ -169,13 +169,16 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Equilibrium concept</h3>
     <p>
       We look for a Nash equilibrium in causal linear strategies.
-      Each player's control is a linear functional of their past signal:
+      Each player's control decomposes into a deterministic mean path
+      and a feedback response to their innovation process:
     </p>
-    $$D_t^i = \int_0^t D^i(t,s)\,dY_s^i,$$
+    $$D_t^i = \bar{D}^i(t) + \int_0^t D^i(t,s)\,d\widehat{W}_s^i,$$
     <p>
-      where $D^i(t,s)$ is the <em>feedback kernel</em>.
-      The solver finds $D^1, D^2$ such that neither player can
-      reduce their cost by deviating.
+      where $\bar{D}^i(t)$ is the <em>mean control</em>,
+      $D^i(t,s)$ is the <em>feedback kernel</em>, and
+      $\widehat{W}^i$ is player $i$'s innovation process.
+      The solver finds $\bar{D}^1, \bar{D}^2, D^1, D^2$ such that
+      neither player can reduce their cost by deviating.
     </p>
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Parameters</h3>
