@@ -79,10 +79,11 @@ static struct SolveCache {
     bool bar_valid;
 
     EquilibriumResult eq;
+    Kernel2D Vkernel1, Vkernel2;  // kernel information wedges V^i(t,r)
     BarSolution bar;
     CostPair costs;
     std::array<double, N_MAX> V1, V2;
-    Kernel2D barHk1, barHk2;  // kernel information wedges
+    Kernel2D barHk1, barHk2;  // mean-field adjoint kernels
     std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
 
     // F kernel cache (computed lazily on first F kernel tab visit)
@@ -118,6 +119,15 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
         g_cache.n = g_n; g_cache.T = g_T;
         g_cache.eq_valid = true;
         g_cache.f_valid = false;  // F kernel depends on equilibrium
+
+        // Compute kernel information wedges V^i(t,r) from converged equilibrium
+        auto prec1_eq = make_constant_prec(p1 * p1);
+        auto prec2_eq = make_constant_prec(p2 * p2);
+        Kernel2D Hx1_tmp, Hx2_tmp;
+        backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
+                         prec2_eq, 0.0, Hx1_tmp, g_cache.Vkernel1);
+        backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
+                         prec1_eq, 0.0, Hx2_tmp, g_cache.Vkernel2);
     }
 
     // Bar solution, costs, wedges depend on b1, b2 too
@@ -241,7 +251,7 @@ double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, do
     const Kernel2D* kernels[9] = {
         &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1, &g_cache.eq.calD2,
         &g_cache.eq.env.Xtilde1, &g_cache.eq.env.Xtilde2,
-        &g_cache.barHk1, &g_cache.barHk2
+        &g_cache.Vkernel1, &g_cache.Vkernel2
     };
 
     for (int k = 0; k < 9; ++k) {

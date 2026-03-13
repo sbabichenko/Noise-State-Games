@@ -224,19 +224,22 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     </div>
   </div>
   <div class="figure-block">
-    <div id="plot-barHk1" class="plot"></div>
+    <div id="plot-Vkernel1" class="plot"></div>
     <div class="figure-caption">
-      Kernel information wedge H&#x0304;&#xB9;<sub>k</sub>(t,s): the costate kernel from the mean-field
-      adjoint equation for player 1. Encodes how a marginal noise impulse at source time s
-      propagates through the belief channel to affect player 1&rsquo;s value at time t.
-      The mean wedge V&#x0304;&#xB9;(t) is recovered by integrating
-      p&#xB2;&#xB2;&thinsp;&Delta;t&thinsp;&Sigma;<sub>s</sub> X&#x0303;&#xB2;(t,s)&middot;H&#x0304;&#xB9;<sub>k</sub>(t,s).
+      Kernel information wedge $\mathcal{V}^1(t,r)$: captures how bilateral belief manipulation
+      distorts the equilibrium impulse response to the $r$-th shock (equation 3.5).
+      Computed as $\mathcal{V}^1(t,r) = p_2^2 \int_0^t \widetilde{X}^2(t,z) \cdot H^{2,1}(t,z,r)\,dz$
+      where $H^{2,1}$ is the kernel belief-adjoint.
+      The W&#x2070; channel shows distortion of the fundamental-shock response &mdash;
+      the dominant source of excess state variance from strategic friction.
+      Vanishes at $t=T$ by the terminal condition on $H^{2,1}$.
     </div>
   </div>
   <div class="figure-block">
-    <div id="plot-barHk2" class="plot"></div>
+    <div id="plot-Vkernel2" class="plot"></div>
     <div class="figure-caption">
-      Kernel information wedge H&#x0304;&#xB2;<sub>k</sub>(t,s): symmetric counterpart for player 2.
+      Kernel information wedge $\mathcal{V}^2(t,r)$: symmetric counterpart for player 2,
+      with $1 \leftrightarrow 2$ swapped.
     </div>
   </div>
 </div>
@@ -471,7 +474,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
     const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
     if (numKernels >= 7) kernelNames.push('Xtilde1', 'Xtilde2');
-    if (numKernels >= 9) kernelNames.push('barHk1', 'barHk2');
+    if (numKernels >= 9) kernelNames.push('Vkernel1', 'Vkernel2');
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -546,7 +549,7 @@ const plotCfg = {responsive: true, displayModeBar: false};
 const margin = {t: 40, b: 40, l: 55, r: 20};
 
 function plotKernel(divId, t, kernelData, title) {
-    const chLabels = ['W\u2070', 'W\u00B9', 'W\u00B2'];
+    const chLabels = ['$W^0$', '$W^1$', '$W^2$'];
     const traces = [];
     const viridis = makeViridis(N);
     const nCurves = N <= 60 ? 15 : 10;  // More slices at low N, fewer at high N
@@ -597,12 +600,12 @@ function plotControls(divId, data, b1, b2) {
     const effortPi = data.barD1_pi.map((d, i) => Math.abs(d) + Math.abs(data.barD2_pi[i]));
 
     const traces = [
-        {x: t, y: data.barD1, name: '\u0044\u0304\u00B9', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD2, name: '\u0044\u0304\u00B2', line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD1_pi, name: '\u0044\u0304\u00B9 perfect', line: {width: 1.5, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD2_pi, name: '\u0044\u0304\u00B2 perfect', line: {width: 1.5, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barX, name: '\u0058\u0304', line: {width: 2}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
-        {x: t, y: data.barX_pi, name: '\u0058\u0304 perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.barD1, name: '$\\bar{D}^1$', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2, name: '$\\bar{D}^2$', line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD1_pi, name: '$\\bar{D}^1$ perfect', line: {width: 1.5, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2_pi, name: '$\\bar{D}^2$ perfect', line: {width: 1.5, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barX, name: '$\\bar{X}$', line: {width: 2}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.barX_pi, name: '$\\bar{X}$ perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
         {x: t, y: effort, name: 'Effort', line: {width: 2}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
         {x: t, y: effortPi, name: 'Effort perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
     ];
@@ -648,8 +651,8 @@ function plotWedges(divId, data) {
         x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
     });
     Plotly.react(divId, [
-        {x: t, y: data.V1, name: 'V\u00B9', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.V2, name: 'V\u00B2', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.V1, name: '$\\bar{V}^1$', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.V2, name: '$\\bar{V}^2$', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
     ], {
         height: 290, margin: {...margin, t: 60}, grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations,
@@ -661,7 +664,7 @@ function plotWedges(divId, data) {
 
 function plotFKernel(divId, t, fData, title) {
     // fData has keys "r0c0" through "r2c2", each an NxN array
-    const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
+    const chNames = ['$W^0$', '$W^1$', '$W^2$'];
     const traces = [];
     const annotations = [];
     const viridis = makeViridis(N);
@@ -682,7 +685,7 @@ function plotFKernel(divId, t, fData, title) {
                 });
             }
             annotations.push({
-                text: `${chNames[row]}\u2190${chNames[col]}`,
+                text: `$W^${row} \\leftarrow W^${col}$`,
                 xref: 'paper', yref: 'paper',
                 x: (col + 0.5) / 3, y: 1.0 - row / 3 + 0.02,
                 showarrow: false, font: {size: 11},
@@ -706,24 +709,24 @@ function plotCosts(divId, sweep) {
     const s = sweep.sweeps;
     const p2 = s.map(v => v.p2);
     const traces = [
-        {x: p2, y: s.map(v => v.J1_priv), name: 'J\u00B9 private', mode: 'lines+markers',
+        {x: p2, y: s.map(v => v.J1_priv), name: '$J^1$ private', mode: 'lines+markers',
          line: {width: 2, color: '#1f77b4'}, marker: {size: 7}, xaxis: 'x1', yaxis: 'y1'},
-        {x: p2, y: s.map(v => v.J1_pool), name: 'J\u00B9 pooled', mode: 'lines+markers',
+        {x: p2, y: s.map(v => v.J1_pool), name: '$J^1$ pooled', mode: 'lines+markers',
          line: {width: 2, color: '#1f77b4', dash: 'dash'}, marker: {size: 7, symbol: 'square'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: p2, y: s.map(v => v.J2_priv), name: 'J\u00B2 private', mode: 'lines+markers',
+        {x: p2, y: s.map(v => v.J2_priv), name: '$J^2$ private', mode: 'lines+markers',
          line: {width: 2, color: '#d62728'}, marker: {size: 7}, xaxis: 'x2', yaxis: 'y2'},
-        {x: p2, y: s.map(v => v.J2_pool), name: 'J\u00B2 pooled', mode: 'lines+markers',
+        {x: p2, y: s.map(v => v.J2_pool), name: '$J^2$ pooled', mode: 'lines+markers',
          line: {width: 2, color: '#d62728', dash: 'dash'}, marker: {size: 7, symbol: 'square'}, xaxis: 'x2', yaxis: 'y2'},
     ];
     Plotly.react(divId, traces, {
         height: 350, margin: {...margin, t: 50},
-        title: `Costs: p\u2081=${sweep.p1.toFixed(1)}, b\u2081=${sweep.b1.toFixed(1)}, b\u2082=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
+        title: `Costs: $p_1$=${sweep.p1.toFixed(1)}, $b_1$=${sweep.b1.toFixed(1)}, $b_2$=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['Player 1 Cost J\u00B9(p\u2082)', 'Player 2 Cost J\u00B2(p\u2082)'].map((l, i) => ({
+        annotations: ['$\\text{Player 1 Cost } J^1(p_2)$', '$\\text{Player 2 Cost } J^2(p_2)$'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
             x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 12},
         })),
-        xaxis1: {title: 'p\u2082'}, xaxis2: {title: 'p\u2082'},
+        xaxis1: {title: '$p_2$'}, xaxis2: {title: '$p_2$'},
         yaxis1: {title: 'Cost'}, yaxis2: {title: 'Cost'},
     }, plotCfg);
 }
@@ -733,16 +736,16 @@ function plotBarD1Sweep(divId, sweep) {
     const s = sweep.sweeps;
     const p2min = Math.min(...s.map(v => v.p2)), p2max = Math.max(...s.map(v => v.p2));
     const traces = s.map(v => ({
-        x: t, y: v.barD1, name: `p\u2082=${v.p2.toFixed(1)}`,
+        x: t, y: v.barD1, name: `p₂=${v.p2.toFixed(1)}`,
         line: {width: 2, color: plasmaColor((v.p2 - p2min) / Math.max(1, p2max - p2min))},
-        hovertemplate: `p\u2082=${v.p2.toFixed(1)}<br>t=%{x:.3f}<br>\u0044\u0304\u00B9=%{y:.4g}`,
+        hovertemplate: `p₂=${v.p2.toFixed(1)}<br>t=%{x:.3f}<br>D̄¹=%{y:.4g}`,
     }));
     traces.push({x: t, y: sweep.barD1_pi, name: 'Perfect info',
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         height: 350, margin: {...margin, t: 50},
-        title: `Mean Control \u0044\u0304\u00B9(t) \u2014 p\u2081=${sweep.p1.toFixed(1)} fixed`,
-        xaxis: {title: 't'}, yaxis: {title: '\u0044\u0304\u00B9(t)'},
+        title: `$\\bar{D}^1(t)$ — $p_1$=${sweep.p1.toFixed(1)} fixed`,
+        xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^1(t)$'},
     }, plotCfg);
 }
 
@@ -751,16 +754,16 @@ function plotBarD2Sweep(divId, sweep) {
     const s = sweep.sweeps;
     const p2min = Math.min(...s.map(v => v.p2)), p2max = Math.max(...s.map(v => v.p2));
     const traces = s.map(v => ({
-        x: t, y: v.barD2, name: `p\u2082=${v.p2.toFixed(1)}`,
+        x: t, y: v.barD2, name: `p₂=${v.p2.toFixed(1)}`,
         line: {width: 2, color: plasmaColor((v.p2 - p2min) / Math.max(1, p2max - p2min))},
-        hovertemplate: `p\u2082=${v.p2.toFixed(1)}<br>t=%{x:.3f}<br>\u0044\u0304\u00B2=%{y:.4g}`,
+        hovertemplate: `p₂=${v.p2.toFixed(1)}<br>t=%{x:.3f}<br>D̄²=%{y:.4g}`,
     }));
     traces.push({x: t, y: sweep.barD2_pi, name: 'Perfect info',
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         height: 350, margin: {...margin, t: 50},
-        title: `Mean Control \u0044\u0304\u00B2(t) \u2014 p\u2081=${sweep.p1.toFixed(1)} fixed`,
-        xaxis: {title: 't'}, yaxis: {title: '\u0044\u0304\u00B2(t)'},
+        title: `$\\bar{D}^2(t)$ — $p_1$=${sweep.p1.toFixed(1)} fixed`,
+        xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^2(t)$'},
     }, plotCfg);
 }
 
@@ -780,13 +783,13 @@ function plotWedgesSweep(divId, sweep) {
     }
     Plotly.react(divId, traces, {
         height: 330, margin: {...margin, t: 50},
-        title: `Information Wedges \u2014 p\u2081=${sweep.p1.toFixed(1)} fixed`,
+        title: `Mean Information Wedges — $p_1$=${sweep.p1.toFixed(1)} fixed`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['Player 1 wedge V\u00B9(t)', 'Player 2 wedge V\u00B2(t)'].map((l, i) => ({
+        annotations: ['$\\bar{V}^1(t)$', '$\\bar{V}^2(t)$'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
             x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 13},
         })),
-        xaxis1: {title: 't'}, xaxis2: {title: 't'},
+        xaxis1: {title: '$t$'}, xaxis2: {title: '$t$'},
     }, plotCfg);
 }
 
@@ -894,20 +897,20 @@ function renderTab(tab, p) {
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
                 const full = ensureFull(p);
-                if (full && full.barHk1) {
-                    plotKernel('plot-barHk1', full.t, full.barHk1, '$\\text{Player 1 Kernel Wedge } \\bar{H}^1_k(t,s)$');
-                    plotKernel('plot-barHk2', full.t, full.barHk2, '$\\text{Player 2 Kernel Wedge } \\bar{H}^2_k(t,s)$');
+                if (full && full.Vkernel1) {
+                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, '$\\text{Player 1 Kernel Wedge } \\mathcal{V}^1(t,r)$');
+                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, '$\\text{Player 2 Kernel Wedge } \\mathcal{V}^2(t,r)$');
                 }
                 break;
             }
             case 'tab-kernels': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotKernel('plot-X', data.t, data.X, 'State Kernel X(t,s)');
-                plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback D\u00B9(t,s)');
-                plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback D\u00B2(t,s)');
-                plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control \uD835\uDCD3\u00B9(t,s)');
-                plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control \uD835\uDCD3\u00B2(t,s)');
+                plotKernel('plot-X', data.t, data.X, '$\\text{State Kernel } X(t,s)$');
+                plotKernel('plot-D1', data.t, data.D1, '$\\text{Player 1 Feedback } D^1(t,s)$');
+                plotKernel('plot-D2', data.t, data.D2, '$\\text{Player 2 Feedback } D^2(t,s)$');
+                plotKernel('plot-calD1', data.t, data.calD1, '$\\text{Primitive Control } \\mathcal{D}^1(t,s)$');
+                plotKernel('plot-calD2', data.t, data.calD2, '$\\text{Primitive Control } \\mathcal{D}^2(t,s)$');
                 break;
             }
             case 'tab-fkernel': {
@@ -919,8 +922,8 @@ function renderTab(tab, p) {
                 }
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F1', fk.t, fk.F1, `$\\text{Player 1 Filtration } F^1(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `$\\text{Player 2 Filtration } F^2(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
