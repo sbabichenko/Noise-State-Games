@@ -134,9 +134,9 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-controls" class="plot"></div>
     <div class="figure-caption">
-      Left: mean optimal controls D&#x0304;&#xB9; (solid) and D&#x0304;&#xB2; (dashed) vs perfect-information benchmark (dotted).
-      Center: mean state path X&#x0304;(t) with target lines at b&#x2081; and b&#x2082;.
-      Right: total effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|, showing how information friction increases aggregate control cost.
+      Left: mean optimal controls D&#x0304;&#xB9; (blue) and D&#x0304;&#xB2; (red), with perfect-information benchmarks (dotted, same colors).
+      Center: mean state path X&#x0304;(t) with bliss-point targets b&#x2081; and b&#x2082; (dashed).
+      Right: aggregate effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|, showing how information friction increases total control cost.
     </div>
   </div>
   <div class="figure-block">
@@ -186,7 +186,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div id="plot-F1" class="plot"></div>
     <div class="figure-caption">
       Player 1's filtering kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
-      mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as a heatmap over (u,s).
+      mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as slice curves over s, colored by u.
     </div>
   </div>
   <div class="figure-block">
@@ -265,7 +265,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveSweepPoint, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -317,7 +317,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const block = n * n;
         const total = 4 * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
-        const t = Array.from({length: n}, (_, i) => i * currentT / n);
+        const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
     const kernelNames = ['X', 'D1', 'D2', 'calD1'];
     const result = {t};
     let offset = 0;
@@ -356,17 +356,6 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
     }
 }
 
-function callSweepPoint(p1, p2, b1, b2, r1, r2) {
-    try {
-        const ptr = solveSweepPoint(p1, p2, b1, b2, r1, r2);
-        const json = Module.UTF8ToString(ptr);
-        return JSON.parse(json);
-    } catch (e) {
-        console.error('callSweepPoint failed:', e);
-        return null;
-    }
-}
-
 function callFKernel(p1, p2, b1, b2, r1, r2) {
     try {
         // Binary transfer: returns pointer to 2*9*N*N doubles in WASM heap
@@ -376,7 +365,7 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
         const total = 2 * 9 * block;
         // ptr is byte offset; HEAPF64 is indexed by float64 offset
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
-        const t = Array.from({length: n}, (_, i) => i * currentT / n);
+        const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
         const result = {t, F1: {}, F2: {}};
         let offset = 0;
         for (const player of ['F1', 'F2']) {
@@ -427,7 +416,10 @@ function plotKernel(divId, t, kernelData, title) {
             x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
         })),
     };
-    for (let i = 1; i <= 3; i++) layout['xaxis' + i] = {title: 's'};
+    for (let i = 1; i <= 3; i++) {
+        layout['xaxis' + i] = {title: 's'};
+        layout['yaxis' + i] = {title: i === 1 ? 'value' : ''};
+    }
     Plotly.react(divId, traces, layout, plotCfg);
 }
 
@@ -443,23 +435,28 @@ function plotResidual(divId, data) {
 function plotControls(divId, data, b1, b2) {
     const t = data.t;
     const effort = data.barD1.map((d, i) => Math.abs(d) + Math.abs(data.barD2[i]));
-    const effortPi = data.barD1_pi.map(d => 2 * Math.abs(d));
+    const effortPi = data.barD1_pi.map((d, i) => Math.abs(d) + Math.abs(data.barD2_pi[i]));
 
     const traces = [
-        {x: t, y: data.barD1, name: '\u0044\u0304\u00B9', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD2, name: '\u0044\u0304\u00B2', line: {width: 2, dash: 'dash'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD1_pi, name: 'Perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD1, name: '\u0044\u0304\u00B9', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2, name: '\u0044\u0304\u00B2', line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD1_pi, name: '\u0044\u0304\u00B9 perfect', line: {width: 1.5, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2_pi, name: '\u0044\u0304\u00B2 perfect', line: {width: 1.5, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
         {x: t, y: data.barX, name: '\u0058\u0304', line: {width: 2}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
-        {x: t, y: data.barX_pi, line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.barX_pi, name: '\u0058\u0304 perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
         {x: t, y: effort, name: 'Effort', line: {width: 2}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
-        {x: t, y: effortPi, line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
+        {x: t, y: effortPi, name: 'Effort perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
     ];
     const tmax = t[t.length - 1];
     const layout = {
         height: 300, margin, grid: {rows: 1, columns: 3, pattern: 'independent'},
-        annotations: ['Mean Controls', 'Mean State', 'Aggregate Effort'].map((l, i) => ({
+        annotations: [
+            `Mean Controls \u0044\u0304\u00B9, \u0044\u0304\u00B2 (dotted = perfect info)`,
+            `Mean State \u0058\u0304(t) (dashed = targets b\u2081=${b1}, b\u2082=${b2})`,
+            `Aggregate Effort |\u0044\u0304\u00B9|+|\u0044\u0304\u00B2|`,
+        ].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+            x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 11},
         })),
         shapes: [
             {type: 'line', x0: t[0], x1: tmax, y0: b1, y1: b1,
@@ -480,9 +477,12 @@ function plotWedges(divId, data) {
         {x: t, y: data.V2, name: 'V\u00B2', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
     ], {
         height: 270, margin, grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['Player 1 wedge V\u00B9(t)', 'Player 2 wedge V\u00B2(t)'].map((l, i) => ({
+        annotations: [
+            `Player 1 Information Wedge V\u00B9(t)`,
+            `Player 2 Information Wedge V\u00B2(t)`,
+        ].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+            x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 12},
         })),
         xaxis1: {title: 't'}, xaxis2: {title: 't'},
         shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x1', yref: 'y1'},
@@ -505,7 +505,7 @@ function plotFKernel(divId, t, fData, title) {
             const z = fData[key]; // NxN array: z[u][s]
             for (let ui = 0; ui < N; ui += step) {
                 traces.push({
-                    x: t.slice(0, ui + 1), y: z[ui].slice(0, ui + 1),
+                    x: t, y: z[ui],
                     mode: 'lines', line: {color: viridis[ui], width: 1.2},
                     showlegend: false,
                     xaxis: 'x' + idx, yaxis: 'y' + idx,
@@ -527,8 +527,8 @@ function plotFKernel(divId, t, fData, title) {
         annotations,
     };
     for (let i = 1; i <= 9; i++) {
-        layout['xaxis' + i] = {title: i > 6 ? 's' : '', showticklabels: i > 6};
-        layout['yaxis' + i] = {title: (i - 1) % 3 === 0 ? 'u' : '', showticklabels: (i - 1) % 3 === 0};
+        layout['xaxis' + i] = {title: i > 6 ? 's' : '', showticklabels: true};
+        layout['yaxis' + i] = {title: (i - 1) % 3 === 0 ? 'value' : '', showticklabels: true};
     }
     Plotly.react(divId, traces, layout, plotCfg);
 }
@@ -550,9 +550,9 @@ function plotCosts(divId, sweep) {
         height: 350, margin: {...margin, t: 50},
         title: `Costs: p\u2081=${sweep.p1.toFixed(1)}, b\u2081=${sweep.b1.toFixed(1)}, b\u2082=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['Player 1 Cost J\u00B9', 'Player 2 Cost J\u00B2'].map((l, i) => ({
+        annotations: ['Player 1 Cost J\u00B9(p\u2082)', 'Player 2 Cost J\u00B2(p\u2082)'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 13},
+            x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 12},
         })),
         xaxis1: {title: 'p\u2082'}, xaxis2: {title: 'p\u2082'},
         yaxis1: {title: 'Cost'}, yaxis2: {title: 'Cost'},
@@ -675,81 +675,13 @@ function ensureFull(p) {
     return fullData;
 }
 
-// Incremental sweep: solves one p2 at a time, updating plots between solves.
-// Returns immediately with partial data; caller should not block on completion.
-let sweepRunning = false;
-let sweepCancelToken = 0;  // incremented to cancel in-progress sweep
-
-function startIncrementalSweep(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key === sweepKey && sweepData && sweepData.sweeps.length === SWEEP_P2.length) return; // already complete
-
-    // Cancel any in-progress sweep
-    const token = ++sweepCancelToken;
-
-    // Compute time grid and perfect-info baseline
-    const n = p.N;
-    const t = Array.from({length: n}, (_, i) => i * p.T / (n - 1));
-
-    // Compute perfect-info barD1 via a lightweight Riccati solve
-    // (reuse existing light solve data if available)
-    const lightResult = ensureLight(p);
-    const barD1_pi = lightResult ? lightResult.barD1_pi : Array(n).fill(0);
-
-    // Initialize sweep data structure for incremental building
-    sweepData = {t, barD1_pi, p1: p.p1, b1: p.b1, b2: p.b2, sweeps: []};
-    sweepKey = key + ':partial';
-
-    let idx = 0;
-    sweepRunning = true;
-
-    function solveNext() {
-        if (token !== sweepCancelToken) { sweepRunning = false; return; } // cancelled
-        if (idx >= SWEEP_P2.length) {
-            sweepKey = key; // mark as complete
-            sweepRunning = false;
-            document.getElementById('status').textContent =
-                document.getElementById('status').textContent.replace(/Sweep.*$/, `Sweep complete (${SWEEP_P2.length}/${SWEEP_P2.length})`);
-            return;
-        }
-
-        const p2val = SWEEP_P2[idx];
-        const statusEl = document.getElementById('status');
-        statusEl.textContent = `Sweep: solving p\u2082=${p2val.toFixed(1)} (${idx + 1}/${SWEEP_P2.length})...`;
-
-        // Yield to browser, then solve one point
-        setTimeout(() => {
-            if (token !== sweepCancelToken) { sweepRunning = false; return; }
-
-            const point = callSweepPoint(p.p1, p2val, p.b1, p.b2, p.r1, p.r2);
-            if (point) {
-                sweepData.sweeps.push(point);
-                // Update plots with partial data
-                if (sweepData.sweeps.length >= 2) {
-                    try {
-                        plotCosts('plot-costs', sweepData);
-                        plotBarD1Sweep('plot-barD1-sweep', sweepData);
-                        plotWedgesSweep('plot-wedges-sweep', sweepData);
-                    } catch (e) { console.error('Incremental sweep plot error:', e); }
-                }
-            }
-
-            idx++;
-            solveNext();
-        }, 0);
-    }
-
-    solveNext();
-}
-
-// Legacy ensureSweep — still used if sweep data is already complete
+// Ensure sweep result is fresh (sweep doesn't depend on p2)
 function ensureSweep(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
     if (key !== sweepKey) {
-        // Start incremental sweep (returns immediately)
-        startIncrementalSweep(p);
+        const result = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
+        if (result) { sweepData = result; sweepKey = key; }
     }
     return sweepData;
 }
@@ -767,49 +699,48 @@ function ensureFKernel(p) {
 
 function renderTab(tab, p) {
     try {
+        let ok = true;
         switch (tab) {
             case 'tab-equilibrium': {
                 const data = ensureLight(p);
-                if (!data) break;
+                if (!data) { ok = false; break; }
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
                 break;
             }
             case 'tab-kernels': {
                 const data = ensureFull(p);
-                if (!data) break;
-                plotKernel('plot-X', data.t, data.X, 'X(t,s)');
-                plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
-                plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
-                plotKernel('plot-calD1', data.t, data.calD1, '\uD835\uDCD3\u00B9(t,s)');
+                if (!data) { ok = false; break; }
+                plotKernel('plot-X', data.t, data.X, 'State Kernel X(t,s)');
+                plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback D\u00B9(t,s)');
+                plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback D\u00B2(t,s)');
+                plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control \uD835\uDCD3\u00B9(t,s)');
                 break;
             }
             case 'tab-fkernel': {
                 const fk = ensureFKernel(p);
-                if (!fk) break;
+                if (!fk) { ok = false; break; }
                 plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filter Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filter Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
-                // Start incremental sweep (plots update after each solve)
-                startIncrementalSweep(p);
-                // If we have partial data already, render it now
-                if (sweepData && sweepData.sweeps.length >= 2) {
-                    plotCosts('plot-costs', sweepData);
-                    plotBarD1Sweep('plot-barD1-sweep', sweepData);
-                    plotWedgesSweep('plot-wedges-sweep', sweepData);
-                }
+                const sweep = ensureSweep(p);
+                if (!sweep) { ok = false; break; }
+                plotCosts('plot-costs', sweep);
+                plotBarD1Sweep('plot-barD1-sweep', sweep);
+                plotWedgesSweep('plot-wedges-sweep', sweep);
                 break;
             }
             case 'tab-diagnostics': {
                 const data = ensureLight(p);
-                if (!data) break;
+                if (!data) { ok = false; break; }
                 plotResidual('plot-residual', data);
                 break;
             }
         }
-        dirty[tab] = false;
+        if (ok) dirty[tab] = false;
+        // If solver failed, leave tab dirty so it retries on next update
     } catch (e) {
         console.error('renderTab failed:', e);
         document.getElementById('status').textContent = `Error rendering ${tab}: ${e.message}`;
@@ -838,10 +769,15 @@ function updateActive() {
             // Update status line with light-solve info (cheap — cached)
             const data = ensureLight(p);
             if (data) {
+                const warn = data.converged === false ? ' | NOT CONVERGED' : '';
                 statusEl.textContent =
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-                    `${totalMs.toFixed(0)}ms`;
+                    `${totalMs.toFixed(0)}ms${warn}`;
+                statusEl.style.color = data.converged === false ? '#d62728' : '';
+            } else {
+                statusEl.textContent = `Solver failed for N=${p.N}, T=${p.T}`;
+                statusEl.style.color = '#d62728';
             }
         } catch (e) {
             console.error('updateActive failed:', e);
@@ -859,9 +795,8 @@ function updateActive() {
 
 function onSliderChange() {
     updateLabels();
-    // Mark all tabs dirty and cancel any in-progress sweep
+    // Mark all tabs dirty
     for (const k in dirty) dirty[k] = true;
-    sweepCancelToken++;
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(updateActive, 150);
 }
@@ -877,7 +812,6 @@ SolverModule().then(mod => {
     solveLight = mod.cwrap('solve_light', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
-    solveSweepPoint = mod.cwrap('solve_sweep_point', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmMalloc = mod._malloc;

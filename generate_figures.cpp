@@ -5,6 +5,7 @@
 
 #include "lqg_solver.h"
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -28,7 +29,7 @@ static std::map<std::tuple<int,int,int,int>, EquilibriumResult> eq_cache;
 
 static auto make_eq_key(double p1, double p2, int obs1, int obs2) {
     return std::make_tuple(
-        static_cast<int>(p1 * 1000000), static_cast<int>(p2 * 1000000),
+        static_cast<int>(std::llround(p1 * 1000000)), static_cast<int>(std::llround(p2 * 1000000)),
         obs1, obs2);
 }
 
@@ -54,10 +55,10 @@ static BarSolution& cached_bar_solve(
     double p1, double p2, int obs1, int obs2,
     int max_iters = 2000, double relax = 0.08, double tol = 1e-10) {
     auto key = std::make_tuple(
-        static_cast<int>(p1 * 1000000), static_cast<int>(p2 * 1000000),
+        static_cast<int>(std::llround(p1 * 1000000)), static_cast<int>(std::llround(p2 * 1000000)),
         obs1, obs2,
-        static_cast<int>(prec1 * 1000000), static_cast<int>(prec2 * 1000000),
-        static_cast<int>(g_b1 * 1000000), static_cast<int>(g_b2 * 1000000));
+        static_cast<int>(std::llround(prec1 * 1000000)), static_cast<int>(std::llround(prec2 * 1000000)),
+        static_cast<int>(std::llround(g_b1 * 1000000)), static_cast<int>(std::llround(g_b2 * 1000000)));
     auto it = bar_cache.find(key);
     if (it != bar_cache.end()) return it->second;
     auto [ins, _] = bar_cache.emplace(key,
