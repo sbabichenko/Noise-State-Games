@@ -299,19 +299,25 @@ function makeViridis(n) {
 }
 
 function callLight(p1, p2, b1, b2, r1, r2) {
-    const ptr = solveLight(p1, p2, b1, b2, r1, r2);
-    const json = Module.UTF8ToString(ptr);
-    return JSON.parse(json);
+    try {
+        const ptr = solveLight(p1, p2, b1, b2, r1, r2);
+        const json = Module.UTF8ToString(ptr);
+        return JSON.parse(json);
+    } catch (e) {
+        console.error('callLight failed:', e);
+        return null;
+    }
 }
 
 function callFull(p1, p2, b1, b2, r1, r2) {
-    // Binary transfer: returns pointer to 4 kernels × 3 channels × N×N doubles
-    const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
-    const n = N;
-    const block = n * n;
-    const total = 4 * 3 * block;
-    const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
-    const t = Array.from({length: n}, (_, i) => i * currentT / n);
+    try {
+        // Binary transfer: returns pointer to 4 kernels × 3 channels × N×N doubles
+        const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
+        const n = N;
+        const block = n * n;
+        const total = 4 * 3 * block;
+        const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
+        const t = Array.from({length: n}, (_, i) => i * currentT / n);
     const kernelNames = ['X', 'D1', 'D2', 'calD1'];
     const result = {t};
     let offset = 0;
@@ -328,43 +334,57 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         result[name] = kernel;
     }
     return result;
+    } catch (e) {
+        console.error('callFull failed:', e);
+        return null;
+    }
 }
 
 function callSweep(p1, b1, b2, r1, r2, p2Arr) {
-    const n = p2Arr.length;
-    const buf = wasmMalloc(n * 8);
-    const view = new Float64Array(Module.HEAPF64.buffer, buf, n);
-    for (let i = 0; i < n; i++) view[i] = p2Arr[i];
-    const ptr = solveSweep(p1, b1, b2, r1, r2, buf, n);
-    wasmFree(buf);
-    const json = Module.UTF8ToString(ptr);
-    return JSON.parse(json);
+    try {
+        const n = p2Arr.length;
+        const buf = wasmMalloc(n * 8);
+        const view = new Float64Array(Module.HEAPF64.buffer, buf, n);
+        for (let i = 0; i < n; i++) view[i] = p2Arr[i];
+        const ptr = solveSweep(p1, b1, b2, r1, r2, buf, n);
+        wasmFree(buf);
+        const json = Module.UTF8ToString(ptr);
+        return JSON.parse(json);
+    } catch (e) {
+        console.error('callSweep failed:', e);
+        return null;
+    }
 }
 
 function callFKernel(p1, p2, b1, b2, r1, r2) {
-    // Binary transfer: returns pointer to 2*9*N*N doubles in WASM heap
-    const ptr = solveFKernelBin(p1, p2, b1, b2, r1, r2);
-    const n = N;
-    const block = n * n;
-    const total = 2 * 9 * block;
-    // ptr is byte offset; HEAPF64 is indexed by float64 offset
-    const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
-    const t = Array.from({length: n}, (_, i) => i * currentT / n);
-    const result = {t, F1: {}, F2: {}};
-    let offset = 0;
-    for (const player of ['F1', 'F2']) {
-        for (let r = 0; r < 3; r++) {
-            for (let c = 0; c < 3; c++) {
-                const z = [];
-                for (let u = 0; u < n; u++) {
-                    z.push(Array.from(arr.subarray(offset, offset + n)));
-                    offset += n;
+    try {
+        // Binary transfer: returns pointer to 2*9*N*N doubles in WASM heap
+        const ptr = solveFKernelBin(p1, p2, b1, b2, r1, r2);
+        const n = N;
+        const block = n * n;
+        const total = 2 * 9 * block;
+        // ptr is byte offset; HEAPF64 is indexed by float64 offset
+        const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
+        const t = Array.from({length: n}, (_, i) => i * currentT / n);
+        const result = {t, F1: {}, F2: {}};
+        let offset = 0;
+        for (const player of ['F1', 'F2']) {
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const z = [];
+                    for (let u = 0; u < n; u++) {
+                        z.push(Array.from(arr.subarray(offset, offset + n)));
+                        offset += n;
+                    }
+                    result[player][`r${r}c${c}`] = z;
                 }
-                result[player][`r${r}c${c}`] = z;
             }
         }
+        return result;
+    } catch (e) {
+        console.error('callFKernel failed:', e);
+        return null;
     }
-    return result;
 }
 
 // --- plot builders ---
@@ -375,7 +395,8 @@ function plotKernel(divId, t, kernelData, title) {
     const chLabels = ['W\u2070', 'W\u00B9', 'W\u00B2'];
     const traces = [];
     const viridis = makeViridis(N);
-    const step = Math.max(1, Math.floor(N / 15));
+    const nCurves = N <= 60 ? 15 : 10;  // More slices at low N, fewer at high N
+    const step = Math.max(1, Math.floor(N / nCurves));
     for (let ch = 0; ch < 3; ch++) {
         const chData = kernelData['ch' + ch];
         for (let ti = 0; ti < N; ti += step) {
@@ -464,7 +485,8 @@ function plotFKernel(divId, t, fData, title) {
     const traces = [];
     const annotations = [];
     const viridis = makeViridis(N);
-    const step = Math.max(1, Math.floor(N / 12));
+    const nCurves = N <= 60 ? 12 : 8;  // Fewer slices at high N (9 entries × 8 = 72 traces)
+    const step = Math.max(1, Math.floor(N / nCurves));
     for (let row = 0; row < 3; row++) {
         for (let col = 0; col < 3; col++) {
             const idx = row * 3 + col + 1;
@@ -573,6 +595,8 @@ function plotWedgesSweep(divId, sweep) {
 // --- app logic ---
 let debounceTimer = null;
 let activeTab = 'tab-equilibrium';
+let solving = false;  // Guard against concurrent solver calls
+let pendingUpdate = false;  // Re-run after current solve finishes
 
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
@@ -623,8 +647,8 @@ function ensureLight(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
     if (key !== lightKey) {
-        lightData = callLight(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        lightKey = key;
+        const result = callLight(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
+        if (result) { lightData = result; lightKey = key; }
     }
     return lightData;
 }
@@ -634,8 +658,8 @@ function ensureFull(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
     if (key !== fullKey) {
-        fullData = callFull(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        fullKey = key;
+        const result = callFull(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
+        if (result) { fullData = result; fullKey = key; }
     }
     return fullData;
 }
@@ -645,8 +669,8 @@ function ensureSweep(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
     if (key !== sweepKey) {
-        sweepData = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
-        sweepKey = key;
+        const result = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
+        if (result) { sweepData = result; sweepKey = key; }
     }
     return sweepData;
 }
@@ -656,65 +680,99 @@ function ensureFKernel(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
     if (key !== fKernelKey) {
-        fKernelData = callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        fKernelKey = key;
+        const result = callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
+        if (result) { fKernelData = result; fKernelKey = key; }
     }
     return fKernelData;
 }
 
 function renderTab(tab, p) {
-    switch (tab) {
-        case 'tab-equilibrium': {
-            const data = ensureLight(p);
-            plotControls('plot-controls', data, p.b1, p.b2);
-            plotWedges('plot-wedges', data);
-            break;
+    try {
+        switch (tab) {
+            case 'tab-equilibrium': {
+                const data = ensureLight(p);
+                if (!data) break;
+                plotControls('plot-controls', data, p.b1, p.b2);
+                plotWedges('plot-wedges', data);
+                break;
+            }
+            case 'tab-kernels': {
+                const data = ensureFull(p);
+                if (!data) break;
+                plotKernel('plot-X', data.t, data.X, 'X(t,s)');
+                plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
+                plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
+                plotKernel('plot-calD1', data.t, data.calD1, '\uD835\uDCD3\u00B9(t,s)');
+                break;
+            }
+            case 'tab-fkernel': {
+                const fk = ensureFKernel(p);
+                if (!fk) break;
+                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filter Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filter Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                break;
+            }
+            case 'tab-statics': {
+                const sweep = ensureSweep(p);
+                if (!sweep) break;
+                plotCosts('plot-costs', sweep);
+                plotBarD1Sweep('plot-barD1-sweep', sweep);
+                plotWedgesSweep('plot-wedges-sweep', sweep);
+                break;
+            }
+            case 'tab-diagnostics': {
+                const data = ensureLight(p);
+                if (!data) break;
+                plotResidual('plot-residual', data);
+                break;
+            }
         }
-        case 'tab-kernels': {
-            const data = ensureFull(p);
-            plotKernel('plot-X', data.t, data.X, 'X(t,s)');
-            plotKernel('plot-D1', data.t, data.D1, 'D\u00B9(t,s)');
-            plotKernel('plot-D2', data.t, data.D2, 'D\u00B2(t,s)');
-            plotKernel('plot-calD1', data.t, data.calD1, '\uD835\uDCD3\u00B9(t,s)');
-            break;
-        }
-        case 'tab-fkernel': {
-            const fk = ensureFKernel(p);
-            plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filter Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
-            plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filter Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
-            break;
-        }
-        case 'tab-statics': {
-            const sweep = ensureSweep(p);
-            plotCosts('plot-costs', sweep);
-            plotBarD1Sweep('plot-barD1-sweep', sweep);
-            plotWedgesSweep('plot-wedges-sweep', sweep);
-            break;
-        }
-        case 'tab-diagnostics': {
-            const data = ensureLight(p);
-            plotResidual('plot-residual', data);
-            break;
-        }
+        dirty[tab] = false;
+    } catch (e) {
+        console.error('renderTab failed:', e);
+        document.getElementById('status').textContent = `Error rendering ${tab}: ${e.message}`;
     }
-    dirty[tab] = false;
 }
 
 function updateActive() {
+    // Prevent concurrent solver calls — queue for after current finishes
+    if (solving) { pendingUpdate = true; return; }
+    solving = true;
+
     const p = getParams();
-    const t0 = performance.now();
+    const statusEl = document.getElementById('status');
+    statusEl.textContent = `Computing (N=${p.N}, T=${p.T})...`;
 
-    // Only render the active tab (solver calls are cached, so this is cheap if params unchanged)
-    renderTab(activeTab, p);
+    // Yield to browser to show "Computing..." before blocking on WASM
+    setTimeout(() => {
+        try {
+            const t0 = performance.now();
 
-    const totalMs = performance.now() - t0;
+            // Only render the active tab (solver calls are cached, so this is cheap if params unchanged)
+            renderTab(activeTab, p);
 
-    // Update status line with light-solve info (cheap — cached)
-    const data = ensureLight(p);
-    document.getElementById('status').textContent =
-        `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
-        `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-        `${totalMs.toFixed(0)}ms`;
+            const totalMs = performance.now() - t0;
+
+            // Update status line with light-solve info (cheap — cached)
+            const data = ensureLight(p);
+            if (data) {
+                statusEl.textContent =
+                    `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
+                    `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
+                    `${totalMs.toFixed(0)}ms`;
+            }
+        } catch (e) {
+            console.error('updateActive failed:', e);
+            statusEl.textContent = `Error: ${e.message}`;
+        } finally {
+            solving = false;
+            // If slider moved while we were solving, re-run with latest values
+            if (pendingUpdate) {
+                pendingUpdate = false;
+                setTimeout(updateActive, 0);
+            }
+        }
+    }, 10);
 }
 
 function onSliderChange() {
