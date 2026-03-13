@@ -515,7 +515,7 @@ function plotFKernel(divId, t, fData, title) {
             const z = fData[key]; // NxN array: z[u][s]
             for (let ui = 0; ui < N; ui += step) {
                 traces.push({
-                    x: t.slice(0, ui + 1), y: z[ui].slice(0, ui + 1),
+                    x: t, y: z[ui],
                     mode: 'lines', line: {color: viridis[ui], width: 1.2},
                     showlegend: false,
                     xaxis: 'x' + idx, yaxis: 'y' + idx,
