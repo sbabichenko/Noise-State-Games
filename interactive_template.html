@@ -278,27 +278,35 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div id="plot-Xtilde1" class="plot"></div>
     <div class="figure-caption">
       Player 1's unresolved state kernel X&#x0303;&#xB9;(t,s): the component of the state's impulse
-      response to the s-th shock that player 1 has not yet resolved at time t. Large when
-      the shock is recent or the observation channel weak, shrinking as observations accumulate.
+      response to the s-th shock that player 1 has not yet resolved at time t. Serves as
+      the filtering gain in the noise-state update (Theorem 3.1). Large for recent shocks
+      or weak observation channels, shrinking as observations accumulate. The W&#xB9; channel
+      is identically zero &mdash; player 1 directly observes their own observation noise.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-Xtilde2" class="plot"></div>
     <div class="figure-caption">
       Player 2's unresolved state kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
+      The W&#xB2; channel is identically zero.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-F1" class="plot"></div>
     <div class="figure-caption">
-      Player 1's filtration kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
-      mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as slice curves over s, colored by u.
+      Player 1's filtration kernel F&#xB9;(T,u,s): the density kernel of the noise-state
+      conditional mean at terminal time (Theorem 3.1). The 3&#xD7;3 grid maps source noise
+      channel (column) to target channel (row); each subplot shows slice curves over s,
+      colored by u. The grid is transpose-symmetric (F&#x2071;(u,s) = F&#x2071;(s,u)&#x1D40;, Remark A.4).
+      Diagonal blocks (same channel &#x2192; same channel) tend to dominate; off-diagonal
+      blocks capture cross-channel inference mediated by the state dynamics.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-F2" class="plot"></div>
     <div class="figure-caption">
-      Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;.
+      Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;,
+      with players 1&#x2194;2 swapped.
     </div>
   </div>
 </div>
