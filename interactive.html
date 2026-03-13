@@ -50,14 +50,14 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 <!-- Primary sliders (always visible) -->
 <div class="sliders">
   <div class="slider-group">
-    <label>p&#x2081; (player 1 precision)</label>
+    <label>p&#x2081; (player 1 root-precision)</label>
     <div class="slider-row">
       <input type="range" id="sl-p1" min="0.5" max="20" step="0.5" value="3">
       <span class="val" id="val-p1">3.0</span>
     </div>
   </div>
   <div class="slider-group">
-    <label>p&#x2082; (player 2 precision)</label>
+    <label>p&#x2082; (player 2 root-precision)</label>
     <div class="slider-row">
       <input type="range" id="sl-p2" min="0.5" max="20" step="0.5" value="3">
       <span class="val" id="val-p2">3.0</span>
@@ -150,10 +150,10 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
     <p>Player $i$ continuously observes a private signal</p>
-    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + E^i\,dW_t^i, \qquad i=1,2,$$
+    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + dW_t^i, \qquad i=1,2,$$
     <p>
       where $W^1, W^2$ are independent Brownian motions (also independent of $W^0$),
-      and $p_i > 0$ is the signal precision.
+      and $p_i > 0$ is the signal root-precision (observation precision is $p_i^2$).
       Player 1 sees only $Y^1$; player 2 sees only $Y^2$.
       Neither player observes the state $X_t$ directly.
     </p>
@@ -184,7 +184,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Parameters</h3>
     <table style="border-collapse:collapse; margin:6px 0; font-size:0.95em;">
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$p_1, p_2$</td>
-          <td>Signal precisions &mdash; how well each player observes the state</td></tr>
+          <td>Signal root-precisions &mdash; observation precision is $p_i^2$; the observation equation uses $\sqrt{p_i}$</td></tr>
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$b_1, b_2$</td>
           <td>Bliss points &mdash; each player's preferred state level</td></tr>
       <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$r_1, r_2$</td>
@@ -203,55 +203,76 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-controls" class="plot"></div>
     <div class="figure-caption">
-      Left: mean optimal controls D&#x0304;&#xB9; (blue) and D&#x0304;&#xB2; (red), with perfect-information benchmarks (dotted, same colors).
+      Left: mean equilibrium controls D&#x0304;&#xB9; (blue) and D&#x0304;&#xB2; (red), with perfect-information
+      Riccati benchmarks (dotted, same colors). The gap between solid and dotted lines is
+      the mean-channel distortion driven by the information wedge; it vanishes as
+      precision &#x2192; &#x221E;.
       Center: mean state path X&#x0304;(t) with bliss-point targets b&#x2081; and b&#x2082; (dashed).
-      Right: aggregate effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|, showing how information friction increases total control cost.
+      Right: aggregate mean effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|. The gap above the perfect-information
+      benchmark is the deadweight loss from bilateral belief manipulation.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-wedges" class="plot"></div>
     <div class="figure-caption">
-      Information wedges for the current (p&#x2081;, p&#x2082;) pair. V&#xB9; prices the marginal value
-      to player 1 of shifting player 2's posterior; V&#xB2; is the symmetric quantity.
-      Both vanish at the terminal date and when signals are exogenous to controls.
+      Mean information wedges V&#x0304;&#xB9;(t) and V&#x0304;&#xB2;(t). V&#x0304;&#x2071;(t) prices the
+      marginal value to player i of shifting the opponent's posterior at time t &mdash;
+      the additional costate term from bilateral belief manipulation (Theorem 3.2).
+      Both wedges are hump-shaped: zero at t=0 (no inference yet) and t=T (terminal
+      condition on the belief adjoint). Higher opponent precision amplifies the wedge,
+      since a better-informed opponent reacts more sharply to drift perturbations.
     </div>
   </div>
 </div>
 
-<!-- Tab 2: Kernels -->
+<!-- Tab 2: State/Control Kernels -->
 <div id="tab-kernels" class="tab-panel">
+  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
+    All kernel plots show three sub-panels for noise channels W&#x2070; (system), W&#xB9; (player 1 observation),
+    W&#xB2; (player 2 observation). Curves are colored by evaluation time t from purple (early) to yellow (late).
+    Each curve traces the kernel value as a function of source-noise time s &#x2208; [0,&thinsp;t] &mdash;
+    the causal constraint means later-time curves (yellow) extend further.
+  </p>
   <div class="figure-block">
     <div id="plot-X" class="plot"></div>
     <div class="figure-caption">
-      State kernel X(t,s): the linear response of the state at time t to Brownian noise
-      at time s, decomposed across the three noise channels W&#x2070;, W&#xB9;, W&#xB2;.
+      State kernel X(t,s): the primitive-noise impulse response of the state.
+      The W&#x2070; channel starts at 1 (direct shock) and decays as both players
+      jointly stabilize older shocks. The W&#xB9; and W&#xB2; channels are zero at s and build up
+      through drift-based inference as controls feed back through the state.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-D1" class="plot"></div>
     <div class="figure-caption">
-      Player 1's feedback kernel D&#xB9;(t,s): the linear response of player 1's control
-      at time t to noise at time s.
+      Player 1's noise-state feedback kernel D&#xB9;(t,s): governs how player 1's control
+      at time t responds to their noise-state estimate at source time s (in filtered
+      coordinates). The W&#x2070; channel dominates because fundamental shocks are most
+      relevant for state tracking; the W&#xB9;, W&#xB2; channels reflect drift-based inference
+      about the opponent's behavior.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-D2" class="plot"></div>
     <div class="figure-caption">
-      Player 2's feedback kernel D&#xB2;(t,s): symmetric counterpart to D&#xB9;.
+      Player 2's noise-state feedback kernel D&#xB2;(t,s): symmetric counterpart to D&#xB9;,
+      with players 1&#x2194;2 swapped.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-calD1" class="plot"></div>
     <div class="figure-caption">
       Primitive control kernel &#x1D4D3;&#xB9;(t,s): player 1's control expressed in terms of
-      primitive noise innovations rather than filtered observations.
+      primitive (unobserved) Brownian shocks W rather than filtered observations.
+      Obtained from D&#xB9; by convolving with the filtration kernel F&#xB9;.
+      This is the kernel that enters the state dynamics and determines equilibrium volatility.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-calD2" class="plot"></div>
     <div class="figure-caption">
-      Primitive control kernel &#x1D4D3;&#xB2;(t,s): player 2's control expressed in terms of
-      primitive noise innovations rather than filtered observations.
+      Primitive control kernel &#x1D4D3;&#xB2;(t,s): symmetric counterpart to &#x1D4D3;&#xB9;,
+      with players 1&#x2194;2 swapped.
     </div>
   </div>
 </div>
@@ -262,27 +283,38 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div id="plot-Xtilde1" class="plot"></div>
     <div class="figure-caption">
       Player 1's unresolved state kernel X&#x0303;&#xB9;(t,s): the component of the state's impulse
-      response to the s-th shock that player 1 has not yet resolved at time t. Large when
-      the shock is recent or the observation channel weak, shrinking as observations accumulate.
+      response to the s-th shock that player 1 has not yet resolved at time t. Serves as
+      the filtering gain in the noise-state update (Theorem 3.1). Large for recent shocks
+      or weak observation channels, shrinking as observations accumulate. The W&#xB9; channel
+      is identically zero &mdash; W&#xB9; enters the state only through player 1's own
+      actions, which propagate deterministically and are measurable to player 1,
+      so they contribute nothing to the unresolved component. (This relies on
+      players having uncorrelated measurements; it need not hold otherwise.)
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-Xtilde2" class="plot"></div>
     <div class="figure-caption">
       Player 2's unresolved state kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
+      The W&#xB2; channel is identically zero (same reasoning, with players swapped).
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-F1" class="plot"></div>
     <div class="figure-caption">
-      Player 1's filtration kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
-      mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as slice curves over s, colored by u.
+      Player 1's filtration kernel F&#xB9;(T,u,s): the density kernel of the noise-state
+      conditional mean at terminal time (Theorem 3.1). The 3&#xD7;3 grid maps source noise
+      channel (column) to target channel (row); each subplot shows slice curves over s,
+      colored by u. The grid is transpose-symmetric (F&#x2071;(u,s) = F&#x2071;(s,u)&#x1D40;, Remark A.4).
+      Diagonal blocks (same channel &#x2192; same channel) tend to dominate; off-diagonal
+      blocks capture cross-channel inference mediated by the state dynamics.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-F2" class="plot"></div>
     <div class="figure-caption">
-      Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;.
+      Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;,
+      with players 1&#x2194;2 swapped.
     </div>
   </div>
 </div>
@@ -323,8 +355,11 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <div class="figure-block">
     <div id="plot-residual" class="plot"></div>
     <div class="figure-caption">
-      Anderson-accelerated Picard iteration residual. The solver converges to a relative
-      tolerance of 10&#x207B;&#x2075; in the D&#xB9;, D&#xB2; kernel space.
+      Relative residual &#x2016;G(D)&#x2212;D&#x2016;/&#x2016;G(D)&#x2016; of the Anderson-accelerated
+      Picard iteration on the best-response map (Definition C.2). Convergence to
+      10&#x207B;&#x2075; typically requires 19&#x2013;47 iterations. The trace may be non-monotonic
+      &mdash; Anderson mixing is not a descent method and can overshoot before converging,
+      especially at small r (large control gains).
     </div>
   </div>
 </div>
@@ -429,14 +464,20 @@ function callLight(p1, p2, b1, b2, r1, r2) {
 
 function callFull(p1, p2, b1, b2, r1, r2) {
     try {
-        // Binary transfer: returns pointer to 7 kernels × 3 channels × N×N doubles
+        // Binary transfer: returns pointer to kernels × 3 channels × N×N doubles
+        // Old WASM outputs 5 kernels; new WASM (after recompilation) outputs 7 (with Xtilde1/2)
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
         const block = n * n;
-        const total = 7 * 3 * block;
+        const heapBytes = Module.HEAPF64.buffer.byteLength;
+        const has7 = (ptr + 7 * 3 * block * 8) <= heapBytes;
+        const numKernels = has7 ? 7 : 5;
+        const total = numKernels * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2'];
+    const kernelNames = has7
+        ? ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2']
+        : ['X', 'D1', 'D2', 'calD1', 'calD2'];
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -858,8 +899,10 @@ function renderTab(tab, p) {
             case 'tab-fkernel': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Filter Kernel X\u0303\u00B9(t,s)');
-                plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Filter Kernel X\u0303\u00B2(t,s)');
+                if (data.Xtilde1) {
+                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State Kernel X\u0303\u00B9(t,s)');
+                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State Kernel X\u0303\u00B2(t,s)');
+                }
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
                 plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
