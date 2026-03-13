@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LQG Noise-State Game Explorer</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},svg:{fontCache:'global'}};</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -122,15 +124,79 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
 <!-- Tab bar -->
 <div class="tab-bar">
-  <button class="tab-btn active" data-tab="tab-equilibrium">Equilibrium</button>
+  <button class="tab-btn active" data-tab="tab-model">Model</button>
+  <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
   <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
   <button class="tab-btn" data-tab="tab-fkernel">F Kernel</button>
   <button class="tab-btn" data-tab="tab-statics">Comparative Statics</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
 
+<!-- Tab 0: Model -->
+<div id="tab-model" class="tab-panel active">
+  <div style="max-width:820px; margin:0 auto; line-height:1.7; font-size:1.05em;">
+
+    <h2 style="margin:10px 0 8px; font-size:1.25em;">The Game</h2>
+    <p>
+      Two players jointly control a scalar state $X_t$ over $[0,T]$.
+      Each player privately observes one component of the driving Brownian noise
+      and chooses a control to steer the state toward their own target.
+    </p>
+
+    <h3 style="margin:18px 0 6px; font-size:1.1em;">State dynamics</h3>
+    <p>The state evolves as</p>
+    $$dX_t = \bigl(d_t^1 + d_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
+    <p>where $W^0$ is common noise observed by neither player.</p>
+
+    <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
+    <p>Player $i$ continuously observes a private signal</p>
+    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + E^i\,dW_t^i, \qquad i=1,2,$$
+    <p>
+      where $W^1, W^2$ are independent Brownian motions (also independent of $W^0$),
+      and $p_i > 0$ is the signal precision.
+      Player 1 sees only $Y^1$; player 2 sees only $Y^2$.
+      Neither player observes the state $X_t$ directly.
+    </p>
+
+    <h3 style="margin:18px 0 6px; font-size:1.1em;">Cost functionals</h3>
+    <p>Player $i$ minimizes</p>
+    $$J^i = \mathbb{E}\!\int_0^T \!\Bigl[\,(X_t - b_i)^2 + r_i\,(d_t^i)^2\,\Bigr]\,dt,$$
+    <p>
+      where $b_i$ is player $i$'s bliss point (target state) and
+      $r_i > 0$ is the control cost weight.
+    </p>
+
+    <h3 style="margin:18px 0 6px; font-size:1.1em;">Equilibrium concept</h3>
+    <p>
+      We look for a Nash equilibrium in causal linear strategies.
+      Each player's control is a linear functional of their past signal:
+    </p>
+    $$d_t^i = \int_0^t D^i(t,s)\,dY_s^i,$$
+    <p>
+      where $D^i(t,s)$ is the <em>feedback kernel</em>.
+      The solver finds $D^1, D^2$ such that neither player can
+      reduce their cost by deviating.
+    </p>
+
+    <h3 style="margin:18px 0 6px; font-size:1.1em;">Parameters</h3>
+    <table style="border-collapse:collapse; margin:6px 0; font-size:0.95em;">
+      <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$p_1, p_2$</td>
+          <td>Signal precisions &mdash; how well each player observes the state</td></tr>
+      <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$b_1, b_2$</td>
+          <td>Bliss points &mdash; each player's preferred state level</td></tr>
+      <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$r_1, r_2$</td>
+          <td>Control cost weights &mdash; how expensive it is to act</td></tr>
+      <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$T$</td>
+          <td>Time horizon</td></tr>
+      <tr><td style="padding:3px 14px 3px 0; font-weight:600;">$N$</td>
+          <td>Grid points (numerical resolution)</td></tr>
+    </table>
+
+  </div>
+</div>
+
 <!-- Tab 1: Equilibrium -->
-<div id="tab-equilibrium" class="tab-panel active">
+<div id="tab-equilibrium" class="tab-panel">
   <div class="figure-block">
     <div id="plot-controls" class="plot"></div>
     <div class="figure-caption">
@@ -361,9 +427,10 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
         const view = new Float64Array(Module.HEAPF64.buffer, buf, n);
         for (let i = 0; i < n; i++) view[i] = p2Arr[i];
         const ptr = solveSweep(p1, b1, b2, r1, r2, buf, n);
-        wasmFree(buf);
         const json = Module.UTF8ToString(ptr);
-        return JSON.parse(json);
+        const result = JSON.parse(json);
+        if (wasmFree) wasmFree(buf);
+        return result;
     } catch (e) {
         console.error('callSweep failed:', e);
         return null;
@@ -637,7 +704,7 @@ function plotWedgesSweep(divId, sweep) {
 
 // --- app logic ---
 let debounceTimer = null;
-let activeTab = 'tab-equilibrium';
+let activeTab = 'tab-model';
 let solving = false;  // Guard against concurrent solver calls
 let pendingUpdate = false;  // Re-run after current solve finishes
 
