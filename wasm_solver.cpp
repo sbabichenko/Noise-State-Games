@@ -229,14 +229,15 @@ double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, do
 
     const int n = g_n;
     const int block = n * n;
-    // 5 kernels × 3 channels × N×N
-    g_full_buf.resize(5 * 3 * block);
+    // 7 kernels × 3 channels × N×N
+    g_full_buf.resize(7 * 3 * block);
 
-    const Kernel2D* kernels[5] = {
-        &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1, &g_cache.eq.calD2
+    const Kernel2D* kernels[7] = {
+        &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1, &g_cache.eq.calD2,
+        &g_cache.eq.env.Xtilde1, &g_cache.eq.env.Xtilde2
     };
 
-    for (int k = 0; k < 5; ++k) {
+    for (int k = 0; k < 7; ++k) {
         const Kernel2D& K = *kernels[k];
         for (int ch = 0; ch < 3; ++ch) {
             double* dst = g_full_buf.data() + (k * 3 + ch) * block;

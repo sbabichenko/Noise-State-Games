@@ -126,8 +126,8 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="tab-model">Model</button>
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
-  <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
-  <button class="tab-btn" data-tab="tab-fkernel">F Kernel</button>
+  <button class="tab-btn" data-tab="tab-kernels">State/Control Kernels</button>
+  <button class="tab-btn" data-tab="tab-fkernel">Filter Kernels</button>
   <button class="tab-btn" data-tab="tab-statics">Comparative Statics</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
@@ -256,19 +256,32 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   </div>
 </div>
 
-<!-- Tab 3: F Kernel -->
+<!-- Tab 3: Filter Kernels -->
 <div id="tab-fkernel" class="tab-panel">
+  <div class="figure-block">
+    <div id="plot-Xtilde1" class="plot"></div>
+    <div class="figure-caption">
+      Player 1's filter kernel X&#x0303;&#xB9;(t,s): the conditional expectation kernel mapping
+      noise innovations to player 1's state estimate.
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-Xtilde2" class="plot"></div>
+    <div class="figure-caption">
+      Player 2's filter kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
+    </div>
+  </div>
   <div class="figure-block">
     <div id="plot-F1" class="plot"></div>
     <div class="figure-caption">
-      Player 1's filtering kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
+      Player 1's filtration kernel F&#xB9;(T,u,s): the 3&#xD7;3 matrix-valued kernel at terminal time,
       mapping noise channel s to filtered channel u. Each subplot shows one (row,col) entry as slice curves over s, colored by u.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-F2" class="plot"></div>
     <div class="figure-caption">
-      Player 2's filtering kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;.
+      Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;.
     </div>
   </div>
 </div>
@@ -415,14 +428,14 @@ function callLight(p1, p2, b1, b2, r1, r2) {
 
 function callFull(p1, p2, b1, b2, r1, r2) {
     try {
-        // Binary transfer: returns pointer to 4 kernels × 3 channels × N×N doubles
+        // Binary transfer: returns pointer to 7 kernels × 3 channels × N×N doubles
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
         const block = n * n;
-        const total = 5 * 3 * block;
+        const total = 7 * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
+    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2'];
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -842,10 +855,14 @@ function renderTab(tab, p) {
                 break;
             }
             case 'tab-fkernel': {
+                const data = ensureFull(p);
+                if (!data) { ok = false; break; }
+                plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Filter Kernel X\u0303\u00B9(t,s)');
+                plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Filter Kernel X\u0303\u00B2(t,s)');
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filter Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filter Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration Kernel F\u00B2(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
