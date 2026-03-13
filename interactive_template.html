@@ -178,6 +178,13 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       primitive noise innovations rather than filtered observations.
     </div>
   </div>
+  <div class="figure-block">
+    <div id="plot-calD2" class="plot"></div>
+    <div class="figure-caption">
+      Primitive control kernel &#x1D4D3;&#xB2;(t,s): player 2's control expressed in terms of
+      primitive noise innovations rather than filtered observations.
+    </div>
+  </div>
 </div>
 
 <!-- Tab 3: F Kernel -->
@@ -210,6 +217,13 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div id="plot-barD1-sweep" class="plot"></div>
     <div class="figure-caption">
       Player 1's mean control path D&#x0304;&#xB9;(t) for each p&#x2082; value.
+      Color encodes p&#x2082;; dashed gray is the perfect-information Riccati solution.
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-barD2-sweep" class="plot"></div>
+    <div class="figure-caption">
+      Player 2's mean control path D&#x0304;&#xB2;(t) for each p&#x2082; value.
       Color encodes p&#x2082;; dashed gray is the perfect-information Riccati solution.
     </div>
   </div>
@@ -315,10 +329,10 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
         const block = n * n;
-        const total = 4 * 3 * block;
+        const total = 5 * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-    const kernelNames = ['X', 'D1', 'D2', 'calD1'];
+    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -577,6 +591,24 @@ function plotBarD1Sweep(divId, sweep) {
     }, plotCfg);
 }
 
+function plotBarD2Sweep(divId, sweep) {
+    const t = sweep.t;
+    const s = sweep.sweeps;
+    const p2min = Math.min(...s.map(v => v.p2)), p2max = Math.max(...s.map(v => v.p2));
+    const traces = s.map(v => ({
+        x: t, y: v.barD2, name: `p\u2082=${v.p2.toFixed(1)}`,
+        line: {width: 2, color: plasmaColor((v.p2 - p2min) / Math.max(1, p2max - p2min))},
+        hovertemplate: `p\u2082=${v.p2.toFixed(1)}<br>t=%{x:.3f}<br>\u0044\u0304\u00B2=%{y:.4g}`,
+    }));
+    traces.push({x: t, y: sweep.barD2_pi, name: 'Perfect info',
+                 line: {width: 2, dash: 'dash', color: 'gray'}});
+    Plotly.react(divId, traces, {
+        height: 350, margin: {...margin, t: 50},
+        title: `Mean Control \u0044\u0304\u00B2(t) \u2014 p\u2081=${sweep.p1.toFixed(1)} fixed`,
+        xaxis: {title: 't'}, yaxis: {title: '\u0044\u0304\u00B2(t)'},
+    }, plotCfg);
+}
+
 function plotWedgesSweep(divId, sweep) {
     const t = sweep.t;
     const s = sweep.sweeps;
@@ -715,6 +747,7 @@ function renderTab(tab, p) {
                 plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback D\u00B9(t,s)');
                 plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback D\u00B2(t,s)');
                 plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control \uD835\uDCD3\u00B9(t,s)');
+                plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control \uD835\uDCD3\u00B2(t,s)');
                 break;
             }
             case 'tab-fkernel': {
@@ -729,6 +762,7 @@ function renderTab(tab, p) {
                 if (!sweep) { ok = false; break; }
                 plotCosts('plot-costs', sweep);
                 plotBarD1Sweep('plot-barD1-sweep', sweep);
+                plotBarD2Sweep('plot-barD2-sweep', sweep);
                 plotWedgesSweep('plot-wedges-sweep', sweep);
                 break;
             }

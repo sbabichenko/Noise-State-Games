@@ -217,8 +217,8 @@ const char* solve_light(double p1, double p2, double b1, double b2, double r1, d
     return g_output.c_str();
 }
 
-// Binary full solve: writes 4 kernels × 3 channels × N×N doubles to buffer.
-// Layout: [X_ch0[N×N], X_ch1[N×N], X_ch2[N×N], D1_ch0, ..., calD1_ch2]
+// Binary full solve: writes 5 kernels × 3 channels × N×N doubles to buffer.
+// Layout: [X_ch0[N×N], X_ch1[N×N], X_ch2[N×N], D1_ch0, ..., calD1_ch2, calD2_ch2]
 // Each channel is row-major lower-triangular (upper entries are 0).
 // JS reads directly from HEAPF64 — no JSON serialize/parse.
 static std::vector<double> g_full_buf;
@@ -229,14 +229,14 @@ double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, do
 
     const int n = g_n;
     const int block = n * n;
-    // 4 kernels × 3 channels × N×N
-    g_full_buf.resize(4 * 3 * block);
+    // 5 kernels × 3 channels × N×N
+    g_full_buf.resize(5 * 3 * block);
 
-    const Kernel2D* kernels[4] = {
-        &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1
+    const Kernel2D* kernels[5] = {
+        &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1, &g_cache.eq.calD2
     };
 
-    for (int k = 0; k < 4; ++k) {
+    for (int k = 0; k < 5; ++k) {
         const Kernel2D& K = *kernels[k];
         for (int ch = 0; ch < 3; ++ch) {
             double* dst = g_full_buf.data() + (k * 3 + ch) * block;
@@ -271,6 +271,7 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     out("{");
     out_array("t", tg.data(), g_n);
     out(","); out_array("barD1_pi", barD1_pi.data(), g_n);
+    out(","); out_array("barD2_pi", barD2_pi.data(), g_n);
     out(",\"p1\":%.6g,\"b1\":%.6g,\"b2\":%.6g", p1, b1, b2);
 
     out(",\"sweeps\":[");
@@ -285,6 +286,7 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
         auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
                                                  bar, r1, r2, b1, b2);
         out(","); out_array("barD1", bar.barD1.data(), g_n);
+        out(","); out_array("barD2", bar.barD2.data(), g_n);
         out(",\"J1_priv\":%.6g,\"J2_priv\":%.6g", costs_priv.J1, costs_priv.J2);
 
         double p_common = std::sqrt(p1*p1 + p2*p2);
@@ -344,6 +346,7 @@ const char* solve_sweep_point(double p1, double p2, double b1, double b2, double
     auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
                                              bar, r1, r2, b1, b2);
     out(","); out_array("barD1", bar.barD1.data(), g_n);
+    out(","); out_array("barD2", bar.barD2.data(), g_n);
     out(",\"J1_priv\":%.6g,\"J2_priv\":%.6g", costs_priv.J1, costs_priv.J2);
 
     double p_common = std::sqrt(p1*p1 + p2*p2);
