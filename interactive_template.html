@@ -224,19 +224,22 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     </div>
   </div>
   <div class="figure-block">
-    <div id="plot-barHk1" class="plot"></div>
+    <div id="plot-Vkernel1" class="plot"></div>
     <div class="figure-caption">
-      Kernel information wedge H&#x0304;&#xB9;<sub>k</sub>(t,s): the costate kernel from the mean-field
-      adjoint equation for player 1. Encodes how a marginal noise impulse at source time s
-      propagates through the belief channel to affect player 1&rsquo;s value at time t.
-      The mean wedge V&#x0304;&#xB9;(t) is recovered by integrating
-      p&#xB2;&#xB2;&thinsp;&Delta;t&thinsp;&Sigma;<sub>s</sub> X&#x0303;&#xB2;(t,s)&middot;H&#x0304;&#xB9;<sub>k</sub>(t,s).
+      Kernel information wedge $\mathcal{V}^1(t,r)$: captures how bilateral belief manipulation
+      distorts the equilibrium impulse response to the $r$-th shock (equation 3.5).
+      Computed as $\mathcal{V}^1(t,r) = p_2^2 \int_0^t \widetilde{X}^2(t,z) \cdot H^{2,1}(t,z,r)\,dz$
+      where $H^{2,1}$ is the kernel belief-adjoint.
+      The W&#x2070; channel shows distortion of the fundamental-shock response &mdash;
+      the dominant source of excess state variance from strategic friction.
+      Vanishes at $t=T$ by the terminal condition on $H^{2,1}$.
     </div>
   </div>
   <div class="figure-block">
-    <div id="plot-barHk2" class="plot"></div>
+    <div id="plot-Vkernel2" class="plot"></div>
     <div class="figure-caption">
-      Kernel information wedge H&#x0304;&#xB2;<sub>k</sub>(t,s): symmetric counterpart for player 2.
+      Kernel information wedge $\mathcal{V}^2(t,r)$: symmetric counterpart for player 2,
+      with $1 \leftrightarrow 2$ swapped.
     </div>
   </div>
 </div>
@@ -471,7 +474,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
     const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
     if (numKernels >= 7) kernelNames.push('Xtilde1', 'Xtilde2');
-    if (numKernels >= 9) kernelNames.push('barHk1', 'barHk2');
+    if (numKernels >= 9) kernelNames.push('Vkernel1', 'Vkernel2');
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -894,9 +897,9 @@ function renderTab(tab, p) {
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
                 const full = ensureFull(p);
-                if (full && full.barHk1) {
-                    plotKernel('plot-barHk1', full.t, full.barHk1, '$\\text{Player 1 Kernel Wedge } \\bar{H}^1_k(t,s)$');
-                    plotKernel('plot-barHk2', full.t, full.barHk2, '$\\text{Player 2 Kernel Wedge } \\bar{H}^2_k(t,s)$');
+                if (full && full.Vkernel1) {
+                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, '$\\text{Player 1 Kernel Wedge } \\mathcal{V}^1(t,r)$');
+                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, '$\\text{Player 2 Kernel Wedge } \\mathcal{V}^2(t,r)$');
                 }
                 break;
             }

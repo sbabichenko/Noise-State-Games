@@ -311,6 +311,54 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
     }
 }
 
+// Version that also outputs the kernel information wedge V^i(t,r).
+// V[t][r] = g_dt * Pk * sum_z Hk[t][z][r]^T * Xtilde[t][z]
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
+                      const Kernel2D& Dk,
+                      const std::array<double, N_MAX>& prec_k,
+                      double terminal_state_weight,
+                      Kernel2D& Hx, Kernel2D& Vkernel) {
+    Hx.setZero();
+    Vkernel.setZero();
+    for (int s = 0; s < g_n; ++s)
+        Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
+
+    ensure_hk_buffers();
+    for (int z = 0; z < g_n; ++z)
+        for (int r = 0; r < g_n; ++r)
+            (*s_hk_buf0)(z, r).setZero();
+    HkSlice* cur = s_hk_buf0.get();
+    HkSlice* nxt = s_hk_buf1.get();
+
+    for (int j = g_n - 2; j >= 0; --j) {
+        int tp = j + 1;
+        double Pk = prec_k[tp];
+
+        std::array<Vec3, N_MAX> W;
+        for (int r = 0; r <= j; ++r) {
+            Vec3 acc = Vec3::Zero();
+            for (int z = 0; z <= tp; ++z)
+                acc += (*cur)(z, r).transpose() * Xtildek[tp][z];
+            W[r] = g_dt * Pk * acc;
+        }
+
+        // Store W[r] = V^i(t_{j+1}, r) into Vkernel
+        for (int r = 0; r <= j; ++r)
+            Vkernel[tp][r] = W[r];
+
+        for (int r = 0; r <= j; ++r)
+            Hx[j][r] = Hx[tp][r] + g_dt * (X[tp][r] + W[r]);
+
+        for (int z = 0; z <= j; ++z)
+            for (int r = 0; r <= j; ++r)
+                (*nxt)(z, r) = (*cur)(z, r)
+                    + g_dt * (Dk[tp][r] * Hx[tp][z].transpose()
+                          - X[tp][z] * W[r].transpose());
+
+        std::swap(cur, nxt);
+    }
+}
+
 // Legacy version that also fills Hk (for figure output)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,

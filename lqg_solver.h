@@ -189,6 +189,12 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       double terminal_state_weight,
                       Kernel2D& Hx);
 
+// Version that also outputs the kernel information wedge V^i(t,r)
+void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
+                      const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
+                      double terminal_state_weight,
+                      Kernel2D& Hx, Kernel2D& Vkernel);
+
 // Legacy version that also fills Hk (only needed for figure output)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
