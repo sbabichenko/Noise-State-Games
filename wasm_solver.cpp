@@ -271,6 +271,7 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     out("{");
     out_array("t", tg.data(), g_n);
     out(","); out_array("barD1_pi", barD1_pi.data(), g_n);
+    out(","); out_array("barD2_pi", barD2_pi.data(), g_n);
     out(",\"p1\":%.6g,\"b1\":%.6g,\"b2\":%.6g", p1, b1, b2);
 
     out(",\"sweeps\":[");
@@ -285,6 +286,7 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
         auto costs_priv = compute_costs_general(eq.env, eq.calD1, eq.calD2,
                                                  bar, r1, r2, b1, b2);
         out(","); out_array("barD1", bar.barD1.data(), g_n);
+        out(","); out_array("barD2", bar.barD2.data(), g_n);
         out(",\"J1_priv\":%.6g,\"J2_priv\":%.6g", costs_priv.J1, costs_priv.J2);
 
         double p_common = std::sqrt(p1*p1 + p2*p2);
