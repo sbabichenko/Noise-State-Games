@@ -223,6 +223,22 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       since a better-informed opponent reacts more sharply to drift perturbations.
     </div>
   </div>
+  <div class="figure-block">
+    <div id="plot-barHk1" class="plot"></div>
+    <div class="figure-caption">
+      Kernel information wedge H&#x0304;&#xB9;<sub>k</sub>(t,s): the costate kernel from the mean-field
+      adjoint equation for player 1. Encodes how a marginal noise impulse at source time s
+      propagates through the belief channel to affect player 1&rsquo;s value at time t.
+      The mean wedge V&#x0304;&#xB9;(t) is recovered by integrating
+      p&#xB2;&#xB2;&thinsp;&Delta;t&thinsp;&Sigma;<sub>s</sub> X&#x0303;&#xB2;(t,s)&middot;H&#x0304;&#xB9;<sub>k</sub>(t,s).
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-barHk2" class="plot"></div>
+    <div class="figure-caption">
+      Kernel information wedge H&#x0304;&#xB2;<sub>k</sub>(t,s): symmetric counterpart for player 2.
+    </div>
+  </div>
 </div>
 
 <!-- Tab 2: State/Control Kernels -->
@@ -455,6 +471,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
     const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
     if (numKernels >= 7) kernelNames.push('Xtilde1', 'Xtilde2');
+    if (numKernels >= 9) kernelNames.push('barHk1', 'barHk2');
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -620,18 +637,22 @@ function plotControls(divId, data, b1, b2) {
 function plotWedges(divId, data) {
     const t = data.t;
     const tmax = t[t.length - 1];
+    const annotations = [
+        '$\\bar{V}^1(t)$', '$\\bar{V}^2(t)$',
+    ].map((l, i) => ({
+        text: l, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    annotations.push({
+        text: 'Mean Information Wedges', xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
+    });
     Plotly.react(divId, [
         {x: t, y: data.V1, name: 'V\u00B9', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
         {x: t, y: data.V2, name: 'V\u00B2', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
     ], {
-        height: 270, margin, grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: [
-            `Player 1 Information Wedge V\u00B9(t)`,
-            `Player 2 Information Wedge V\u00B2(t)`,
-        ].map((l, i) => ({
-            text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 12},
-        })),
+        height: 290, margin: {...margin, t: 60}, grid: {rows: 1, columns: 2, pattern: 'independent'},
+        annotations,
         xaxis1: {title: 't'}, xaxis2: {title: 't'},
         shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x1', yref: 'y1'},
                  {type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x2', yref: 'y2'}],
@@ -872,6 +893,11 @@ function renderTab(tab, p) {
                 if (!data) { ok = false; break; }
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
+                const full = ensureFull(p);
+                if (full && full.barHk1) {
+                    plotKernel('plot-barHk1', full.t, full.barHk1, '$\\text{Player 1 Kernel Wedge } \\bar{H}^1_k(t,s)$');
+                    plotKernel('plot-barHk2', full.t, full.barHk2, '$\\text{Player 2 Kernel Wedge } \\bar{H}^2_k(t,s)$');
+                }
                 break;
             }
             case 'tab-kernels': {
