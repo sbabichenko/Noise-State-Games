@@ -82,6 +82,7 @@ static struct SolveCache {
     BarSolution bar;
     CostPair costs;
     std::array<double, N_MAX> V1, V2;
+    Kernel2D barHk1, barHk2;  // kernel information wedges
     std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
 
     // F kernel cache (computed lazily on first F kernel tab visit)
@@ -131,11 +132,13 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
                                        g_cache.bar.barX, b1, prec2_arr, 0.0);
     auto bba2 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
                                        g_cache.bar.barX, b2, prec1_arr, 0.0);
+    g_cache.barHk1 = std::move(bba1.barHk);
+    g_cache.barHk2 = std::move(bba2.barHk);
     for (int j = 0; j < g_n; ++j) {
         double V1 = 0.0, V2 = 0.0;
         for (int z = 0; z <= j; ++z) {
-            V1 += g_cache.eq.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
-            V2 += g_cache.eq.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
+            V1 += g_cache.eq.env.Xtilde2[j][z].dot(g_cache.barHk1[j][z]);
+            V2 += g_cache.eq.env.Xtilde1[j][z].dot(g_cache.barHk2[j][z]);
         }
         g_cache.V1[j] = V1 * p2 * p2 * g_dt;
         g_cache.V2[j] = V2 * p1 * p1 * g_dt;
@@ -224,7 +227,7 @@ const char* solve_light(double p1, double p2, double b1, double b2, double r1, d
 static std::vector<double> g_full_buf;
 
 EMSCRIPTEN_KEEPALIVE
-int full_kernel_count() { return 7; }
+int full_kernel_count() { return 9; }
 
 EMSCRIPTEN_KEEPALIVE
 double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, double r2) {
@@ -232,15 +235,16 @@ double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, do
 
     const int n = g_n;
     const int block = n * n;
-    // 7 kernels × 3 channels × N×N
-    g_full_buf.resize(7 * 3 * block);
+    // 9 kernels × 3 channels × N×N
+    g_full_buf.resize(9 * 3 * block);
 
-    const Kernel2D* kernels[7] = {
+    const Kernel2D* kernels[9] = {
         &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1, &g_cache.eq.calD2,
-        &g_cache.eq.env.Xtilde1, &g_cache.eq.env.Xtilde2
+        &g_cache.eq.env.Xtilde1, &g_cache.eq.env.Xtilde2,
+        &g_cache.barHk1, &g_cache.barHk2
     };
 
-    for (int k = 0; k < 7; ++k) {
+    for (int k = 0; k < 9; ++k) {
         const Kernel2D& K = *kernels[k];
         for (int ch = 0; ch < 3; ++ch) {
             double* dst = g_full_buf.data() + (k * 3 + ch) * block;
