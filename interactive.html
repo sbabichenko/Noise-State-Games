@@ -437,7 +437,10 @@ function plotKernel(divId, t, kernelData, title) {
             x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
         })),
     };
-    for (let i = 1; i <= 3; i++) layout['xaxis' + i] = {title: 's'};
+    for (let i = 1; i <= 3; i++) {
+        layout['xaxis' + i] = {title: 's'};
+        layout['yaxis' + i] = {title: i === 1 ? 'value' : ''};
+    }
     Plotly.react(divId, traces, layout, plotCfg);
 }
 
@@ -545,8 +548,8 @@ function plotFKernel(divId, t, fData, title) {
         annotations,
     };
     for (let i = 1; i <= 9; i++) {
-        layout['xaxis' + i] = {title: i > 6 ? 's' : '', showticklabels: i > 6};
-        layout['yaxis' + i] = {title: (i - 1) % 3 === 0 ? 'u' : '', showticklabels: (i - 1) % 3 === 0};
+        layout['xaxis' + i] = {title: i > 6 ? 's' : '', showticklabels: true};
+        layout['yaxis' + i] = {title: (i - 1) % 3 === 0 ? 'value' : '', showticklabels: true};
     }
     Plotly.react(divId, traces, layout, plotCfg);
 }
