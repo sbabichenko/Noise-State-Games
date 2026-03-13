@@ -191,6 +191,35 @@ def make_barD1_sweep_fig(sweep_data):
     return fig
 
 
+def make_barD2_sweep_fig(sweep_data):
+    """barD2(t) curves for each p2 in sweep, plus perfect info."""
+    t = sweep_data["t"]
+    sweeps = sweep_data["sweeps"]
+    p2_vals = [s["p2"] for s in sweeps]
+    p2_min, p2_max = min(p2_vals), max(p2_vals)
+
+    fig = go.Figure()
+    for s in sweeps:
+        frac = (s["p2"] - p2_min) / max(1, p2_max - p2_min)
+        fig.add_trace(go.Scatter(
+            x=t, y=s["barD2"], name=f"p\u2082={s['p2']:.1f}",
+            line=dict(width=2, color=plasma_color(frac)),
+            hovertemplate=f"p\u2082={s['p2']:.1f}<br>t=%{{x:.3f}}<br>D\u0304\u00b2=%{{y:.4g}}",
+        ))
+    fig.add_trace(go.Scatter(
+        x=t, y=sweep_data["barD2_pi"], name="Perfect info",
+        line=dict(width=2, dash="dash", color="gray"),
+    ))
+    fig.update_xaxes(title_text="t")
+    fig.update_yaxes(title_text="D\u0304\u00b2(t)")
+    fig.update_layout(
+        title=f"Mean Control D\u0304\u00b2(t) \u2014 p\u2081={sweep_data['p1']:.1f} fixed, p\u2082 varies",
+        height=400, margin=dict(t=50, b=40, l=60, r=20),
+        legend=dict(x=1.02, y=1, font=dict(size=10)),
+    )
+    return fig
+
+
 def make_costs_fig(sweep_data):
     """Fig 12: Private vs pooled costs as p2 varies."""
     sweeps = sweep_data["sweeps"]
@@ -336,6 +365,7 @@ app.layout = html.Div([
     }),
     dcc.Graph(id="fig-costs"),
     dcc.Graph(id="fig-barD1-sweep"),
+    dcc.Graph(id="fig-barD2-sweep"),
     dcc.Graph(id="fig-wedges-sweep"),
 
     # --- Single-solve figures (depend on all 4 params) ---
@@ -359,6 +389,7 @@ app.layout = html.Div([
 @callback(
     Output("fig-costs", "figure"),
     Output("fig-barD1-sweep", "figure"),
+    Output("fig-barD2-sweep", "figure"),
     Output("fig-wedges-sweep", "figure"),
     Output("sweep-status", "children"),
     Input("p1", "value"),
@@ -373,16 +404,17 @@ def update_sweep_figures(p1, b1, b2, r1, r2):
         sweep = run_sweep(p1, b1, b2, r1, r2)
     except Exception as e:
         empty = go.Figure()
-        return empty, empty, empty, f"Sweep error: {e}"
+        return empty, empty, empty, empty, f"Sweep error: {e}"
 
     elapsed = time.perf_counter() - t0
     fig_costs = make_costs_fig(sweep)
     fig_barD1 = make_barD1_sweep_fig(sweep)
+    fig_barD2 = make_barD2_sweep_fig(sweep)
     fig_wedges = make_wedges_sweep_fig(sweep)
 
     n_pts = len(sweep["sweeps"])
-    status = f"Sweep: {n_pts} p₂ values solved in {elapsed:.3f}s"
-    return fig_costs, fig_barD1, fig_wedges, status
+    status = f"Sweep: {n_pts} p\u2082 values solved in {elapsed:.3f}s"
+    return fig_costs, fig_barD1, fig_barD2, fig_wedges, status
 
 
 @callback(
