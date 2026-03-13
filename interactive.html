@@ -382,9 +382,10 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
         const view = new Float64Array(Module.HEAPF64.buffer, buf, n);
         for (let i = 0; i < n; i++) view[i] = p2Arr[i];
         const ptr = solveSweep(p1, b1, b2, r1, r2, buf, n);
-        wasmFree(buf);
         const json = Module.UTF8ToString(ptr);
-        return JSON.parse(json);
+        const result = JSON.parse(json);
+        if (wasmFree) wasmFree(buf);
+        return result;
     } catch (e) {
         console.error('callSweep failed:', e);
         return null;
