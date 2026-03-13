@@ -150,7 +150,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
     <p>Player $i$ continuously observes a private signal</p>
-    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + E^i\,dW_t^i, \qquad i=1,2,$$
+    $$dY_t^i = \sqrt{p_i}\,X_t\,dt + E^i\,dW_t, \qquad i=1,2,$$
     <p>
       where $W^1, W^2$ are independent Brownian motions (also independent of $W^0$),
       and $p_i > 0$ is the signal precision.
@@ -408,14 +408,20 @@ function callLight(p1, p2, b1, b2, r1, r2) {
 
 function callFull(p1, p2, b1, b2, r1, r2) {
     try {
-        // Binary transfer: returns pointer to 7 kernels × 3 channels × N×N doubles
+        // Binary transfer: returns pointer to kernels × 3 channels × N×N doubles
+        // Old WASM outputs 5 kernels; new WASM (after recompilation) outputs 7 (with Xtilde1/2)
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
         const block = n * n;
-        const total = 7 * 3 * block;
+        const heapBytes = Module.HEAPF64.buffer.byteLength;
+        const has7 = (ptr + 7 * 3 * block * 8) <= heapBytes;
+        const numKernels = has7 ? 7 : 5;
+        const total = numKernels * 3 * block;
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2'];
+    const kernelNames = has7
+        ? ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2']
+        : ['X', 'D1', 'D2', 'calD1', 'calD2'];
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -837,8 +843,10 @@ function renderTab(tab, p) {
             case 'tab-fkernel': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Filter Kernel X\u0303\u00B9(t,s)');
-                plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Filter Kernel X\u0303\u00B2(t,s)');
+                if (data.Xtilde1) {
+                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State Kernel X\u0303\u00B9(t,s)');
+                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State Kernel X\u0303\u00B2(t,s)');
+                }
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
                 plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration Kernel F\u00B9(T,u,s) \u2014 p\u2081=${p.p1}, p\u2082=${p.p2}`);
