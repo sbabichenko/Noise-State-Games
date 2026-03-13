@@ -611,16 +611,22 @@ function plotControls(divId, data, b1, b2) {
         {x: t, y: effortPi, name: 'Effort perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
     ];
     const tmax = t[t.length - 1];
+    const subtitles = [
+        '$\\bar{D}^1,\\; \\bar{D}^2$',
+        `$\\bar{X}(t)$`,
+        '$|\\bar{D}^1|+|\\bar{D}^2|$',
+    ];
+    const annotations = subtitles.map((l, i) => ({
+        text: l, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    annotations.push({
+        text: 'Mean Controls & State (dotted = perfect info)', xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
+    });
     const layout = {
-        height: 300, margin, grid: {rows: 1, columns: 3, pattern: 'independent'},
-        annotations: [
-            `Mean Controls \u0044\u0304\u00B9, \u0044\u0304\u00B2 (dotted = perfect info)`,
-            `Mean State \u0058\u0304(t) (dashed = targets b\u2081=${b1}, b\u2082=${b2})`,
-            `Aggregate Effort |\u0044\u0304\u00B9|+|\u0044\u0304\u00B2|`,
-        ].map((l, i) => ({
-            text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 11},
-        })),
+        height: 320, margin: {...margin, t: 60}, grid: {rows: 1, columns: 3, pattern: 'independent'},
+        annotations,
         shapes: [
             {type: 'line', x0: t[0], x1: tmax, y0: b1, y1: b1,
              line: {dash: 'dash', color: '#1f77b4', width: 1}, xref: 'x2', yref: 'y2'},
@@ -903,8 +909,8 @@ function renderTab(tab, p) {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
                 if (data.Xtilde1) {
-                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State Kernel X\u0303\u00B9(t,s)');
-                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State Kernel X\u0303\u00B2(t,s)');
+                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, '$\\text{Player 1 Unresolved State } \\tilde{X}^1(t,s)$');
+                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, '$\\text{Player 2 Unresolved State } \\tilde{X}^2(t,s)$');
                 }
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
