@@ -590,10 +590,13 @@ function plotKernel(divId, t, kernelData, title) {
         text: l, xref: 'paper', yref: 'paper',
         x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
     }));
+    annotations.push({
+        text: title, xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+    });
     const layout = {
         height: 320, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 3, pattern: 'independent'},
-        title: {text: title, font: {size: 14, color: '#333'}},
         annotations,
     };
     for (let i = 1; i <= 3; i++) {
@@ -606,8 +609,11 @@ function plotKernel(divId, t, kernelData, title) {
 function plotResidual(divId, data) {
     const iters = data.residuals.map((_, i) => i);
     Plotly.react(divId, [{x: iters, y: data.residuals, mode: 'lines', line: {width: 2}}], {
-        height: 270, margin,
-        title: `Picard Residual (${data.n_iters} iterations)`,
+        height: 270, margin: {...margin, t: 50},
+        annotations: [{
+            text: `Picard Residual (${data.n_iters} iterations)`, xref: 'paper', yref: 'paper',
+            x: 0.5, y: 1.1, showarrow: false, font: {size: 14, color: '#333'},
+        }],
         yaxis: {type: 'log', title: 'Relative residual'}, xaxis: {title: 'Iteration'},
     }, plotCfg);
 }
@@ -664,12 +670,15 @@ function plotWedges(divId, data) {
         text: l, xref: 'paper', yref: 'paper',
         x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
     }));
+    annotations.push({
+        text: 'Mean Information Wedges', xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+    });
     Plotly.react(divId, [
         {x: t, y: data.V1, name: '$\\bar{V}^1$', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
         {x: t, y: data.V2, name: '$\\bar{V}^2$', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
     ], {
         height: 290, margin: {...margin, t: 60}, grid: {rows: 1, columns: 2, pattern: 'independent'},
-        title: {text: 'Mean Information Wedges', font: {size: 14, color: '#333'}},
         annotations,
         xaxis1: {title: 't'}, xaxis2: {title: 't'},
         shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x1', yref: 'y1'},
@@ -700,16 +709,19 @@ function plotFKernel(divId, t, fData, title) {
                 });
             }
             annotations.push({
-                text: `$W^${row} \\leftarrow W^${col}$`,
+                text: `$W^{${row}} \\leftarrow W^{${col}}$`,
                 xref: 'paper', yref: 'paper',
                 x: (col + 0.5) / 3, y: 1.0 - row / 3 + 0.02,
                 showarrow: false, font: {size: 11},
             });
         }
     }
+    annotations.push({
+        text: title, xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.04, showarrow: false, font: {size: 14, color: '#333'},
+    });
     const layout = {
         height: 700, margin: {...margin, t: 60},
-        title: title,
         grid: {rows: 3, columns: 3, pattern: 'independent'},
         annotations,
     };
@@ -733,14 +745,19 @@ function plotCosts(divId, sweep) {
         {x: p2, y: s.map(v => v.J2_pool), name: '$J^2$ pooled', mode: 'lines+markers',
          line: {width: 2, color: '#d62728', dash: 'dash'}, marker: {size: 7, symbol: 'square'}, xaxis: 'x2', yaxis: 'y2'},
     ];
+    const costAnnotations = ['$J^1(p_2)$', '$J^2(p_2)$'].map((l, i) => ({
+        text: l, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    costAnnotations.push({
+        text: `Costs: p\u2081=${sweep.p1.toFixed(1)}, b\u2081=${sweep.b1.toFixed(1)}, b\u2082=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
+        xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
+    });
     Plotly.react(divId, traces, {
-        height: 350, margin: {...margin, t: 50},
-        title: `Costs: $p_1$=${sweep.p1.toFixed(1)}, $b_1$=${sweep.b1.toFixed(1)}, $b_2$=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
+        height: 350, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['$\\text{Player 1 Cost } J^1(p_2)$', '$\\text{Player 2 Cost } J^2(p_2)$'].map((l, i) => ({
-            text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 12},
-        })),
+        annotations: costAnnotations,
         xaxis1: {title: '$p_2$'}, xaxis2: {title: '$p_2$'},
         yaxis1: {title: 'Cost'}, yaxis2: {title: 'Cost'},
     }, plotCfg);
@@ -759,7 +776,11 @@ function plotBarD1Sweep(divId, sweep) {
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         height: 350, margin: {...margin, t: 50},
-        title: `$\\bar{D}^1(t)$ — $p_1$=${sweep.p1.toFixed(1)} fixed`,
+        annotations: [{
+            text: `$\\bar{D}^1(t)$ — p\u2081=${sweep.p1.toFixed(1)} fixed`,
+            xref: 'paper', yref: 'paper',
+            x: 0.5, y: 1.1, showarrow: false, font: {size: 14, color: '#333'},
+        }],
         xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^1(t)$'},
     }, plotCfg);
 }
@@ -777,7 +798,11 @@ function plotBarD2Sweep(divId, sweep) {
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         height: 350, margin: {...margin, t: 50},
-        title: `$\\bar{D}^2(t)$ — $p_1$=${sweep.p1.toFixed(1)} fixed`,
+        annotations: [{
+            text: `$\\bar{D}^2(t)$ — p\u2081=${sweep.p1.toFixed(1)} fixed`,
+            xref: 'paper', yref: 'paper',
+            x: 0.5, y: 1.1, showarrow: false, font: {size: 14, color: '#333'},
+        }],
         xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^2(t)$'},
     }, plotCfg);
 }
@@ -796,14 +821,19 @@ function plotWedgesSweep(divId, sweep) {
                      line: {width: 1.8, color}, legendgroup: `p${v.p2}`,
                      showlegend: false, xaxis: 'x2', yaxis: 'y2'});
     }
+    const sweepAnnotations = ['$\\bar{V}^1(t)$', '$\\bar{V}^2(t)$'].map((l, i) => ({
+        text: l, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    sweepAnnotations.push({
+        text: `Sweep Mean Information Wedges — p\u2081=${sweep.p1.toFixed(1)} fixed`,
+        xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+    });
     Plotly.react(divId, traces, {
-        height: 330, margin: {...margin, t: 50},
-        title: `$\\text{Sweep Mean Information Wedges — } p_1\\text{=${sweep.p1.toFixed(1)} fixed}$`,
+        height: 330, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['$\\bar{V}^1(t)$', '$\\bar{V}^2(t)$'].map((l, i) => ({
-            text: l, xref: 'paper', yref: 'paper',
-            x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 13},
-        })),
+        annotations: sweepAnnotations,
         xaxis1: {title: '$t$'}, xaxis2: {title: '$t$'},
     }, plotCfg);
 }
