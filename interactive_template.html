@@ -130,10 +130,12 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 <!-- Tab bar -->
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="tab-model">Model</button>
+  <button class="tab-btn" data-tab="tab-guide">Guide</button>
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
-  <button class="tab-btn" data-tab="tab-kernels">State/Control Kernels</button>
-  <button class="tab-btn" data-tab="tab-fkernel">Filter Kernels</button>
-  <button class="tab-btn" data-tab="tab-statics">Comparative Statics</button>
+  <button class="tab-btn" data-tab="tab-wedge">Wedge</button>
+  <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
+  <button class="tab-btn" data-tab="tab-fkernel">Filter</button>
+  <button class="tab-btn" data-tab="tab-statics">Statics</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
 
@@ -203,6 +205,146 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   </div>
 </div>
 
+<!-- Tab 0.5: Guide -->
+<div id="tab-guide" class="tab-panel">
+  <div style="max-width:820px; margin:0 auto; line-height:1.7; font-size:1.05em;">
+    <h2 style="margin:10px 0 8px; font-size:1.25em;">What the plots show</h2>
+    <p>
+      Decentralized LQG games normally require each player to form beliefs about
+      the other's beliefs, and so on &mdash; the Townsend belief hierarchy.
+      This tool displays the equilibrium objects that emerge once that hierarchy
+      is resolved via a coordinate change into <em>noise-state</em> (primitive
+      Brownian) coordinates.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">The noise-state idea</h3>
+    <p>
+      Instead of tracking conditional distributions, work in the coordinates of
+      the three underlying Brownian shocks $W^0, W^1, W^2$. Every adapted process
+      admits a stochastic-integral representation governed by a <em>kernel</em>
+      (a causal function of two time indices), and the equilibrium reduces to a
+      system of coupled kernel equations with no infinite regress. The channels
+      have distinct roles: $W^0$ is common noise observed by neither player,
+      $W^1$ is player&nbsp;1's observation noise, $W^2$ is player&nbsp;2's.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">State kernel $X(t,s)$</h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>State/Control Kernels</strong> tab.
+    </p>
+    <p>
+      $X(t,s)$ is the impulse response of the state: how much a unit shock at
+      source time $s$ persists in $X_t$. The $W^0$ channel starts at 1 and decays
+      as both players stabilize it. The $W^1, W^2$ channels start at zero
+      (observation noise doesn't enter the state directly) but build up as each
+      player's privately-adapted control feeds back through the drift.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">
+      Control kernels $D^i(t,s)$ and $\mathcal{D}^i(t,s)$
+    </h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>State/Control Kernels</strong> tab.
+    </p>
+    <p>
+      $D^i(t,s)$ is player $i$'s feedback kernel in <em>filtered</em> coordinates
+      (what the player knows). $\mathcal{D}^i(t,s)$ is the same control
+      re-expressed in <em>primitive</em> coordinates (what drives the state),
+      obtained by convolving $D^i$ with the filtration kernel $F^i$.
+      $\mathcal{D}^i$ is the kernel that enters the state equation and determines
+      equilibrium volatility.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">
+      Unresolved state $\widetilde{X}^i(t,s)$
+    </h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>Filter Kernels</strong> tab.
+    </p>
+    <p>
+      $\widetilde{X}^i(t,s)$ is the component of the state's impulse response
+      that player $i$ has not yet resolved at time $t$ &mdash; the filtering gain
+      in the noise-state innovation update (Theorem&nbsp;3.1). The $W^i$ channel
+      is identically zero: player $i$'s own observation noise enters the state
+      only through their own (measurable) actions.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">
+      Filtration kernel $F^i(t,u,s)$
+    </h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>Filter Kernels</strong> tab.
+    </p>
+    <p>
+      $F^i(t,u,s)$ maps from primitive coordinates $(s)$ to filtered coordinates
+      $(u)$ for player $i$ at time $t$ &mdash; the density kernel of the noise-state
+      conditional mean. The 3&times;3 subplot grid shows each source channel (column)
+      mapping into each target channel (row).
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">
+      Mean controls $\bar{D}^i(t)$ and mean state $\bar{X}(t)$
+    </h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>Equilibrium</strong> tab (top panel).
+    </p>
+    <p>
+      The deterministic components of the equilibrium. Dotted lines show the
+      perfect-information Riccati benchmark. The gap is the mean-channel
+      distortion from bilateral belief manipulation.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">
+      Information wedge $\mathcal{V}^i(t,r)$
+    </h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      Mean $\bar{V}^i(t)$ and full kernel $\mathcal{V}^i(t,r)$ on the
+      <strong>Equilibrium</strong> tab.
+    </p>
+    <p>
+      Player $i$'s optimality condition gives
+      $D^i(t,s) = -(1/r_i)\,H^i_x(t,s)$, where $H^i_x$ is the kernel costate.
+      The backward equation for $H^i_x$ is
+    </p>
+    $$H^i_x(t,r) = H^i_x(T,r) + \int_t^T \bigl[\, X(u,r) + \mathcal{V}^i(u,r) \,\bigr]\,du$$
+    <p>
+      where $X(u,r)$ is the standard state-tracking term and
+      $\mathcal{V}^i$ is the information wedge:
+    </p>
+    $$\mathcal{V}^i(t,r) \;=\; p_{-i}^2 \int_0^t \widetilde{X}^{-i}(t,z) \cdot H^{-i,i}(t,z,r)\,dz$$
+    <p>
+      $\widetilde{X}^{-i}$ governs how much a drift perturbation shifts the
+      opponent's posterior; $H^{-i,i}$ governs how that shifted posterior changes
+      the opponent's future actions; $p_{-i}^2$ scales by opponent precision.
+      Without the wedge, the backward equation collapses to the perfect-information
+      Riccati solution. With it, player $i$ shades the drift to manipulate what the
+      opponent learns. The entire strategic information friction enters through this
+      single additive correction to the costate.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">Comparative statics</h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>Comparative Statics</strong> tab.
+    </p>
+    <p>
+      Sweeps $p_2$ with all else fixed. Dashed lines show pooled-information costs
+      (common filtration, no strategic friction). The gap reflects both the direct
+      cost of having less information and the additional distortion from bilateral
+      belief manipulation.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">Diagnostics</h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>Diagnostics</strong> tab.
+    </p>
+    <p>
+      Anderson-accelerated Picard iteration on the best-response map
+      $D \mapsto G(D)$. The residual $\|G(D)-D\|/\|G(D)\|$ may be non-monotonic
+      &mdash; Anderson mixing is not a descent method.
+    </p>
+  </div>
+</div>
+
 <!-- Tab 1: Equilibrium -->
 <div id="tab-equilibrium" class="tab-panel">
   <div class="figure-block">
@@ -228,6 +370,16 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       since a better-informed opponent reacts more sharply to drift perturbations.
     </div>
   </div>
+</div>
+
+<!-- Tab 1.5: Information Wedge -->
+<div id="tab-wedge" class="tab-panel">
+  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
+    Kernel information wedges $\mathcal{V}^i(t,r)$ &mdash; the additive correction to the
+    costate backward equation that separates the noise-state equilibrium from the
+    perfect-information Riccati solution. The $W^0$ channel is typically the dominant
+    source of equilibrium distortion, since common noise is the hardest to resolve.
+  </p>
   <div class="figure-block">
     <div id="plot-Vkernel1" class="plot"></div>
     <div class="figure-caption">
@@ -321,6 +473,13 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div class="figure-caption">
       Player 2's unresolved state kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
       The W&#xB2; channel is identically zero (same reasoning, with players swapped).
+    </div>
+  </div>
+  <div class="figure-block" style="margin-bottom:8px;">
+    <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px 4px;">
+      <label style="font-size:0.95em; font-weight:600;">Filter time t:</label>
+      <input type="range" id="sl-fkernel-t" min="1" max="39" value="39" style="width:260px;">
+      <span id="val-fkernel-t" style="font-size:0.95em; min-width:80px;">t = T</span>
     </div>
   </div>
   <div class="figure-block">
@@ -421,7 +580,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree, wasmFullKernelCount;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, solveFKernelAtBin, wasmSetGrid, wasmMalloc, wasmFree, wasmFullKernelCount;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -545,6 +704,35 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
         return result;
     } catch (e) {
         console.error('callFKernel failed:', e);
+        return null;
+    }
+}
+
+function callFKernelAt(p1, p2, b1, b2, r1, r2, tIdx) {
+    try {
+        const ptr = solveFKernelAtBin(p1, p2, b1, b2, r1, r2, tIdx);
+        const n = N;
+        const block = n * n;
+        const total = 2 * 9 * block;
+        const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
+        const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
+        const result = {t, F1: {}, F2: {}};
+        let offset = 0;
+        for (const player of ['F1', 'F2']) {
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const z = [];
+                    for (let u = 0; u < n; u++) {
+                        z.push(Array.from(arr.subarray(offset, offset + n)));
+                        offset += n;
+                    }
+                    result[player][`r${r}c${c}`] = z;
+                }
+            }
+        }
+        return result;
+    } catch (e) {
+        console.error('callFKernelAt failed:', e);
         return null;
     }
 }
@@ -863,7 +1051,7 @@ let pendingUpdate = false;  // Re-run after current solve finishes
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
 let lightKey = '', fullKey = '', sweepKey = '', fKernelKey = '';
-const dirty = { 'tab-equilibrium': true, 'tab-kernels': true, 'tab-fkernel': true, 'tab-statics': true, 'tab-diagnostics': true };
+const dirty = { 'tab-equilibrium': true, 'tab-wedge': true, 'tab-kernels': true, 'tab-fkernel': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
 let currentN = 40, currentT = 1.0;
@@ -937,12 +1125,14 @@ function ensureSweep(p) {
     return sweepData;
 }
 
-// Ensure F kernel result is fresh
-function ensureFKernel(p) {
+// Ensure F kernel result is fresh for the given time index
+function ensureFKernel(p, tIdx) {
     applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
+    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},${tIdx}`;
     if (key !== fKernelKey) {
-        const result = callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
+        const result = (tIdx === N - 1)
+            ? callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2)
+            : callFKernelAt(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2, tIdx);
         if (result) { fKernelData = result; fKernelKey = key; }
     }
     return fKernelData;
@@ -957,11 +1147,13 @@ function renderTab(tab, p) {
                 if (!data) { ok = false; break; }
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
+                break;
+            }
+            case 'tab-wedge': {
                 const full = ensureFull(p);
-                if (full && full.Vkernel1) {
-                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
-                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
-                }
+                if (!full || !full.Vkernel1) { ok = false; break; }
+                plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
+                plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
                 break;
             }
             case 'tab-kernels': {
@@ -981,10 +1173,19 @@ function renderTab(tab, p) {
                     plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State $\\tilde{X}^1(t,s)$');
                     plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State $\\tilde{X}^2(t,s)$');
                 }
-                const fk = ensureFKernel(p);
+                // Update slider range to match current grid
+                const slFT = document.getElementById('sl-fkernel-t');
+                slFT.max = N - 1;
+                if (parseInt(slFT.value) > N - 1) slFT.value = N - 1;
+                const tIdx = parseInt(slFT.value);
+                const tVal = (tIdx / (N - 1) * currentT).toFixed(3);
+                const tLabel = tIdx === N - 1 ? 't = T' : `t = ${tVal}`;
+                document.getElementById('val-fkernel-t').textContent = tLabel;
+                const fk = ensureFKernel(p, tIdx);
                 if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                const tDisp = tIdx === N - 1 ? 'T' : tVal;
+                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(${tDisp},u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(${tDisp},u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
@@ -1083,6 +1284,7 @@ SolverModule().then(mod => {
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
+    solveFKernelAtBin = mod.cwrap('solve_f_kernel_at_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmMalloc = mod._malloc;
     wasmFree = mod._free;
@@ -1097,6 +1299,12 @@ SolverModule().then(mod => {
     for (const id of ['sl-p1', 'sl-p2', 'sl-b1', 'sl-b2', 'sl-r1', 'sl-r2', 'sl-N', 'sl-T']) {
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
+    document.getElementById('sl-fkernel-t').addEventListener('input', function() {
+        dirty['tab-fkernel'] = true;
+        if (solving) { pendingUpdate = true; }
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(updateActive, 80);
+    });
     updateLabels();
     updateActive();
 });
