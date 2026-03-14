@@ -922,32 +922,32 @@ function renderTab(tab, p) {
                 plotWedges('plot-wedges', data);
                 const full = ensureFull(p);
                 if (full && full.Vkernel1) {
-                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, '$\\text{Player 1 Kernel Wedge } \\mathcal{V}^1(t,r)$');
-                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, '$\\text{Player 2 Kernel Wedge } \\mathcal{V}^2(t,r)$');
+                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
+                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
                 }
                 break;
             }
             case 'tab-kernels': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotKernel('plot-X', data.t, data.X, '$\\text{State Kernel } X(t,s)$');
-                plotKernel('plot-D1', data.t, data.D1, '$\\text{Player 1 Feedback } D^1(t,s)$');
-                plotKernel('plot-D2', data.t, data.D2, '$\\text{Player 2 Feedback } D^2(t,s)$');
-                plotKernel('plot-calD1', data.t, data.calD1, '$\\text{Primitive Control } \\mathcal{D}^1(t,s)$');
-                plotKernel('plot-calD2', data.t, data.calD2, '$\\text{Primitive Control } \\mathcal{D}^2(t,s)$');
+                plotKernel('plot-X', data.t, data.X, 'State Kernel $X(t,s)$');
+                plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback $D^1(t,s)$');
+                plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback $D^2(t,s)$');
+                plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control $\\mathcal{D}^1(t,s)$');
+                plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control $\\mathcal{D}^2(t,s)$');
                 break;
             }
             case 'tab-fkernel': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
                 if (data.Xtilde1) {
-                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, '$\\text{Player 1 Unresolved State } \\tilde{X}^1(t,s)$');
-                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, '$\\text{Player 2 Unresolved State } \\tilde{X}^2(t,s)$');
+                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State $\\tilde{X}^1(t,s)$');
+                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State $\\tilde{X}^2(t,s)$');
                 }
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `$\\text{Player 1 Filtration } F^1(T,u,s) \\text{ — } p_1\\text{=${p.p1}, } p_2\\text{=${p.p2}}$`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `$\\text{Player 2 Filtration } F^2(T,u,s) \\text{ — } p_1\\text{=${p.p1}, } p_2\\text{=${p.p2}}$`);
+                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
