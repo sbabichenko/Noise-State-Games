@@ -1125,17 +1125,20 @@ function ensureSweep(p) {
     return sweepData;
 }
 
-// Ensure F kernel result is fresh for the given time index
+// Ensure F kernel result is fresh for the given time index.
+// Falls back to t=T if the WASM binary lacks solve_f_kernel_at_bin.
 function ensureFKernel(p, tIdx) {
     applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},${tIdx}`;
+    // If WASM doesn't support per-time F kernel, always use T
+    const effectiveIdx = solveFKernelAtBin ? tIdx : (N - 1);
+    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},${effectiveIdx}`;
     if (key !== fKernelKey) {
-        const result = (tIdx === N - 1)
+        const result = (effectiveIdx === N - 1)
             ? callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2)
-            : callFKernelAt(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2, tIdx);
+            : callFKernelAt(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2, effectiveIdx);
         if (result) { fKernelData = result; fKernelKey = key; }
     }
-    return fKernelData;
+    return { data: fKernelData, effectiveIdx };
 }
 
 function renderTab(tab, p) {
@@ -1173,17 +1176,19 @@ function renderTab(tab, p) {
                     plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State $\\tilde{X}^1(t,s)$');
                     plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State $\\tilde{X}^2(t,s)$');
                 }
-                // Update slider range to match current grid
+                // Update slider range and disabled state
                 const slFT = document.getElementById('sl-fkernel-t');
+                const slFTLabel = document.getElementById('val-fkernel-t');
                 slFT.max = N - 1;
+                slFT.disabled = !solveFKernelAtBin;
                 if (parseInt(slFT.value) > N - 1) slFT.value = N - 1;
                 const tIdx = parseInt(slFT.value);
-                const tVal = (tIdx / (N - 1) * currentT).toFixed(3);
-                const tLabel = tIdx === N - 1 ? 't = T' : `t = ${tVal}`;
-                document.getElementById('val-fkernel-t').textContent = tLabel;
-                const fk = ensureFKernel(p, tIdx);
+                const {data: fk, effectiveIdx} = ensureFKernel(p, tIdx);
                 if (!fk) { ok = false; break; }
-                const tDisp = tIdx === N - 1 ? 'T' : tVal;
+                const eTVal = (effectiveIdx / (N - 1) * currentT).toFixed(3);
+                const tDisp = effectiveIdx === N - 1 ? 'T' : eTVal;
+                const tLabel = effectiveIdx === N - 1 ? 't = T' : `t = ${eTVal}`;
+                slFTLabel.textContent = !solveFKernelAtBin ? 't = T (rebuild WASM for slider)' : tLabel;
                 plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(${tDisp},u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(${tDisp},u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
@@ -1284,7 +1289,7 @@ SolverModule().then(mod => {
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
-    solveFKernelAtBin = mod.cwrap('solve_f_kernel_at_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
+    try { solveFKernelAtBin = mod.cwrap('solve_f_kernel_at_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']); } catch(e) {}
     wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmMalloc = mod._malloc;
     wasmFree = mod._free;
