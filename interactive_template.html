@@ -132,9 +132,10 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <button class="tab-btn active" data-tab="tab-model">Model</button>
   <button class="tab-btn" data-tab="tab-guide">Guide</button>
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
-  <button class="tab-btn" data-tab="tab-kernels">State/Control Kernels</button>
-  <button class="tab-btn" data-tab="tab-fkernel">Filter Kernels</button>
-  <button class="tab-btn" data-tab="tab-statics">Comparative Statics</button>
+  <button class="tab-btn" data-tab="tab-wedge">Wedge</button>
+  <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
+  <button class="tab-btn" data-tab="tab-fkernel">Filter</button>
+  <button class="tab-btn" data-tab="tab-statics">Statics</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
 
@@ -369,6 +370,16 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       since a better-informed opponent reacts more sharply to drift perturbations.
     </div>
   </div>
+</div>
+
+<!-- Tab 1.5: Information Wedge -->
+<div id="tab-wedge" class="tab-panel">
+  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
+    Kernel information wedges $\mathcal{V}^i(t,r)$ &mdash; the additive correction to the
+    costate backward equation that separates the noise-state equilibrium from the
+    perfect-information Riccati solution. The $W^0$ channel is typically the dominant
+    source of equilibrium distortion, since common noise is the hardest to resolve.
+  </p>
   <div class="figure-block">
     <div id="plot-Vkernel1" class="plot"></div>
     <div class="figure-caption">
@@ -1040,7 +1051,7 @@ let pendingUpdate = false;  // Re-run after current solve finishes
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
 let lightKey = '', fullKey = '', sweepKey = '', fKernelKey = '';
-const dirty = { 'tab-equilibrium': true, 'tab-kernels': true, 'tab-fkernel': true, 'tab-statics': true, 'tab-diagnostics': true };
+const dirty = { 'tab-equilibrium': true, 'tab-wedge': true, 'tab-kernels': true, 'tab-fkernel': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
 let currentN = 40, currentT = 1.0;
@@ -1136,11 +1147,13 @@ function renderTab(tab, p) {
                 if (!data) { ok = false; break; }
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
+                break;
+            }
+            case 'tab-wedge': {
                 const full = ensureFull(p);
-                if (full && full.Vkernel1) {
-                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
-                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
-                }
+                if (!full || !full.Vkernel1) { ok = false; break; }
+                plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
+                plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
                 break;
             }
             case 'tab-kernels': {
