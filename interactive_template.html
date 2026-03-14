@@ -597,28 +597,31 @@ function plotControls(divId, data, b1, b2) {
     const effortPi = data.barD1_pi.map((d, i) => Math.abs(d) + Math.abs(data.barD2_pi[i]));
 
     const traces = [
-        {x: t, y: data.barD1, name: 'D\u0304\u00B9', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD2, name: 'D\u0304\u00B2', line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD1_pi, name: 'D\u0304\u00B9 perfect', line: {width: 1.5, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD2_pi, name: 'D\u0304\u00B2 perfect', line: {width: 1.5, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barX, name: 'X\u0304', line: {width: 2}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
-        {x: t, y: data.barX_pi, name: 'X\u0304 perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.barD1, name: '$\\bar{D}^1$', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2, name: '$\\bar{D}^2$', line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD1_pi, name: '$\\bar{D}^1$ perfect', line: {width: 1.5, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2_pi, name: '$\\bar{D}^2$ perfect', line: {width: 1.5, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barX, name: '$\\bar{X}$', line: {width: 2}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.barX_pi, name: '$\\bar{X}$ perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
         {x: t, y: effort, name: 'Effort', line: {width: 2}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
         {x: t, y: effortPi, name: 'Effort perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
     ];
     const tmax = t[t.length - 1];
     const subtitles = [
-        'D\u0304\u00B9, D\u0304\u00B2',
-        'X\u0304(t)',
-        '|D\u0304\u00B9|+|D\u0304\u00B2|',
+        '$\\bar{D}^1,\\; \\bar{D}^2$',
+        `$\\bar{X}(t)$`,
+        '$|\\bar{D}^1|+|\\bar{D}^2|$',
     ];
     const annotations = subtitles.map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
         x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
     }));
+    annotations.push({
+        text: 'Mean Controls & State (dotted = perfect info)', xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
+    });
     const layout = {
         height: 320, margin: {...margin, t: 60}, grid: {rows: 1, columns: 3, pattern: 'independent'},
-        title: {text: 'Mean Controls & State (dotted = perfect info)', font: {size: 13, color: '#333'}},
         annotations,
         shapes: [
             {type: 'line', x0: t[0], x1: tmax, y0: b1, y1: b1,
@@ -735,8 +738,8 @@ function plotBarD1Sweep(divId, sweep) {
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         height: 350, margin: {...margin, t: 50},
-        title: `D\u0304\u00B9(t) \u2014 p\u2081=${sweep.p1.toFixed(1)} fixed`,
-        xaxis: {title: 't'}, yaxis: {title: 'D\u0304\u00B9(t)'},
+        title: `$\\bar{D}^1(t)$ — $p_1$=${sweep.p1.toFixed(1)} fixed`,
+        xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^1(t)$'},
     }, plotCfg);
 }
 
@@ -753,8 +756,8 @@ function plotBarD2Sweep(divId, sweep) {
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         height: 350, margin: {...margin, t: 50},
-        title: `D\u0304\u00B2(t) \u2014 p\u2081=${sweep.p1.toFixed(1)} fixed`,
-        xaxis: {title: 't'}, yaxis: {title: 'D\u0304\u00B2(t)'},
+        title: `$\\bar{D}^2(t)$ — $p_1$=${sweep.p1.toFixed(1)} fixed`,
+        xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^2(t)$'},
     }, plotCfg);
 }
 
@@ -774,7 +777,7 @@ function plotWedgesSweep(divId, sweep) {
     }
     Plotly.react(divId, traces, {
         height: 330, margin: {...margin, t: 50},
-        title: `Mean Information Wedges \u2014 p\u2081=${sweep.p1.toFixed(1)} fixed`,
+        title: `Mean Information Wedges — $p_1$=${sweep.p1.toFixed(1)} fixed`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations: ['V\u0304\u00B9(t)', 'V\u0304\u00B2(t)'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
