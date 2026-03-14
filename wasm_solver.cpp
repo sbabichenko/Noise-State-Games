@@ -434,4 +434,40 @@ double* solve_f_kernel_bin(double p1, double p2, double b1, double b2, double r1
     return g_fkernel_buf.data();
 }
 
+// Binary F kernel at arbitrary time index t_idx.
+// Same layout as solve_f_kernel_bin but computes F at grid point t_idx
+// instead of t=T. Does not use or update the F kernel cache.
+EMSCRIPTEN_KEEPALIVE
+double* solve_f_kernel_at_bin(double p1, double p2, double b1, double b2, double r1, double r2, int t_idx) {
+    ensure_solve(p1, p2, b1, b2, r1, r2);
+
+    const int n = g_n;
+    if (t_idx < 0) t_idx = 0;
+    if (t_idx >= n) t_idx = n - 1;
+    const int block = n * n;
+    g_fkernel_buf.resize(2 * 9 * block);
+
+    const auto& env = g_cache.eq.env;
+    auto F1 = compute_F_slice_at(env.Xtilde1, env.A_store1,
+                                  env.obs_gain1, env.obs_idx1, t_idx);
+    auto F2 = compute_F_slice_at(env.Xtilde2, env.A_store2,
+                                  env.obs_gain2, env.obs_idx2, t_idx);
+
+    const FSlice* slices[2] = { F1.get(), F2.get() };
+    for (int p = 0; p < 2; ++p) {
+        const FSlice& F = *slices[p];
+        double* base = g_fkernel_buf.data() + p * 9 * block;
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                double* dst = base + (r * 3 + c) * block;
+                for (int u = 0; u < n; ++u)
+                    for (int s = 0; s < n; ++s)
+                        dst[u * n + s] = F(u, s)(r, c);
+            }
+        }
+    }
+
+    return g_fkernel_buf.data();
+}
+
 } // extern "C"

@@ -254,6 +254,11 @@ struct FSlice {
 std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
                                               double obs_gain, int obs_index);
 
+// Compute F kernel at arbitrary time index t_idx (0-based grid index).
+// Same algorithm as compute_F_slice_at_T but stops iteration at t_idx.
+std::unique_ptr<FSlice> compute_F_slice_at(const Kernel2D& Xtilde, const Kernel2D& A_store,
+                                            double obs_gain, int obs_index, int t_idx);
+
 // ---------- utility ----------
 inline std::array<double, N_MAX> make_constant_prec(double val) {
     std::array<double, N_MAX> a;
