@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LQG Noise-State Game Explorer</title>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},svg:{fontCache:'global'}};</script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -716,7 +716,7 @@ function plotCosts(divId, sweep) {
         height: 350, margin: {...margin, t: 50},
         title: `Costs: $p_1$=${sweep.p1.toFixed(1)}, $b_1$=${sweep.b1.toFixed(1)}, $b_2$=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['Player 1 Cost $J^1(p_2)$', 'Player 2 Cost $J^2(p_2)$'].map((l, i) => ({
+        annotations: ['$\\text{Player 1 Cost } J^1(p_2)$', '$\\text{Player 2 Cost } J^2(p_2)$'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
             x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 12},
         })),
@@ -777,7 +777,7 @@ function plotWedgesSweep(divId, sweep) {
     }
     Plotly.react(divId, traces, {
         height: 330, margin: {...margin, t: 50},
-        title: `Mean Information Wedges — $p_1$=${sweep.p1.toFixed(1)} fixed`,
+        title: `$\\text{Sweep Mean Information Wedges — } p_1\\text{=${sweep.p1.toFixed(1)} fixed}$`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations: ['$\\bar{V}^1(t)$', '$\\bar{V}^2(t)$'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
@@ -892,32 +892,32 @@ function renderTab(tab, p) {
                 plotWedges('plot-wedges', data);
                 const full = ensureFull(p);
                 if (full && full.Vkernel1) {
-                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
-                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
+                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, '$\\text{Player 1 Kernel Wedge } \\mathcal{V}^1(t,r)$');
+                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, '$\\text{Player 2 Kernel Wedge } \\mathcal{V}^2(t,r)$');
                 }
                 break;
             }
             case 'tab-kernels': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotKernel('plot-X', data.t, data.X, 'State Kernel $X(t,s)$');
-                plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback $D^1(t,s)$');
-                plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback $D^2(t,s)$');
-                plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control $\\mathcal{D}^1(t,s)$');
-                plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control $\\mathcal{D}^2(t,s)$');
+                plotKernel('plot-X', data.t, data.X, '$\\text{State Kernel } X(t,s)$');
+                plotKernel('plot-D1', data.t, data.D1, '$\\text{Player 1 Feedback } D^1(t,s)$');
+                plotKernel('plot-D2', data.t, data.D2, '$\\text{Player 2 Feedback } D^2(t,s)$');
+                plotKernel('plot-calD1', data.t, data.calD1, '$\\text{Primitive Control } \\mathcal{D}^1(t,s)$');
+                plotKernel('plot-calD2', data.t, data.calD2, '$\\text{Primitive Control } \\mathcal{D}^2(t,s)$');
                 break;
             }
             case 'tab-fkernel': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
                 if (data.Xtilde1) {
-                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State $\\tilde{X}^1(t,s)$');
-                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State $\\tilde{X}^2(t,s)$');
+                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, '$\\text{Player 1 Unresolved State } \\tilde{X}^1(t,s)$');
+                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, '$\\text{Player 2 Unresolved State } \\tilde{X}^2(t,s)$');
                 }
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
+                plotFKernel('plot-F1', fk.t, fk.F1, `$\\text{Player 1 Filtration } F^1(T,u,s) \\text{ — } p_1\\text{=${p.p1}, } p_2\\text{=${p.p2}}$`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `$\\text{Player 2 Filtration } F^2(T,u,s) \\text{ — } p_1\\text{=${p.p1}, } p_2\\text{=${p.p2}}$`);
                 break;
             }
             case 'tab-statics': {
