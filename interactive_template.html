@@ -569,13 +569,10 @@ function plotKernel(divId, t, kernelData, title) {
         text: l, xref: 'paper', yref: 'paper',
         x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
     }));
-    annotations.push({
-        text: title, xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
-    });
     const layout = {
         height: 320, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 3, pattern: 'independent'},
+        title: {text: title, font: {size: 14, color: '#333'}},
         annotations,
     };
     for (let i = 1; i <= 3; i++) {
@@ -646,15 +643,12 @@ function plotWedges(divId, data) {
         text: l, xref: 'paper', yref: 'paper',
         x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
     }));
-    annotations.push({
-        text: 'Mean Information Wedges', xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
-    });
     Plotly.react(divId, [
         {x: t, y: data.V1, name: '$\\bar{V}^1$', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
         {x: t, y: data.V2, name: '$\\bar{V}^2$', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
     ], {
         height: 290, margin: {...margin, t: 60}, grid: {rows: 1, columns: 2, pattern: 'independent'},
+        title: {text: 'Mean Information Wedges', font: {size: 14, color: '#333'}},
         annotations,
         xaxis1: {title: 't'}, xaxis2: {title: 't'},
         shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x1', yref: 'y1'},
@@ -722,7 +716,7 @@ function plotCosts(divId, sweep) {
         height: 350, margin: {...margin, t: 50},
         title: `Costs: $p_1$=${sweep.p1.toFixed(1)}, $b_1$=${sweep.b1.toFixed(1)}, $b_2$=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
         grid: {rows: 1, columns: 2, pattern: 'independent'},
-        annotations: ['$\\text{Player 1 Cost } J^1(p_2)$', '$\\text{Player 2 Cost } J^2(p_2)$'].map((l, i) => ({
+        annotations: ['Player 1 Cost $J^1(p_2)$', 'Player 2 Cost $J^2(p_2)$'].map((l, i) => ({
             text: l, xref: 'paper', yref: 'paper',
             x: (i + 0.5) / 2, y: 1.05, showarrow: false, font: {size: 12},
         })),
@@ -898,32 +892,32 @@ function renderTab(tab, p) {
                 plotWedges('plot-wedges', data);
                 const full = ensureFull(p);
                 if (full && full.Vkernel1) {
-                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, '$\\text{Player 1 Kernel Wedge } \\mathcal{V}^1(t,r)$');
-                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, '$\\text{Player 2 Kernel Wedge } \\mathcal{V}^2(t,r)$');
+                    plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
+                    plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
                 }
                 break;
             }
             case 'tab-kernels': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotKernel('plot-X', data.t, data.X, '$\\text{State Kernel } X(t,s)$');
-                plotKernel('plot-D1', data.t, data.D1, '$\\text{Player 1 Feedback } D^1(t,s)$');
-                plotKernel('plot-D2', data.t, data.D2, '$\\text{Player 2 Feedback } D^2(t,s)$');
-                plotKernel('plot-calD1', data.t, data.calD1, '$\\text{Primitive Control } \\mathcal{D}^1(t,s)$');
-                plotKernel('plot-calD2', data.t, data.calD2, '$\\text{Primitive Control } \\mathcal{D}^2(t,s)$');
+                plotKernel('plot-X', data.t, data.X, 'State Kernel $X(t,s)$');
+                plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback $D^1(t,s)$');
+                plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback $D^2(t,s)$');
+                plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control $\\mathcal{D}^1(t,s)$');
+                plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control $\\mathcal{D}^2(t,s)$');
                 break;
             }
             case 'tab-fkernel': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
                 if (data.Xtilde1) {
-                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, '$\\text{Player 1 Unresolved State } \\tilde{X}^1(t,s)$');
-                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, '$\\text{Player 2 Unresolved State } \\tilde{X}^2(t,s)$');
+                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State $\\tilde{X}^1(t,s)$');
+                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State $\\tilde{X}^2(t,s)$');
                 }
                 const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `$\\text{Player 1 Filtration } F^1(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `$\\text{Player 2 Filtration } F^2(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
+                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$ — p₁=${p.p1}, p₂=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
@@ -955,12 +949,13 @@ function updateActive() {
     if (solving) { pendingUpdate = true; return; }
     solving = true;
 
-    const p = getParams();
     const statusEl = document.getElementById('status');
-    statusEl.textContent = `Computing (N=${p.N}, T=${p.T})...`;
+    statusEl.textContent = 'Computing...';
 
     // Yield to browser to show "Computing..." before blocking on WASM
     setTimeout(() => {
+        // Read params here (not before yield) so we always solve with latest slider values
+        const p = getParams();
         try {
             const t0 = performance.now();
 
@@ -1000,6 +995,11 @@ function onSliderChange() {
     updateLabels();
     // Mark all tabs dirty
     for (const k in dirty) dirty[k] = true;
+    // If a solve is already running, ensure it re-runs with latest values
+    // when it finishes (don't rely solely on debounce, which may keep resetting)
+    if (solving) {
+        pendingUpdate = true;
+    }
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(updateActive, 150);
 }
