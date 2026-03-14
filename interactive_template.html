@@ -475,13 +475,6 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       The W&#xB2; channel is identically zero (same reasoning, with players swapped).
     </div>
   </div>
-  <div class="figure-block" style="margin-bottom:8px;">
-    <div style="display:flex; align-items:center; gap:12px; margin:8px 0 4px 4px;">
-      <label style="font-size:0.95em; font-weight:600;">Filter time t:</label>
-      <input type="range" id="sl-fkernel-t" min="1" max="39" value="39" style="width:260px;">
-      <span id="val-fkernel-t" style="font-size:0.95em; min-width:80px;">t = T</span>
-    </div>
-  </div>
   <div class="figure-block">
     <div id="plot-F1" class="plot"></div>
     <div class="figure-caption">
@@ -580,7 +573,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveFKernelBin, solveFKernelAtBin, wasmSetGrid, wasmMalloc, wasmFree, wasmFullKernelCount;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree, wasmFullKernelCount;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -708,34 +701,6 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
     }
 }
 
-function callFKernelAt(p1, p2, b1, b2, r1, r2, tIdx) {
-    try {
-        const ptr = solveFKernelAtBin(p1, p2, b1, b2, r1, r2, tIdx);
-        const n = N;
-        const block = n * n;
-        const total = 2 * 9 * block;
-        const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
-        const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
-        const result = {t, F1: {}, F2: {}};
-        let offset = 0;
-        for (const player of ['F1', 'F2']) {
-            for (let r = 0; r < 3; r++) {
-                for (let c = 0; c < 3; c++) {
-                    const z = [];
-                    for (let u = 0; u < n; u++) {
-                        z.push(Array.from(arr.subarray(offset, offset + n)));
-                        offset += n;
-                    }
-                    result[player][`r${r}c${c}`] = z;
-                }
-            }
-        }
-        return result;
-    } catch (e) {
-        console.error('callFKernelAt failed:', e);
-        return null;
-    }
-}
 
 // --- plot builders ---
 const plotCfg = {responsive: true, displayModeBar: false};
@@ -1125,20 +1090,15 @@ function ensureSweep(p) {
     return sweepData;
 }
 
-// Ensure F kernel result is fresh for the given time index.
-// Falls back to t=T if the WASM binary lacks solve_f_kernel_at_bin.
-function ensureFKernel(p, tIdx) {
+// Ensure F kernel result is fresh
+function ensureFKernel(p) {
     applyGrid(p);
-    // If WASM doesn't support per-time F kernel, always use T
-    const effectiveIdx = solveFKernelAtBin ? tIdx : (N - 1);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},${effectiveIdx}`;
+    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
     if (key !== fKernelKey) {
-        const result = (effectiveIdx === N - 1)
-            ? callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2)
-            : callFKernelAt(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2, effectiveIdx);
+        const result = callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
         if (result) { fKernelData = result; fKernelKey = key; }
     }
-    return { data: fKernelData, effectiveIdx };
+    return fKernelData;
 }
 
 function renderTab(tab, p) {
@@ -1176,21 +1136,10 @@ function renderTab(tab, p) {
                     plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State $\\tilde{X}^1(t,s)$');
                     plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State $\\tilde{X}^2(t,s)$');
                 }
-                // Update slider range and disabled state
-                const slFT = document.getElementById('sl-fkernel-t');
-                const slFTLabel = document.getElementById('val-fkernel-t');
-                slFT.max = N - 1;
-                slFT.disabled = !solveFKernelAtBin;
-                if (parseInt(slFT.value) > N - 1) slFT.value = N - 1;
-                const tIdx = parseInt(slFT.value);
-                const {data: fk, effectiveIdx} = ensureFKernel(p, tIdx);
+                const fk = ensureFKernel(p);
                 if (!fk) { ok = false; break; }
-                const eTVal = (effectiveIdx / (N - 1) * currentT).toFixed(3);
-                const tDisp = effectiveIdx === N - 1 ? 'T' : eTVal;
-                const tLabel = effectiveIdx === N - 1 ? 't = T' : `t = ${eTVal}`;
-                slFTLabel.textContent = !solveFKernelAtBin ? 't = T (rebuild WASM for slider)' : tLabel;
-                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(${tDisp},u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(${tDisp},u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 break;
             }
             case 'tab-statics': {
@@ -1289,8 +1238,7 @@ SolverModule().then(mod => {
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
-    try { solveFKernelAtBin = mod.cwrap('solve_f_kernel_at_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']); } catch(e) {}
-    wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
+wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmMalloc = mod._malloc;
     wasmFree = mod._free;
     try { wasmFullKernelCount = mod.cwrap('full_kernel_count', 'number', []); } catch(e) {}
@@ -1304,13 +1252,7 @@ SolverModule().then(mod => {
     for (const id of ['sl-p1', 'sl-p2', 'sl-b1', 'sl-b2', 'sl-r1', 'sl-r2', 'sl-N', 'sl-T']) {
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
-    document.getElementById('sl-fkernel-t').addEventListener('input', function() {
-        dirty['tab-fkernel'] = true;
-        if (solving) { pendingUpdate = true; }
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(updateActive, 80);
-    });
-    updateLabels();
+updateLabels();
     updateActive();
 });
 </script>
