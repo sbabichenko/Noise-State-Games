@@ -693,47 +693,79 @@ function plotWedges(divId, data) {
 
 function plotFKernel(divId, t, fData, title) {
     // fData has keys "r0c0" through "r2c2", each an NxN array
-    const chNames = ['$W^0$', '$W^1$', '$W^2$'];
     const traces = [];
     const annotations = [];
     const viridis = makeViridis(N);
-    const nCurves = N <= 60 ? 12 : 8;  // Fewer slices at high N (9 entries × 8 = 72 traces)
+    const nCurves = N <= 60 ? 12 : 8;
     const step = Math.max(1, Math.floor(N / nCurves));
+    // Manual subplot domains with explicit gaps so titles don't overlap ticks
+    const leftPad = 0.07, rightPad = 0.02;
+    const topPad = 0.06, bottomPad = 0.05;
+    const hGap = 0.07;   // horizontal gap between columns
+    const vGap = 0.10;   // vertical gap between rows — room for titles
+    const colW = (1 - leftPad - rightPad - hGap * 2) / 3;
+    const rowH = (1 - topPad - bottomPad - vGap * 2) / 3;
+    function xDomain(col) {
+        const x0 = leftPad + col * (colW + hGap);
+        return [x0, x0 + colW];
+    }
+    function yDomain(row) {
+        // row 0 at top, row 2 at bottom
+        const y1 = 1 - topPad - row * (rowH + vGap);
+        return [y1 - rowH, y1];
+    }
+    const layout = {
+        height: 800, margin: {t: 55, b: 40, l: 50, r: 20},
+        annotations: [],
+    };
     for (let row = 0; row < 3; row++) {
         for (let col = 0; col < 3; col++) {
             const idx = row * 3 + col + 1;
             const key = `r${row}c${col}`;
-            const z = fData[key]; // NxN array: z[u][s]
+            const z = fData[key];
+            const xd = xDomain(col);
+            const yd = yDomain(row);
+            const xAxisKey = idx === 1 ? 'xaxis' : 'xaxis' + idx;
+            const yAxisKey = idx === 1 ? 'yaxis' : 'yaxis' + idx;
+            const xRef = idx === 1 ? 'x' : 'x' + idx;
+            const yRef = idx === 1 ? 'y' : 'y' + idx;
+            layout[xAxisKey] = {
+                domain: xd,
+                title: row === 2 ? {text: 's', font: {size: 11}} : undefined,
+                showticklabels: true,
+                tickfont: {size: 9},
+                anchor: yRef,
+            };
+            layout[yAxisKey] = {
+                domain: yd,
+                title: col === 0 ? {text: 'value', font: {size: 11}} : undefined,
+                showticklabels: true,
+                tickfont: {size: 9},
+                anchor: xRef,
+            };
             for (let ui = 0; ui < N; ui += step) {
                 traces.push({
                     x: t, y: z[ui],
                     mode: 'lines', line: {color: viridis[ui], width: 1.2},
                     showlegend: false,
-                    xaxis: 'x' + idx, yaxis: 'y' + idx,
+                    xaxis: xRef, yaxis: yRef,
                     hovertemplate: `u=${t[ui].toFixed(3)}<br>s=%{x:.3f}<br>val=%{y:.4g}`,
                 });
             }
             annotations.push({
                 text: `$W^{${row}} \\leftarrow W^{${col}}$`,
                 xref: 'paper', yref: 'paper',
-                x: (col + 0.5) / 3, y: 1.0 - row * 0.37,
-                showarrow: false, font: {size: 11},
+                x: (xd[0] + xd[1]) / 2,
+                y: yd[1] + 0.03,
+                showarrow: false, font: {size: 12},
             });
         }
     }
     annotations.push({
         text: title, xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.07, showarrow: false, font: {size: 14, color: '#333'},
+        x: 0.5, y: 1.02, showarrow: false, font: {size: 14, color: '#333'},
     });
-    const layout = {
-        height: 780, margin: {...margin, t: 75},
-        grid: {rows: 3, columns: 3, pattern: 'independent', ygap: 0.12},
-        annotations,
-    };
-    for (let i = 1; i <= 9; i++) {
-        layout['xaxis' + i] = {title: i > 6 ? 's' : '', showticklabels: true};
-        layout['yaxis' + i] = {title: (i - 1) % 3 === 0 ? 'value' : '', showticklabels: true};
-    }
+    layout.annotations = annotations;
     Plotly.react(divId, traces, layout, plotCfg);
 }
 
