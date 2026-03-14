@@ -4,8 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LQG Noise-State Game Explorer</title>
-<script>window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},svg:{fontCache:'global'}};</script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+  tex2jax: {inlineMath: [['$','$']], displayMath: [['$$','$$']]},
+  "SVG": {font: "STIX-Web"}
+});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_SVG"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
