@@ -11,7 +11,6 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <tuple>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -21,28 +20,26 @@ namespace fs = std::filesystem;
 
 static const std::string DATA_DIR = "data";
 
-// ---------- equilibrium cache ----------
-// Many figures solve the same (p1, p2, obs_config) equilibria.
-// Cache them to avoid redundant ~0.02s solves.
-// All entries are pre-computed in parallel before figure generation.
-static std::map<std::tuple<int,int,int,int>, EquilibriumResult> eq_cache;
+// ---------- equilibrium storage ----------
+// All equilibria are pre-solved in parallel, stored in a vector.
+// Lookup by (p1, p2, obs1, obs2) uses linear scan (~15 entries).
+struct SolveSpec {
+    double p1, p2;
+    Mat3 Pi_1, Pi_2;
+    int obs1, obs2;
+    EquilibriumResult result;
+    bool solved;
+};
+static std::vector<SolveSpec> specs;
 
-static auto make_eq_key(double p1, double p2, int obs1, int obs2) {
-    return std::make_tuple(
-        static_cast<int>(std::llround(p1 * 1000000)), static_cast<int>(std::llround(p2 * 1000000)),
-        obs1, obs2);
-}
-
-static EquilibriumResult& cached_solve(
-    double p1, double p2, bool verbose = false,
-    const Mat3& Pi_1 = Pi1(), int obs1 = 1,
-    const Mat3& Pi_2 = Pi2(), int obs2 = 2) {
-    auto key = make_eq_key(p1, p2, obs1, obs2);
-    auto it = eq_cache.find(key);
-    if (it != eq_cache.end()) return it->second;
-    auto [ins, _] = eq_cache.emplace(key,
-        solve_equilibrium(p1, p2, verbose, Pi_1, obs1, Pi_2, obs2));
-    return ins->second;
+static EquilibriumResult& find_eq(double p1, double p2, int obs1 = 1, int obs2 = 2) {
+    for (auto& sp : specs)
+        if (sp.p1 == p1 && sp.p2 == p2 && sp.obs1 == obs1 && sp.obs2 == obs2)
+            return sp.result;
+    // Should never happen if all specs were registered during setup
+    std::cerr << "ERROR: equilibrium not found for p1=" << p1 << " p2=" << p2
+              << " obs1=" << obs1 << " obs2=" << obs2 << "\n";
+    std::abort();
 }
 
 // ---------- CSV helpers ----------
@@ -91,22 +88,13 @@ int main() {
     std::cout << std::string(60, '=') << "\n";
     std::cout << "Pre-solving all equilibria in parallel ...\n";
 
-    // Collect all unique solve parameters
-    struct SolveSpec {
-        double p1, p2;
-        Mat3 Pi_1, Pi_2;
-        int obs1, obs2;
-    };
-    std::vector<SolveSpec> specs;
-    std::map<std::tuple<int,int,int,int>, int> spec_dedup;
-
+    // Register all unique solve parameters
     auto add_spec = [&](double p1, double p2, const Mat3& Pi_1, int obs1,
                         const Mat3& Pi_2, int obs2) {
-        auto key = make_eq_key(p1, p2, obs1, obs2);
-        if (spec_dedup.count(key) == 0) {
-            spec_dedup[key] = static_cast<int>(specs.size());
-            specs.push_back({p1, p2, Pi_1, Pi_2, obs1, obs2});
-        }
+        for (auto& sp : specs)
+            if (sp.p1 == p1 && sp.p2 == p2 && sp.obs1 == obs1 && sp.obs2 == obs2)
+                return;  // already registered
+        specs.push_back({p1, p2, Pi_1, Pi_2, obs1, obs2, {}, false});
     };
 
     // (3,3) benchmark
@@ -127,33 +115,27 @@ int main() {
 
     // Solve (3,3) first with verbose output + timing
     auto t0 = std::chrono::high_resolution_clock::now();
-    cached_solve(3, 3, true);
+    specs[0].result = solve_equilibrium(3, 3, true);
+    specs[0].solved = true;
     auto t1 = std::chrono::high_resolution_clock::now();
     std::cout << "  Solve (3,3) time: "
               << std::chrono::duration<double>(t1 - t0).count() << "s\n";
 
-    // Solve remaining in parallel (exclude (3,3) which is already done)
+    // Solve remaining in parallel
     auto t_par0 = std::chrono::high_resolution_clock::now();
     #pragma omp parallel for schedule(dynamic)
     for (size_t i = 0; i < specs.size(); ++i) {
+        if (specs[i].solved) continue;
         auto& sp = specs[i];
-        auto key = make_eq_key(sp.p1, sp.p2, sp.obs1, sp.obs2);
-        // Skip if already in cache (e.g. the (3,3) we just solved)
-        bool need_solve;
-        #pragma omp critical
-        { need_solve = (eq_cache.find(key) == eq_cache.end()); }
-        if (!need_solve) continue;
-
-        auto result = solve_equilibrium(sp.p1, sp.p2, false,
-                                         sp.Pi_1, sp.obs1, sp.Pi_2, sp.obs2);
-        #pragma omp critical
-        { eq_cache.emplace(key, std::move(result)); }
+        sp.result = solve_equilibrium(sp.p1, sp.p2, false,
+                                       sp.Pi_1, sp.obs1, sp.Pi_2, sp.obs2);
+        sp.solved = true;
     }
     auto t_par1 = std::chrono::high_resolution_clock::now();
     std::cout << "  Parallel solve time: "
               << std::chrono::duration<double>(t_par1 - t_par0).count() << "s\n";
 
-    auto& eq = cached_solve(3, 3);
+    auto& eq = find_eq(3, 3);
     auto& D1 = eq.D1;
     auto& D2 = eq.D2;
     auto& env = eq.env;
@@ -240,7 +222,7 @@ int main() {
 
         for (int p : p_values) {
             std::cout << "  Solving p=" << p << " ...\n";
-            auto& eq_p = cached_solve(p, p);
+            auto& eq_p = find_eq(p, p);
             auto bar_p = solve_bar_equilibrium(eq_p.env, eq_p.D1, eq_p.D2, p*p, p*p);
             barD1_curves[p] = bar_p.barD1;
             std::cout << "    bar residual: " << bar_p.bar_residual << "\n";
@@ -273,7 +255,7 @@ int main() {
 
         for (int p2v : p2_values) {
             std::cout << "  Solving p1=" << p1_fixed << ", p2=" << p2v << " ...\n";
-            auto& eq_a = cached_solve(p1_fixed, p2v);
+            auto& eq_a = find_eq(p1_fixed, p2v);
             auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
                                                p1_fixed*p1_fixed, p2v*p2v);
             std::cout << "    bar residual: " << bar_a.bar_residual << "\n";
@@ -303,7 +285,7 @@ int main() {
 
         for (int p2v : p2_values) {
             std::cout << "  Computing wedges for p1=" << p1_fixed << ", p2=" << p2v << " ...\n";
-            auto& eq_a = cached_solve(p1_fixed, p2v);
+            auto& eq_a = find_eq(p1_fixed, p2v);
             auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
                                                p1_fixed*p1_fixed, p2v*p2v);
 
@@ -359,7 +341,7 @@ int main() {
             for (int p2v : p_values) {
                 // Private
                 std::cout << "    Private: p2=" << p2v << " ...\n";
-                auto& eq_a = cached_solve(p1_fixed, p2v);
+                auto& eq_a = find_eq(p1_fixed, p2v);
                 auto bar_a = solve_bar_equilibrium(eq_a.env, eq_a.D1, eq_a.D2,
                                                    p1_fixed*p1_fixed, p2v*p2v);
                 auto [j1p, j2p_priv] = compute_costs_general(eq_a.env, eq_a.calD1, eq_a.calD2, bar_a, g_r1, g_r2, cfg.b1, cfg.b2);
@@ -367,8 +349,7 @@ int main() {
                 // Pooled
                 double p_common = std::sqrt(p1_fixed * p1_fixed + p2v * p2v);
                 std::cout << "    Pooled: p_common=" << p_common << " ...\n";
-                auto& eq_c = cached_solve(p_common, p_common, false,
-                                          Pi1(), 1, Pi1(), 1);
+                auto& eq_c = find_eq(p_common, p_common, 1, 1);
                 auto bar_c = solve_bar_equilibrium(eq_c.env, eq_c.D1, eq_c.D2,
                                                    p_common*p_common, p_common*p_common);
                 auto [j1pool, j2pool] = compute_costs_general(eq_c.env, eq_c.calD1, eq_c.calD2, bar_c, g_r1, g_r2, cfg.b1, cfg.b2);
