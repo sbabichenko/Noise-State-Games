@@ -359,7 +359,7 @@ configs_alloc = [
 PBAR = 20.0
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 for ax, (cfg_key, label) in zip(axes, configs_alloc):
-    sub = df[df['config'] == cfg_key].sort_values('p1_root')
+    sub = df[(df['config'] == cfg_key) & (df['r_config'] == 'r0.1_0.1')].sort_values('p1_root')
     p1 = sub['p1_root'].values
     p1_frac = sub['p1_prec'].values / PBAR  # fraction of total precision to player 1
     J_eq = sub['Jtotal_eq'].values
@@ -493,6 +493,7 @@ for idx, (rc_key, rc_label) in enumerate(r_all):
     ax.plot(p1_frac, total_eq, lw=2.2, color=color, label=rc_label)
 ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
 ax.set_ylabel(r'$\int (\bar{D}_1^2 + \bar{D}_2^2)\, dt$', fontsize=12)
+ax.set_yscale('log')
 ax.set_title('Total destructive effort (equilibrium)', fontsize=12)
 ax.legend(fontsize=8, loc='best')
 ax.grid(alpha=0.3)

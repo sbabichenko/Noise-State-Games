@@ -456,13 +456,28 @@ int main() {
     for (int i = 0; i < N_SWEEP; ++i)
         p2_sweep[i] = std::sqrt(PBAR - p1_sweep[i] * p1_sweep[i]);
 
-    std::cout << "  Pre-solving " << N_SWEEP << " equilibria for precision sweep ...\n";
+    std::cout << "  Pre-solving " << N_SWEEP << " equilibria for precision sweep (warm-started) ...\n";
     {
+        // Solve from the middle outward for best warm-start quality
+        int mid = N_SWEEP / 2;
         std::vector<EquilibriumResult> eq_results(N_SWEEP);
-        #pragma omp parallel for schedule(dynamic)
-        for (int i = 0; i < N_SWEEP; ++i) {
-            eq_results[i] = solve_equilibrium(p1_sweep[i], p2_sweep[i], false);
+
+        // Cold-start from the middle
+        eq_results[mid] = solve_equilibrium(p1_sweep[mid], p2_sweep[mid], false);
+
+        // Sweep rightward from mid
+        for (int i = mid + 1; i < N_SWEEP; ++i) {
+            eq_results[i] = solve_equilibrium_warm(
+                p1_sweep[i], p2_sweep[i],
+                eq_results[i - 1].D1, eq_results[i - 1].D2, false);
         }
+        // Sweep leftward from mid
+        for (int i = mid - 1; i >= 0; --i) {
+            eq_results[i] = solve_equilibrium_warm(
+                p1_sweep[i], p2_sweep[i],
+                eq_results[i + 1].D1, eq_results[i + 1].D2, false);
+        }
+
         // Insert into cache
         for (int i = 0; i < N_SWEEP; ++i) {
             auto key = make_eq_key(p1_sweep[i], p2_sweep[i], 1, 2);
@@ -472,21 +487,24 @@ int main() {
     std::cout << "  Equilibria solved.\n";
 
     // CE solver: iterate forward pass with D = -(S/r)*Xtilde
-    auto solve_ce = [&](double p1v, double p2v) -> std::pair<Kernel2D, Kernel2D> {
+    // Accepts optional initial guesses for warm-starting
+    auto solve_ce = [&](double p1v, double p2v,
+                        const Kernel2D* D1_init = nullptr,
+                        const Kernel2D* D2_init = nullptr) -> std::pair<Kernel2D, Kernel2D> {
         Kernel2D D1_ce, D2_ce;
-        D1_ce.setZero();
-        D2_ce.setZero();
+        if (D1_init) { D1_ce = *D1_init; D2_ce = *D2_init; }
+        else { D1_ce.setZero(); D2_ce.setZero(); }
         EnvironmentResult env_ce;
 
-        for (int it = 0; it < 200; ++it) {
+        for (int it = 0; it < 500; ++it) {
             forward_environment(D1_ce, D2_ce, p1v, p2v, FORWARD_INNER_ITERS,
                                 Pi1(), 1, Pi2(), 2, env_ce);
             Kernel2D D1_new, D2_new;
             for (int t = 0; t < g_n; ++t) {
                 double s_gain = S_ce[t];
                 for (int s = 0; s <= t; ++s) {
-                    D1_new[t][s] = -(s_gain / R1_ALLOC) * env_ce.Xtilde1[t][s];
-                    D2_new[t][s] = -(s_gain / R2_ALLOC) * env_ce.Xtilde2[t][s];
+                    D1_new[t][s] = -(s_gain / g_r1) * env_ce.Xtilde1[t][s];
+                    D2_new[t][s] = -(s_gain / g_r2) * env_ce.Xtilde2[t][s];
                 }
             }
             double norm_f = 0.0, norm_g = 0.0;
@@ -540,14 +558,20 @@ int main() {
             eq_cache.clear();
             bar_cache.clear();
 
-            // Pre-solve equilibria for this r config
+            // Pre-solve equilibria for this r config (warm-started from middle)
             std::cout << "\n  Pre-solving for " << rcfg.label << " ...\n";
             {
+                int mid = N_SWEEP / 2;
                 std::vector<EquilibriumResult> eq_results(N_SWEEP);
-                #pragma omp parallel for schedule(dynamic)
-                for (int i = 0; i < N_SWEEP; ++i) {
-                    eq_results[i] = solve_equilibrium(p1_sweep[i], p2_sweep[i], false);
-                }
+                eq_results[mid] = solve_equilibrium(p1_sweep[mid], p2_sweep[mid], false);
+                for (int i = mid + 1; i < N_SWEEP; ++i)
+                    eq_results[i] = solve_equilibrium_warm(
+                        p1_sweep[i], p2_sweep[i],
+                        eq_results[i - 1].D1, eq_results[i - 1].D2, false);
+                for (int i = mid - 1; i >= 0; --i)
+                    eq_results[i] = solve_equilibrium_warm(
+                        p1_sweep[i], p2_sweep[i],
+                        eq_results[i + 1].D1, eq_results[i + 1].D2, false);
                 for (int i = 0; i < N_SWEEP; ++i) {
                     auto key = make_eq_key(p1_sweep[i], p2_sweep[i], 1, 2);
                     eq_cache.emplace(key, std::move(eq_results[i]));
@@ -558,6 +582,10 @@ int main() {
                 std::cout << "  === " << rcfg.label << " targets=(" << cfg.b1 << "," << cfg.b2 << ") ===\n";
                 g_b1 = cfg.b1;
                 g_b2 = cfg.b2;
+
+                // Track previous CE solution for warm-starting
+                Kernel2D prev_D1_ce, prev_D2_ce;
+                bool have_prev_ce = false;
 
                 for (int i = 0; i < N_SWEEP; ++i) {
                     double p1v = p1_sweep[i];
@@ -591,8 +619,13 @@ int main() {
                         V2_total += v2_t * (p1v * p1v) * g_dt;
                     }
 
-                    // --- CE cost ---
-                    auto [D1_ce, D2_ce] = solve_ce(p1v, p2v);
+                    // --- CE cost (warm-started from previous sweep point) ---
+                    auto [D1_ce, D2_ce] = have_prev_ce
+                        ? solve_ce(p1v, p2v, &prev_D1_ce, &prev_D2_ce)
+                        : solve_ce(p1v, p2v);
+                    prev_D1_ce = D1_ce;
+                    prev_D2_ce = D2_ce;
+                    have_prev_ce = true;
                     EnvironmentResult env_ce;
                     forward_environment(D1_ce, D2_ce, p1v, p2v, FORWARD_INNER_ITERS,
                                         Pi1(), 1, Pi2(), 2, env_ce);

@@ -507,14 +507,12 @@ static double kernel_dot(const Kernel2D& a1, const Kernel2D& a2,
 // Anderson(m=5) uses the last m residuals to find optimal mixing
 // coefficients, typically reducing iteration count by 2-3x vs Picard.
 
-EquilibriumResult solve_equilibrium(
-    double p1_val, double p2_val, bool verbose,
+// Core solver: takes initial D1, D2 (may be zero or warm-started)
+static EquilibriumResult solve_equilibrium_core(
+    double p1_val, double p2_val,
+    Kernel2D D1, Kernel2D D2, bool verbose,
     const Mat3& Pi_1, int obs_idx_1,
     const Mat3& Pi_2, int obs_idx_2) {
-
-    Kernel2D D1, D2;
-    D1.setZero();
-    D2.setZero();
 
     std::vector<double> residuals;
     auto prec1 = make_constant_prec(p1_val * p1_val);
@@ -668,6 +666,28 @@ EquilibriumResult solve_equilibrium(
     }
 
     return {D1, D2, std::move(env), std::move(calD1), std::move(calD2), residuals};
+}
+
+EquilibriumResult solve_equilibrium(
+    double p1_val, double p2_val, bool verbose,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2) {
+    Kernel2D D1, D2;
+    D1.setZero();
+    D2.setZero();
+    return solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
+                                  verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+}
+
+EquilibriumResult solve_equilibrium_warm(
+    double p1_val, double p2_val,
+    const Kernel2D& D1_init, const Kernel2D& D2_init,
+    bool verbose,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2) {
+    Kernel2D D1(D1_init), D2(D2_init);
+    return solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
+                                  verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
 }
 
 // --- compute_costs_general ---
