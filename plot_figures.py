@@ -472,12 +472,12 @@ plt.close(fig)
 print("Figure 15: Effort ratio across r configs ...")
 
 r_all = [
-    ('r0.1_0.1',  r'$r\!=\!0.1$'),
-    ('r0.05_0.2', r'$r_1\!=\!0.05, r_2\!=\!0.2$'),
-    ('r0.5_0.5',  r'$r\!=\!0.5$'),
-    ('r0.5_2.0',  r'$r_1\!=\!0.5, r_2\!=\!2$'),
-    ('r1.0_1.0',  r'$r\!=\!1$'),
-    ('r2.0_2.0',  r'$r\!=\!2$'),
+    ('r0.05_0.05', r'$r\!=\!0.05$'),
+    ('r0.1_0.1',   r'$r\!=\!0.1$'),
+    ('r0.05_0.2',  r'$r_1\!=\!0.05, r_2\!=\!0.2$'),
+    ('r0.2_0.2',   r'$r\!=\!0.2$'),
+    ('r0.1_0.5',   r'$r_1\!=\!0.1, r_2\!=\!0.5$'),
+    ('r0.5_0.5',   r'$r\!=\!0.5$'),
 ]
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -493,7 +493,6 @@ for idx, (rc_key, rc_label) in enumerate(r_all):
     ax.plot(p1_frac, total_eq, lw=2.2, color=color, label=rc_label)
 ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
 ax.set_ylabel(r'$\int (\bar{D}_1^2 + \bar{D}_2^2)\, dt$', fontsize=12)
-ax.set_yscale('log')
 ax.set_title('Total destructive effort (equilibrium)', fontsize=12)
 ax.legend(fontsize=8, loc='best')
 ax.grid(alpha=0.3)
