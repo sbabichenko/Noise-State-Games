@@ -564,51 +564,58 @@ int main() {
                 g_b1 = cfg.b1;
                 g_b2 = cfg.b2;
 
-                // Full-info bar (mean-field) game: both players observe X̄ directly
-                // Bar controls: D̄_i = -(S_fi_i/r_i) · X̄   (full-info Nash feedback)
-                // But the bar backward adjoints depend on targets (θ_i).
-                // For full info, the bar game has its own coupled Riccati:
-                //   Ṁ_i = (1-θ_i)² − M_i²/r_i − 2M_iM_j/r_j,  M_i(T)=0
-                // where (1-θ_i)² is the bar running cost for player i.
-                // Bar controls: D̄_i = -(M_i/r_i)·X̄
-                // Total bar cost for player i: M_i(0)·X₀² + ∫ σ²·M_i dt ... no,
-                // X̄ is deterministic so there's no σ² term in bar.
-                // J_i_bar = M_i(0)·X₀²  (= 0 since X₀=0)
-                // So the full-info total cost is purely the variance part when X₀=0!
-                // J_i = J_i_var = ∫ σ² S_i dt  (already computed)
+                // Full-info bar (mean-field) game: LQ tracking problem
+                // Cost: (X̄ - b_i)² + r_i·D̄_i², dynamics: dX̄/dt = D̄₁ + D̄₂
+                // Value function: V_i = P_i·X̄² + Q_i·X̄ + R_i
+                // P_i: coupled Riccati (same as variance Riccati S_fi since running cost coeff = 1)
+                // Q_i: backward linear ODE capturing target-tracking
+                //   Q̇_i = 2b_i + P_i·Q_j/r_j + Q_i·(P_i/r_i + P_j/r_j),  Q_i(T)=0
+                // Control: D̄_i = -(P_i/r_i)·X̄ - Q_i/(2r_i)
+                // Note: P_i = S_fi (bar Riccati = variance Riccati for same running cost x²)
 
-                // Actually, the bar game still matters for barD effort:
-                std::array<double, N_MAX> M_fi1{}, M_fi2{};
-                double q1 = (1.0 - cfg.b1) * (1.0 - cfg.b1);
-                double q2 = (1.0 - cfg.b2) * (1.0 - cfg.b2);
+                // Step 1: Q_i backward (linear ODE driven by targets b_i)
+                std::array<double, N_MAX> Q_fi1{}, Q_fi2{};
                 for (int j = g_n - 2; j >= 0; --j) {
-                    double m1 = M_fi1[j + 1], m2 = M_fi2[j + 1];
-                    M_fi1[j] = m1 + g_dt * (q1 - m1 * m1 / rcfg.r1 - 2.0 * m1 * m2 / rcfg.r2);
-                    M_fi2[j] = m2 + g_dt * (q2 - m2 * m2 / rcfg.r2 - 2.0 * m1 * m2 / rcfg.r1);
+                    double qq1 = Q_fi1[j + 1], qq2 = Q_fi2[j + 1];
+                    double p1 = S_fi1[j + 1], p2 = S_fi2[j + 1];
+                    // Forward-time: Q̇_i = 2b_i + P_i·Q_j/r_j + Q_i·(P_i/r_i + P_j/r_j)
+                    // Backward integration: Q[j] = Q[j+1] - dt·(...)
+                    Q_fi1[j] = qq1 - g_dt * (2.0 * cfg.b1 + p1 * qq2 / rcfg.r2
+                               + qq1 * (p1 / rcfg.r1 + p2 / rcfg.r2));
+                    Q_fi2[j] = qq2 - g_dt * (2.0 * cfg.b2 + p2 * qq1 / rcfg.r1
+                               + qq2 * (p2 / rcfg.r2 + p1 / rcfg.r1));
                 }
-                // Full-info bar trajectory: dX̄/dt = -(M1/r1 + M2/r2)·X̄
+
+                // Step 2: Forward simulate bar trajectory
                 std::array<double, N_MAX> barX_fi{};
                 std::array<double, N_MAX> barD1_fi{}, barD2_fi{};
                 barX_fi[0] = X0;
                 for (int j = 0; j < g_n; ++j) {
-                    barD1_fi[j] = -(M_fi1[j] / rcfg.r1) * barX_fi[j];
-                    barD2_fi[j] = -(M_fi2[j] / rcfg.r2) * barX_fi[j];
+                    barD1_fi[j] = -(S_fi1[j] / rcfg.r1) * barX_fi[j] - Q_fi1[j] / (2.0 * rcfg.r1);
+                    barD2_fi[j] = -(S_fi2[j] / rcfg.r2) * barX_fi[j] - Q_fi2[j] / (2.0 * rcfg.r2);
                     if (j < g_n - 1)
                         barX_fi[j + 1] = barX_fi[j] + g_dt * (barD1_fi[j] + barD2_fi[j]);
                 }
-                // Full-info costs: variance + bar
-                // J_i = ∫[(1+r_iK_i²)Var + ((1-θ_i)² + r_iK_i²)X̄²] dt  where K_i = S_i/r_i
-                // Since X₀=0 and bar dynamics are deterministic, X̄=0 for all t when X₀=0.
-                // So J_i = J_i_var.  Bar effort also = 0 when X₀=0.
-                double j1_fi = J1_fi_var;
-                double j2_fi = J2_fi_var;
+
+                // Step 3: Compute full-info costs
+                // J_i = variance part + bar part
+                // Variance: ∫σ²S_i dt  (already computed as J_fi_var)
+                // Bar: ∫[(X̄-b_i)² + r_i·D̄_i²] dt
+                double j1_fi_bar = 0.0, j2_fi_bar = 0.0;
                 double barD1sq_fi = 0.0, barD2sq_fi = 0.0;
                 for (int j = 0; j < g_n; ++j) {
+                    double dx1 = barX_fi[j] - cfg.b1;
+                    double dx2 = barX_fi[j] - cfg.b2;
+                    j1_fi_bar += g_dt * (dx1 * dx1 + rcfg.r1 * barD1_fi[j] * barD1_fi[j]);
+                    j2_fi_bar += g_dt * (dx2 * dx2 + rcfg.r2 * barD2_fi[j] * barD2_fi[j]);
                     barD1sq_fi += barD1_fi[j] * barD1_fi[j] * g_dt;
                     barD2sq_fi += barD2_fi[j] * barD2_fi[j] * g_dt;
                 }
+                double j1_fi = J1_fi_var + j1_fi_bar;
+                double j2_fi = J2_fi_var + j2_fi_bar;
                 std::cout << "    Full-info: J=" << (j1_fi + j2_fi)
-                          << " barD1sq=" << barD1sq_fi << " barD2sq=" << barD2sq_fi << "\n";
+                          << " (var=" << (J1_fi_var + J2_fi_var) << " bar=" << (j1_fi_bar + j2_fi_bar)
+                          << ") barD1sq=" << barD1sq_fi << " barD2sq=" << barD2sq_fi << "\n";
 
                 for (int i = 0; i < N_SWEEP; ++i) {
                     double p1v = p1_sweep[i];
