@@ -346,50 +346,10 @@ fig.savefig(f'{FIGDIR}/fig12_costs_private_vs_pooled.pdf')
 plt.close(fig)
 
 # ============================================================
-# FIGURE 13: Precision allocation sweep
-# ============================================================
-print("Figure 13: Precision allocation ...")
-df = pd.read_csv(f'{DATA_DIR}/fig13_precision_allocation.csv')
-
-configs_alloc = [
-    ('competitive', r'Competitive ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$)'),
-    ('cooperative', r'Cooperative ($\theta_1\!=\!\theta_2\!=\!0$)'),
-]
-
-PBAR = 20.0
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-for ax, (cfg_key, label) in zip(axes, configs_alloc):
-    sub = df[(df['config'] == cfg_key) & (df['r_config'] == 'r0.1_0.1')].sort_values('p1_root')
-    p1 = sub['p1_root'].values
-    p1_frac = sub['p1_prec'].values / PBAR  # fraction of total precision to player 1
-    J_eq = sub['Jtotal_eq'].values
-    J_fi = sub['Jtotal_fi'].values
-
-    ax.plot(p1_frac, J_eq, lw=2.5, color='C0', label=r'Equilibrium $J^1\!+\!J^2$')
-    ax.axhline(J_fi[0], lw=2.0, ls='--', color='C1', alpha=0.8,
-               label=r'Full info $J^1\!+\!J^2=%.3f$' % J_fi[0])
-
-    # Mark equilibrium optimum
-    idx_eq = np.argmin(J_eq)
-    ax.axvline(p1_frac[idx_eq], color='k', ls='--', lw=1.2, alpha=0.7,
-               label=f'Eq. optimum $P^1/\\bar{{P}}\\!={p1_frac[idx_eq]:.2f}$')
-
-    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
-    ax.set_ylabel(r'$J^1 + J^2$', fontsize=13)
-    ax.set_title(label, fontsize=12)
-    ax.legend(fontsize=9, loc='best')
-    ax.grid(alpha=0.3)
-
-fig.suptitle(r'Precision allocation: $P^1\!+\!P^2=\bar{P}=%g$, $r=0.1$, $\sigma=0.5$, $T=1$' % PBAR,
-             fontsize=14, y=1.01)
-fig.tight_layout()
-fig.savefig(f'{FIGDIR}/fig_precision_allocation.pdf')
-plt.close(fig)
-
-# ============================================================
 # FIGURE 14: Mean control energy & wedge decomposition
 # ============================================================
 print("Figure 14: Mean control energy & wedges ...")
+PBAR = 20.0
 df14 = pd.read_csv(f'{DATA_DIR}/fig13_precision_allocation.csv')
 
 # --- Panel layout: 2 rows x 3 cols ---
@@ -474,109 +434,5 @@ fig.tight_layout()
 fig.savefig(f'{FIGDIR}/fig_control_energy_wedges.pdf')
 plt.close(fig)
 
-# ============================================================
-# FIGURE 15: Total effort eq/ce ratio across r configurations
-# ============================================================
-print("Figure 15: Effort ratio across r configs ...")
-
-# Order by average r so color gradient is monotone in legend
-r_all = [
-    ('r0.05_0.05', r'$r\!=\!0.05$',                     0.05,  True),
-    ('r0.1_0.1',   r'$r\!=\!0.1$',                      0.10,  True),
-    ('r0.05_0.2',  r'$r_1\!=\!0.05,\;r_2\!=\!0.2$',    0.125, False),
-    ('r0.2_0.2',   r'$r\!=\!0.2$',                      0.20,  True),
-    ('r0.1_0.5',   r'$r_1\!=\!0.1,\;r_2\!=\!0.5$',     0.30,  False),
-    ('r0.5_0.5',   r'$r\!=\!0.5$',                      0.50,  True),
-]
-# Sort by avg r (already sorted above, but be explicit)
-r_all.sort(key=lambda x: x[2])
-
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-cmap_r = cm.coolwarm
-n_cfg = len(r_all)
-
-# --- Left panel: total destructive effort, equilibrium AND CE ---
-ax = axes[0]
-for idx, (rc_key, rc_label, avg_r, is_sym) in enumerate(r_all):
-    sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
-    p1_frac = sub['p1_prec'].values / PBAR
-    r1_vals = sub['r1'].values
-    r2_vals = sub['r2'].values
-    total_eq = r1_vals * sub['barD1sq_eq'].values + r2_vals * sub['barD2sq_eq'].values
-    total_ce = r1_vals * sub['barD1sq_fi'].values + r2_vals * sub['barD2sq_fi'].values
-    color = cmap_r(idx / (n_cfg - 1))
-    ls_eq = '-' if is_sym else '--'
-    ls_ce = ':' if is_sym else (0, (3, 1, 1, 1))   # dotted / dash-dot for asym
-    ax.plot(p1_frac, total_eq, lw=2.2, color=color, ls=ls_eq,
-            label=rc_label + ' (eq)')
-    ax.plot(p1_frac, total_ce, lw=1.5, color=color, ls=ls_ce, alpha=0.7,
-            label=rc_label + ' (CE)')
-ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
-ax.set_ylabel(r'$\int (r_1 \bar{D}_1^2 + r_2 \bar{D}_2^2)\, dt$', fontsize=12)
-ax.set_title('Total destructive effort: equilibrium vs CE', fontsize=12)
-ax.legend(fontsize=7, loc='best', ncol=2)
-ax.grid(alpha=0.3)
-ax.set_ylim(bottom=0)
-
-# --- Right panel: eq/CE destructive effort ratio ---
-ax = axes[1]
-crossover_annotations = []
-for idx, (rc_key, rc_label, avg_r, is_sym) in enumerate(r_all):
-    sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
-    p1_frac = sub['p1_prec'].values / PBAR
-    r1_vals = sub['r1'].values
-    r2_vals = sub['r2'].values
-    total_eq = r1_vals * sub['barD1sq_eq'].values + r2_vals * sub['barD2sq_eq'].values
-    total_ce = r1_vals * sub['barD1sq_fi'].values + r2_vals * sub['barD2sq_fi'].values
-    ratio = total_eq / np.maximum(total_ce, 1e-15)
-    color = cmap_r(idx / (n_cfg - 1))
-    ls_line = '-' if is_sym else '--'
-    ax.plot(p1_frac, ratio, lw=2.2, color=color, ls=ls_line, label=rc_label)
-    # Detect crossover at ratio=1
-    crossings = np.where(np.diff(np.sign(ratio - 1.0)))[0]
-    for ci in crossings:
-        # Linear interpolation for crossover x
-        x0, x1 = p1_frac[ci], p1_frac[ci + 1]
-        r0, r1_ = ratio[ci], ratio[ci + 1]
-        x_cross = x0 + (1.0 - r0) / (r1_ - r0) * (x1 - x0)
-        crossover_annotations.append((x_cross, avg_r, color))
-
-# Prominent reference line at ratio = 1
-ax.axhline(1.0, color='gray', lw=1.8, ls='-', alpha=0.7, zorder=1)
-
-# Shaded bands for distortion / moderation
-ylims = ax.get_ylim()
-ymax_plot = max(ylims[1], 2.5)
-ax.fill_between([0, 1], 1.0, ymax_plot, color='#ffcccc', alpha=0.18, zorder=0)
-ax.fill_between([0, 1], 0, 1.0, color='#cce5ff', alpha=0.18, zorder=0)
-ax.text(0.02, ymax_plot * 0.92, 'Distortion', fontsize=9, color='#b33',
-        fontstyle='italic', va='top')
-ax.text(0.02, 0.15, 'Moderation', fontsize=9, color='#338',
-        fontstyle='italic', va='bottom')
-
-# Annotate crossover region
-if crossover_annotations:
-    # Pick the crossover closest to the middle of the x range
-    crossover_annotations.sort(key=lambda t: abs(t[0] - 0.45))
-    x_ann, r_ann, c_ann = crossover_annotations[0]
-    ax.annotate(f'crossover\n$\\bar{{r}}\\!\\approx\\!{r_ann:.2f}$',
-                xy=(x_ann, 1.0), xytext=(x_ann + 0.08, 1.35),
-                fontsize=8, color='k',
-                arrowprops=dict(arrowstyle='->', color='k', lw=0.8),
-                ha='left', va='bottom')
-
-ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
-ax.set_ylabel('Eq / CE destructive effort ratio', fontsize=12)
-ax.set_title('Strategic moderation vs distortion', fontsize=12)
-ax.legend(fontsize=8, loc='best')
-ax.grid(alpha=0.3)
-ax.set_ylim(bottom=0)
-
-fig.suptitle(r'Competitive targets: destructive effort across control costs '
-             r'($P^1\!+\!P^2\!=\!%g$, $\sigma\!=\!0.5$)' % PBAR,
-             fontsize=14, y=1.01)
-fig.tight_layout()
-fig.savefig(f'{FIGDIR}/fig_effort_ratio.pdf')
-plt.close(fig)
 
 print("\nAll figures saved to", FIGDIR)
