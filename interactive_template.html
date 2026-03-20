@@ -1015,7 +1015,7 @@ let pendingUpdate = false;  // Re-run after current solve finishes
 
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
-let lightKey = '', fullKey = '', sweepKey = '', fKernelKey = '';
+let lastParamsKey = '';
 const dirty = { 'tab-equilibrium': true, 'tab-wedge': true, 'tab-kernels': true, 'tab-fkernel': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
@@ -1052,51 +1052,54 @@ function applyGrid(p) {
         currentN = p.N;
         currentT = p.T;
         N = p.N;
-        // Grid change invalidates all caches
-        lightKey = ''; fullKey = ''; sweepKey = ''; fKernelKey = '';
     }
 }
 
-// Ensure light solve result is fresh (~5KB: bar solution, costs, wedges, residuals)
-function ensureLight(p) {
+// Invalidate all cached data when any parameter changes.
+function invalidateIfChanged(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== lightKey) {
+    if (key !== lastParamsKey) {
+        lightData = null;
+        fullData = null;
+        sweepData = null;
+        fKernelData = null;
+        lastParamsKey = key;
+    }
+}
+
+function ensureLight(p) {
+    invalidateIfChanged(p);
+    if (!lightData) {
         const result = callLight(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        if (result) { lightData = result; lightKey = key; }
+        if (result) lightData = result;
     }
     return lightData;
 }
 
-// Ensure full solve result is fresh (~6MB: kernel2d data for Kernels tab)
 function ensureFull(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== fullKey) {
+    invalidateIfChanged(p);
+    if (!fullData) {
         const result = callFull(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        if (result) { fullData = result; fullKey = key; }
+        if (result) fullData = result;
     }
     return fullData;
 }
 
-// Ensure sweep result is fresh (sweep doesn't depend on p2)
 function ensureSweep(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== sweepKey) {
+    invalidateIfChanged(p);
+    if (!sweepData) {
         const result = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
-        if (result) { sweepData = result; sweepKey = key; }
+        if (result) sweepData = result;
     }
     return sweepData;
 }
 
-// Ensure F kernel result is fresh
 function ensureFKernel(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== fKernelKey) {
+    invalidateIfChanged(p);
+    if (!fKernelData) {
         const result = callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        if (result) { fKernelData = result; fKernelKey = key; }
+        if (result) fKernelData = result;
     }
     return fKernelData;
 }

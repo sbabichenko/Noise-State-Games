@@ -111,18 +111,11 @@ struct Kernel3D {
 };
 
 // ---------- t_grid ----------
-// Returns a pointer to g_n doubles representing the time grid.
-// Cached: only recomputed when g_n or g_T change.
+// Returns the time grid for the current g_n and g_T.
 inline const std::array<double, N_MAX>& t_grid() {
     static std::array<double, N_MAX> g;
-    static int cached_n = -1;
-    static double cached_T = -1.0;
-    if (cached_n != g_n || cached_T != g_T) {
-        cached_n = g_n;
-        cached_T = g_T;
-        for (int i = 0; i < g_n; ++i)
-            g[i] = static_cast<double>(i) * g_T / (g_n - 1);
-    }
+    for (int i = 0; i < g_n; ++i)
+        g[i] = static_cast<double>(i) * g_T / (g_n - 1);
     return g;
 }
 

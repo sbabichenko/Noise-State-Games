@@ -527,21 +527,8 @@ static EquilibriumResult solve_equilibrium_core(
     const int TRI = g_n * (g_n + 1) / 2;
 
     struct AAEntry { Kernel2D f1, f2, g1, g2; };
-    // Thread-local AA history: avoids alloc/free churn per solve at N=160.
-    static thread_local std::vector<AAEntry> hist;
-    if (static_cast<int>(hist.size()) != AA_STORE) hist.resize(AA_STORE);
-    // Ensure each entry is sized for current g_n
-    for (auto& e : hist) {
-        e.f1.resize(); e.f2.resize(); e.g1.resize(); e.g2.resize();
-    }
+    std::vector<AAEntry> hist(AA_STORE);
     int stored = 0;
-
-    // Cache dot products between historical residuals to avoid redundant
-    // O(N²) scans. fifj_cache[i][j] = <f_hist[i], f_hist[j]> (by ring index).
-    std::array<std::array<double, AA_STORE>, AA_STORE> fifj_cache{};
-    // Track which ring slots have valid cache entries.
-    std::array<bool, AA_STORE> fifj_valid{};
-    fifj_valid.fill(false);
 
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
         forward_environment(D1, D2, p1_val, p2_val, FORWARD_INNER_ITERS,
@@ -585,25 +572,13 @@ static EquilibriumResult solve_equilibrium_core(
         // --- Anderson acceleration ---
         int m = std::min(stored, AA_M);
 
-        // Mark current slot valid and compute its self-dot for cache
-        int cur_ring = stored % AA_STORE;
-        fifj_valid[cur_ring] = true;
-        fifj_cache[cur_ring][cur_ring] = norm_f;
-        // Compute dots between current and all previous history entries
-        for (int i = 0; i < m; ++i) {
-            int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
-            double d = kernel_dot(cur.f1, cur.f2, hist[idx].f1, hist[idx].f2);
-            fifj_cache[cur_ring][idx] = d;
-            fifj_cache[idx][cur_ring] = d;
-        }
-
         if (m >= 1) {
             // Build Gram matrix: H[i][j] = <dF_i, dF_j> where dF_i = F_curr - f_hist[i]
             // Expanded as <F,F> - <F,f_j> - <f_i,F> + <f_i,f_j>
             Eigen::VectorXd Ffi(m);
             for (int i = 0; i < m; ++i) {
                 int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
-                Ffi(i) = fifj_cache[cur_ring][idx];
+                Ffi(i) = kernel_dot(cur.f1, cur.f2, hist[idx].f1, hist[idx].f2);
             }
 
             Eigen::MatrixXd H(m, m);
@@ -613,8 +588,7 @@ static EquilibriumResult solve_equilibrium_core(
                 for (int j = 0; j <= i; ++j) {
                     int ii = (stored - 1 - i + AA_STORE) % AA_STORE;
                     int jj = (stored - 1 - j + AA_STORE) % AA_STORE;
-                    // Use cached dot products — avoids redundant O(N²) scans
-                    double fifj = fifj_cache[ii][jj];
+                    double fifj = kernel_dot(hist[ii].f1, hist[ii].f2, hist[jj].f1, hist[jj].f2);
                     H(i, j) = H(j, i) = norm_f - Ffi(i) - Ffi(j) + fifj;
                 }
             }

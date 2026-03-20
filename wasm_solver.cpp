@@ -64,19 +64,13 @@ static void compute_perfect_info(double b1, double b2,
 // ============================================================
 // Solver result cache
 // ============================================================
-// Two-level cache: the equilibrium solve depends only on (p1, p2, r1, r2, N, T).
-// The bar solution, costs, and wedges additionally depend on (b1, b2).
-// This avoids re-solving the expensive equilibrium when only b changes.
+// Single-level cache: recompute everything if any parameter changes.
+// F kernel is still lazy (only computed when requested).
 
 static struct SolveCache {
-    // Equilibrium-level cache key (does NOT depend on b1, b2)
-    double p1, p2, r1, r2;
+    double p1, p2, b1, b2, r1, r2;
     int n; double T;
-    bool eq_valid;
-
-    // Full cache key (includes b1, b2)
-    double b1, b2;
-    bool bar_valid;
+    bool valid;
 
     EquilibriumResult eq;
     Kernel2D Vkernel1, Vkernel2;  // kernel information wedges V^i(t,r)
@@ -86,51 +80,39 @@ static struct SolveCache {
     Kernel2D barHk1, barHk2;  // mean-field adjoint kernels
     std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
 
-    // F kernel cache (computed lazily on first F kernel tab visit)
+    // F kernel (computed lazily on first F kernel tab visit)
     std::unique_ptr<FSlice> F1, F2;
     bool f_valid;
 } g_cache = {};
 
-static bool eq_cache_matches(double p1, double p2, double r1, double r2) {
-    return g_cache.eq_valid &&
+static bool cache_matches(double p1, double p2, double b1, double b2, double r1, double r2) {
+    return g_cache.valid &&
            g_cache.p1 == p1 && g_cache.p2 == p2 &&
+           g_cache.b1 == b1 && g_cache.b2 == b2 &&
            g_cache.r1 == r1 && g_cache.r2 == r2 &&
            g_cache.n == g_n && g_cache.T == g_T;
 }
 
-static bool full_cache_matches(double p1, double p2, double b1, double b2, double r1, double r2) {
-    return eq_cache_matches(p1, p2, r1, r2) &&
-           g_cache.bar_valid &&
-           g_cache.b1 == b1 && g_cache.b2 == b2;
-}
-
 // Run the full solve pipeline if not cached. After this, g_cache holds all results.
 static void ensure_solve(double p1, double p2, double b1, double b2, double r1, double r2) {
-    if (full_cache_matches(p1, p2, b1, b2, r1, r2)) return;
+    if (cache_matches(p1, p2, b1, b2, r1, r2)) return;
 
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
 
-    // Only re-solve equilibrium if p1, p2, r1, r2, N, or T changed
-    if (!eq_cache_matches(p1, p2, r1, r2)) {
-        g_cache.eq = solve_equilibrium(p1, p2, false);
-        g_cache.p1 = p1; g_cache.p2 = p2;
-        g_cache.r1 = r1; g_cache.r2 = r2;
-        g_cache.n = g_n; g_cache.T = g_T;
-        g_cache.eq_valid = true;
-        g_cache.f_valid = false;  // F kernel depends on equilibrium
+    // Solve equilibrium
+    g_cache.eq = solve_equilibrium(p1, p2, false);
 
-        // Compute kernel information wedges V^i(t,r) from converged equilibrium
-        auto prec1_eq = make_constant_prec(p1 * p1);
-        auto prec2_eq = make_constant_prec(p2 * p2);
-        Kernel2D Hx1_tmp, Hx2_tmp;
-        backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
-                         prec2_eq, 0.0, Hx1_tmp, g_cache.Vkernel1);
-        backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
-                         prec1_eq, 0.0, Hx2_tmp, g_cache.Vkernel2);
-    }
+    // Compute kernel information wedges V^i(t,r)
+    auto prec1_eq = make_constant_prec(p1 * p1);
+    auto prec2_eq = make_constant_prec(p2 * p2);
+    Kernel2D Hx1_tmp, Hx2_tmp;
+    backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
+                     prec2_eq, 0.0, Hx1_tmp, g_cache.Vkernel1);
+    backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
+                     prec1_eq, 0.0, Hx2_tmp, g_cache.Vkernel2);
 
-    // Bar solution, costs, wedges depend on b1, b2 too
+    // Bar solution, costs, wedges
     g_cache.bar = solve_bar_equilibrium(g_cache.eq.env, g_cache.eq.D1, g_cache.eq.D2,
                                          p1*p1, p2*p2, 2000, 0.08, 1e-10);
     g_cache.costs = compute_costs_general(g_cache.eq.env, g_cache.eq.calD1, g_cache.eq.calD2,
@@ -156,8 +138,12 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
 
     compute_perfect_info(b1, b2, g_cache.barD1_pi, g_cache.barD2_pi, g_cache.barX_pi);
 
+    g_cache.p1 = p1; g_cache.p2 = p2;
     g_cache.b1 = b1; g_cache.b2 = b2;
-    g_cache.bar_valid = true;
+    g_cache.r1 = r1; g_cache.r2 = r2;
+    g_cache.n = g_n; g_cache.T = g_T;
+    g_cache.valid = true;
+    g_cache.f_valid = false;
 }
 
 // Compute F kernel slices if not cached. Requires ensure_solve() first.
@@ -214,8 +200,7 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE
 void wasm_set_grid(int n, double T) {
     set_grid(n, T);
-    g_cache.eq_valid = false;  // grid change invalidates all caches
-    g_cache.bar_valid = false;
+    g_cache.valid = false;
     g_cache.f_valid = false;
 }
 
