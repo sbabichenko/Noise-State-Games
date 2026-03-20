@@ -507,52 +507,117 @@ int main() {
         return {std::move(D1_ce), std::move(D2_ce)};
     };
 
+    // Sweep over multiple (r1, r2) configurations
+    struct RConfig {
+        double r1, r2;
+        std::string label;
+    };
+    std::vector<RConfig> r_configs = {
+        {0.1, 0.1, "r0.1_0.1"},
+        {0.05, 0.2, "r0.05_0.2"},
+        {0.5, 0.5, "r0.5_0.5"},
+        {0.5, 2.0, "r0.5_2.0"},
+        {1.0, 1.0, "r1.0_1.0"},
+        {2.0, 2.0, "r2.0_2.0"},
+    };
+
     {
         std::ofstream f(DATA_DIR + "/fig13_precision_allocation.csv");
         f << std::setprecision(12);
-        f << "config,p1_root,p1_prec,Jtotal_eq,Jtotal_ce\n";
+        f << "config,r_config,r1,r2,p1_root,p1_prec,J1_eq,J2_eq,Jtotal_eq,J1_ce,J2_ce,Jtotal_ce,V1_total,V2_total\n";
 
-        for (auto& cfg : alloc_configs) {
-            std::cout << "  === targets=(" << cfg.b1 << "," << cfg.b2 << ") ===\n";
-            g_b1 = cfg.b1;
-            g_b2 = cfg.b2;
+        for (auto& rcfg : r_configs) {
+            g_r1 = rcfg.r1;
+            g_r2 = rcfg.r2;
 
-            for (int i = 0; i < N_SWEEP; ++i) {
-                double p1v = p1_sweep[i];
-                double p2v = p2_sweep[i];
+            // Recompute Riccati S for this (r1,r2)
+            S_ce.fill(0.0);
+            S_ce[g_n - 1] = TERMINAL_STATE_WEIGHT;
+            for (int j = g_n - 2; j >= 0; --j)
+                S_ce[j] = S_ce[j + 1] + g_dt * (1.0 - (1.0 / rcfg.r1 + 1.0 / rcfg.r2) * S_ce[j + 1] * S_ce[j + 1]);
 
-                // --- Equilibrium cost ---
-                auto& eq_a = cached_solve(p1v, p2v);
-                auto& bar_a = cached_bar_solve(eq_a, p1v*p1v, p2v*p2v,
-                                               p1v, p2v, 1, 2);
-                auto [j1_eq, j2_eq] = compute_costs_general(
-                    eq_a.env, eq_a.calD1, eq_a.calD2, bar_a,
-                    R1_ALLOC, R2_ALLOC, cfg.b1, cfg.b2);
+            // Clear caches for new r values
+            eq_cache.clear();
+            bar_cache.clear();
 
-                // --- CE cost ---
-                auto [D1_ce, D2_ce] = solve_ce(p1v, p2v);
-                EnvironmentResult env_ce;
-                forward_environment(D1_ce, D2_ce, p1v, p2v, FORWARD_INNER_ITERS,
-                                    Pi1(), 1, Pi2(), 2, env_ce);
-                Kernel2D calD1_ce, calD2_ce;
-                primitive_control_kernel(D1_ce, env_ce.Xtilde1, env_ce.A_store1,
-                                         p1v, 1, Pi1(), calD1_ce);
-                primitive_control_kernel(D2_ce, env_ce.Xtilde2, env_ce.A_store2,
-                                         p2v, 2, Pi2(), calD2_ce);
-                auto bar_ce = solve_bar_equilibrium(env_ce, D1_ce, D2_ce,
-                                                     p1v*p1v, p2v*p2v,
-                                                     2000, 0.08, 1e-10);
-                auto [j1_ce, j2_ce] = compute_costs_general(
-                    env_ce, calD1_ce, calD2_ce, bar_ce,
-                    R1_ALLOC, R2_ALLOC, cfg.b1, cfg.b2);
+            // Pre-solve equilibria for this r config
+            std::cout << "\n  Pre-solving for " << rcfg.label << " ...\n";
+            {
+                std::vector<EquilibriumResult> eq_results(N_SWEEP);
+                #pragma omp parallel for schedule(dynamic)
+                for (int i = 0; i < N_SWEEP; ++i) {
+                    eq_results[i] = solve_equilibrium(p1_sweep[i], p2_sweep[i], false);
+                }
+                for (int i = 0; i < N_SWEEP; ++i) {
+                    auto key = make_eq_key(p1_sweep[i], p2_sweep[i], 1, 2);
+                    eq_cache.emplace(key, std::move(eq_results[i]));
+                }
+            }
 
-                f << cfg.label << "," << p1v << "," << (p1v*p1v) << ","
-                  << (j1_eq + j2_eq) << "," << (j1_ce + j2_ce) << "\n";
+            for (auto& cfg : alloc_configs) {
+                std::cout << "  === " << rcfg.label << " targets=(" << cfg.b1 << "," << cfg.b2 << ") ===\n";
+                g_b1 = cfg.b1;
+                g_b2 = cfg.b2;
 
-                if (i % 10 == 0)
-                    std::cout << "    p1=" << p1v << " (prec=" << (p1v*p1v)
-                              << ", p2=" << p2v << "): J_eq=" << (j1_eq + j2_eq)
-                              << " J_ce=" << (j1_ce + j2_ce) << "\n";
+                for (int i = 0; i < N_SWEEP; ++i) {
+                    double p1v = p1_sweep[i];
+                    double p2v = p2_sweep[i];
+
+                    // --- Equilibrium cost ---
+                    auto& eq_a = cached_solve(p1v, p2v);
+                    auto& bar_a = cached_bar_solve(eq_a, p1v*p1v, p2v*p2v,
+                                                   p1v, p2v, 1, 2);
+                    auto [j1_eq, j2_eq] = compute_costs_general(
+                        eq_a.env, eq_a.calD1, eq_a.calD2, bar_a,
+                        rcfg.r1, rcfg.r2, cfg.b1, cfg.b2);
+
+                    // --- Compute wedges V1, V2 at terminal time ---
+                    auto prec1_arr = make_constant_prec(p1v * p1v);
+                    auto prec2_arr = make_constant_prec(p2v * p2v);
+                    auto bba1 = backward_bar_adjoints(eq_a.env.X, eq_a.env.Xtilde2, eq_a.D2,
+                                                      bar_a.barX, cfg.b1, prec2_arr, 0.0);
+                    auto bba2 = backward_bar_adjoints(eq_a.env.X, eq_a.env.Xtilde1, eq_a.D1,
+                                                      bar_a.barX, cfg.b2, prec1_arr, 0.0);
+
+                    // Integrate wedges over time (sum across all t)
+                    double V1_total = 0.0, V2_total = 0.0;
+                    for (int j = 0; j < g_n; ++j) {
+                        double v1_t = 0.0, v2_t = 0.0;
+                        for (int z = 0; z <= j; ++z) {
+                            v1_t += eq_a.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
+                            v2_t += eq_a.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
+                        }
+                        V1_total += v1_t * (p2v * p2v) * g_dt;
+                        V2_total += v2_t * (p1v * p1v) * g_dt;
+                    }
+
+                    // --- CE cost ---
+                    auto [D1_ce, D2_ce] = solve_ce(p1v, p2v);
+                    EnvironmentResult env_ce;
+                    forward_environment(D1_ce, D2_ce, p1v, p2v, FORWARD_INNER_ITERS,
+                                        Pi1(), 1, Pi2(), 2, env_ce);
+                    Kernel2D calD1_ce, calD2_ce;
+                    primitive_control_kernel(D1_ce, env_ce.Xtilde1, env_ce.A_store1,
+                                             p1v, 1, Pi1(), calD1_ce);
+                    primitive_control_kernel(D2_ce, env_ce.Xtilde2, env_ce.A_store2,
+                                             p2v, 2, Pi2(), calD2_ce);
+                    auto bar_ce = solve_bar_equilibrium(env_ce, D1_ce, D2_ce,
+                                                         p1v*p1v, p2v*p2v,
+                                                         2000, 0.08, 1e-10);
+                    auto [j1_ce, j2_ce] = compute_costs_general(
+                        env_ce, calD1_ce, calD2_ce, bar_ce,
+                        rcfg.r1, rcfg.r2, cfg.b1, cfg.b2);
+
+                    f << cfg.label << "," << rcfg.label << "," << rcfg.r1 << "," << rcfg.r2 << ","
+                      << p1v << "," << (p1v*p1v) << ","
+                      << j1_eq << "," << j2_eq << "," << (j1_eq + j2_eq) << ","
+                      << j1_ce << "," << j2_ce << "," << (j1_ce + j2_ce) << ","
+                      << V1_total << "," << V2_total << "\n";
+
+                    if (i % 15 == 0)
+                        std::cout << "    p1=" << p1v << ": J_eq=" << (j1_eq + j2_eq)
+                                  << " V1=" << V1_total << " V2=" << V2_total << "\n";
+                }
             }
         }
     }
