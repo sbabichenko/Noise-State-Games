@@ -446,23 +446,28 @@ for row, (rc_key, rc_label) in enumerate(r_cases):
     ax.grid(alpha=0.3)
     ax.set_ylim(bottom=0)
 
-    # (c) Mean controls & mean state (equilibrium only — full-info shown in panels a/b)
+    # (c) Mean controls & mean state: eq (solid) vs full-info (dotted)
     ax = axes[row, 2]
     ax.plot(p1_frac, sub['barD1_avg_eq'].values, lw=2.2, color='C0',
-            label=r'$\bar{D}_1$ (player 1)')
+            label=r'$\bar{D}_1$ (eq)')
     ax.plot(p1_frac, sub['barD2_avg_eq'].values, lw=2.2, color='C3',
-            label=r'$\bar{D}_2$ (player 2)')
+            label=r'$\bar{D}_2$ (eq)')
+    ax.plot(p1_frac, sub['barD1_avg_fi'].values, lw=1.5, ls=':', color='C0',
+            label=r'$\bar{D}_1$ (CE)')
+    ax.plot(p1_frac, sub['barD2_avg_fi'].values, lw=1.5, ls=':', color='C3',
+            label=r'$\bar{D}_2$ (CE)')
     ax.axhline(0, color='gray', lw=0.5, ls=':')
     ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
     ax.set_ylabel(r'$\int \bar{D}_i\, dt$', fontsize=12)
-    ax.legend(fontsize=9, loc='center left')
+    ax.legend(fontsize=8, loc='center left')
     ax.grid(alpha=0.3)
     ax2 = ax.twinx()
-    ax2.plot(p1_frac, sub['barX_avg_eq'].values, lw=2.0, color='C2',
-             label=r'$\bar{X}$')
-    ax2.set_ylabel(r'$\int \bar{X}\, dt$', fontsize=12, color='C2')
-    ax2.tick_params(axis='y', labelcolor='C2')
-    ax2.legend(fontsize=9, loc='center right')
+    ax2.plot(p1_frac, sub['barX_avg_eq'].values, lw=2.0, color='k',
+             label=r'$\bar{X}$ (eq)')
+    ax2.plot(p1_frac, sub['barX_avg_fi'].values, lw=1.5, ls=':', color='k',
+             label=r'$\bar{X}$ (CE)')
+    ax2.set_ylabel(r'$\int \bar{X}\, dt$', fontsize=12)
+    ax2.legend(fontsize=8, loc='center right')
     ax.set_title(f'Mean controls & state — {rc_label}', fontsize=10)
 
 fig.suptitle(r'Competitive targets ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$): '
