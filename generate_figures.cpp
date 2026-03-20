@@ -524,7 +524,7 @@ int main() {
     {
         std::ofstream f(DATA_DIR + "/fig13_precision_allocation.csv");
         f << std::setprecision(12);
-        f << "config,r_config,r1,r2,p1_root,p1_prec,J1_eq,J2_eq,Jtotal_eq,J1_ce,J2_ce,Jtotal_ce,V1_total,V2_total\n";
+        f << "config,r_config,r1,r2,p1_root,p1_prec,J1_eq,J2_eq,Jtotal_eq,J1_ce,J2_ce,Jtotal_ce,V1_total,V2_total,barD1sq_eq,barD2sq_eq,barD1sq_ce,barD2sq_ce\n";
 
         for (auto& rcfg : r_configs) {
             g_r1 = rcfg.r1;
@@ -608,15 +608,27 @@ int main() {
                         env_ce, calD1_ce, calD2_ce, bar_ce,
                         rcfg.r1, rcfg.r2, cfg.b1, cfg.b2);
 
+                    // --- Mean control energy (socially destructive effort) ---
+                    double barD1sq_eq = 0.0, barD2sq_eq = 0.0;
+                    double barD1sq_ce = 0.0, barD2sq_ce = 0.0;
+                    for (int j = 0; j < g_n; ++j) {
+                        barD1sq_eq += bar_a.barD1[j] * bar_a.barD1[j] * g_dt;
+                        barD2sq_eq += bar_a.barD2[j] * bar_a.barD2[j] * g_dt;
+                        barD1sq_ce += bar_ce.barD1[j] * bar_ce.barD1[j] * g_dt;
+                        barD2sq_ce += bar_ce.barD2[j] * bar_ce.barD2[j] * g_dt;
+                    }
+
                     f << cfg.label << "," << rcfg.label << "," << rcfg.r1 << "," << rcfg.r2 << ","
                       << p1v << "," << (p1v*p1v) << ","
                       << j1_eq << "," << j2_eq << "," << (j1_eq + j2_eq) << ","
                       << j1_ce << "," << j2_ce << "," << (j1_ce + j2_ce) << ","
-                      << V1_total << "," << V2_total << "\n";
+                      << V1_total << "," << V2_total << ","
+                      << barD1sq_eq << "," << barD2sq_eq << ","
+                      << barD1sq_ce << "," << barD2sq_ce << "\n";
 
                     if (i % 15 == 0)
                         std::cout << "    p1=" << p1v << ": J_eq=" << (j1_eq + j2_eq)
-                                  << " V1=" << V1_total << " V2=" << V2_total << "\n";
+                                  << " barD1sq=" << barD1sq_eq << " barD2sq=" << barD2sq_eq << "\n";
                 }
             }
         }
