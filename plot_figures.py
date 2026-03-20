@@ -460,7 +460,6 @@ for row, (rc_key, rc_label) in enumerate(r_cases):
     ax.set_title(f'Information wedges — {rc_label}', fontsize=10)
     ax.legend(fontsize=8, loc='best')
     ax.grid(alpha=0.3)
-    ax.set_ylim(bottom=0)
 
 fig.suptitle(r'Competitive targets ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$): '
              r'$P^1\!+\!P^2\!=\!\bar{P}\!=\!%g$, $\sigma\!=\!0.5$' % PBAR,
