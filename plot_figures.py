@@ -459,15 +459,12 @@ for row, (rc_key, rc_label) in enumerate(r_cases):
     ax.axhline(0, color='gray', lw=0.5, ls=':')
     ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
     ax.set_ylabel(r'$\int \bar{D}_i\, dt$', fontsize=12)
-    ax.legend(fontsize=8, loc='center left')
+    ax.plot(p1_frac, sub['barX_avg_eq'].values, lw=2.0, color='k',
+            label=r'$\bar{X}$ (eq)')
+    ax.plot(p1_frac, sub['barX_avg_fi'].values, lw=1.5, ls=':', color='k',
+            label=r'$\bar{X}$ (CE)')
+    ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
-    ax2 = ax.twinx()
-    ax2.plot(p1_frac, sub['barX_avg_eq'].values, lw=2.0, color='k',
-             label=r'$\bar{X}$ (eq)')
-    ax2.plot(p1_frac, sub['barX_avg_fi'].values, lw=1.5, ls=':', color='k',
-             label=r'$\bar{X}$ (CE)')
-    ax2.set_ylabel(r'$\int \bar{X}\, dt$', fontsize=12)
-    ax2.legend(fontsize=8, loc='center right')
     ax.set_title(f'Mean controls & state — {rc_label}', fontsize=10)
 
 fig.suptitle(r'Competitive targets ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$): '
