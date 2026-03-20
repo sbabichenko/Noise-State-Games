@@ -22,18 +22,20 @@ double g_b1 = B1_DEFAULT;
 double g_b2 = B2_DEFAULT;
 double g_r1 = RHO;
 double g_r2 = RHO;
+double g_sigma = 1.0;
 
 // --- state_kernel_from_calD ---
 
 void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
                             Kernel2D& X) {
     X.setZero();
+    Vec3 sigE0 = g_sigma * E0();
     for (int s = 0; s < g_n; ++s) {
-        X[s][s] = E0();
+        X[s][s] = sigE0;
         Vec3 cumsum = Vec3::Zero();
         for (int t = s + 1; t < g_n; ++t) {
             cumsum += g_dt * (calD1[t - 1][s] + calD2[t - 1][s]);
-            X[t][s] = E0() + cumsum;
+            X[t][s] = sigE0 + cumsum;
         }
     }
 }

@@ -48,6 +48,7 @@ extern double g_b1;
 extern double g_b2;
 extern double g_r1;  // player 1 control cost weight
 extern double g_r2;  // player 2 control cost weight
+extern double g_sigma;  // state diffusion coefficient (default 1.0)
 
 // ---------- type aliases ----------
 using Vec3 = Eigen::Vector3d;
