@@ -388,4 +388,137 @@ fig.tight_layout()
 fig.savefig(f'{FIGDIR}/fig_precision_allocation.pdf')
 plt.close(fig)
 
+# ============================================================
+# FIGURE 14: Mean control energy & wedge decomposition
+# ============================================================
+print("Figure 14: Mean control energy & wedges ...")
+df14 = pd.read_csv(f'{DATA_DIR}/fig13_precision_allocation.csv')
+
+# --- Panel layout: 2 rows x 3 cols ---
+# Row 1: Asymmetric r (r1=0.05, r2=0.2) — the "starving" story
+#   (a) Individual efforts barD1², barD2² for eq vs CE
+#   (b) Total destructive effort eq vs CE
+#   (c) Wedges V1, V2
+# Row 2: Symmetric r (r1=0.1, r2=0.1)
+#   (a) Individual efforts
+#   (b) Total destructive effort
+#   (c) Wedges V1, V2
+
+r_cases = [
+    ('r0.05_0.2', r'Asymmetric $r_1\!=\!0.05,\; r_2\!=\!0.2$'),
+    ('r0.1_0.1',  r'Symmetric $r_1\!=\!r_2\!=\!0.1$'),
+]
+
+fig, axes = plt.subplots(2, 3, figsize=(17, 9))
+
+for row, (rc_key, rc_label) in enumerate(r_cases):
+    sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
+    p1_frac = sub['p1_prec'].values / PBAR
+
+    # (a) Individual efforts
+    ax = axes[row, 0]
+    ax.plot(p1_frac, sub['barD1sq_eq'].values, lw=2.2, color='C0',
+            label=r'$\int \bar{D}_1^2\, dt$ (eq)')
+    ax.plot(p1_frac, sub['barD2sq_eq'].values, lw=2.2, color='C3',
+            label=r'$\int \bar{D}_2^2\, dt$ (eq)')
+    ax.plot(p1_frac, sub['barD1sq_ce'].values, lw=1.8, ls='--', color='C0', alpha=0.6,
+            label=r'$\int \bar{D}_1^2\, dt$ (CE)')
+    ax.plot(p1_frac, sub['barD2sq_ce'].values, lw=1.8, ls='--', color='C3', alpha=0.6,
+            label=r'$\int \bar{D}_2^2\, dt$ (CE)')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'Mean control energy', fontsize=12)
+    ax.set_title(f'Individual efforts — {rc_label}', fontsize=10)
+    ax.legend(fontsize=8, loc='best')
+    ax.grid(alpha=0.3)
+
+    # (b) Total destructive effort
+    ax = axes[row, 1]
+    total_eq = sub['barD1sq_eq'].values + sub['barD2sq_eq'].values
+    total_ce = sub['barD1sq_ce'].values + sub['barD2sq_ce'].values
+    ax.plot(p1_frac, total_eq, lw=2.5, color='C0', label='Equilibrium')
+    ax.plot(p1_frac, total_ce, lw=2.0, ls='--', color='C1', alpha=0.8, label='CE (Riccati)')
+    ax.fill_between(p1_frac, total_eq, total_ce, alpha=0.12, color='C1')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'$\int (\bar{D}_1^2 + \bar{D}_2^2)\, dt$', fontsize=12)
+    ax.set_title(f'Total destructive effort — {rc_label}', fontsize=10)
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+
+    # (c) Wedges
+    ax = axes[row, 2]
+    ax.plot(p1_frac, sub['V1_total'].values, lw=2.2, color='C0',
+            label=r'$\mathcal{V}^1$ (player 1 wedge)')
+    ax.plot(p1_frac, sub['V2_total'].values, lw=2.2, color='C3',
+            label=r'$\mathcal{V}^2$ (player 2 wedge)')
+    ax.plot(p1_frac, sub['V1_total'].values + sub['V2_total'].values,
+            lw=1.8, ls=':', color='k', alpha=0.7, label=r'$\mathcal{V}^1 + \mathcal{V}^2$')
+    ax.axhline(0, color='gray', lw=0.5, ls=':')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'Integrated wedge', fontsize=12)
+    ax.set_title(f'Information wedges — {rc_label}', fontsize=10)
+    ax.legend(fontsize=8, loc='best')
+    ax.grid(alpha=0.3)
+
+fig.suptitle(r'Competitive targets ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$): '
+             r'$P^1\!+\!P^2\!=\!\bar{P}\!=\!%g$, $\sigma\!=\!0.5$' % PBAR,
+             fontsize=14, y=1.01)
+fig.tight_layout()
+fig.savefig(f'{FIGDIR}/fig_control_energy_wedges.pdf')
+plt.close(fig)
+
+# ============================================================
+# FIGURE 15: Total effort eq/ce ratio across r configurations
+# ============================================================
+print("Figure 15: Effort ratio across r configs ...")
+
+r_all = [
+    ('r0.1_0.1',  r'$r\!=\!0.1$'),
+    ('r0.05_0.2', r'$r_1\!=\!0.05, r_2\!=\!0.2$'),
+    ('r0.5_0.5',  r'$r\!=\!0.5$'),
+    ('r0.5_2.0',  r'$r_1\!=\!0.5, r_2\!=\!2$'),
+    ('r1.0_1.0',  r'$r\!=\!1$'),
+    ('r2.0_2.0',  r'$r\!=\!2$'),
+]
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Left panel: total effort for each r config
+ax = axes[0]
+cmap_r = cm.coolwarm
+for idx, (rc_key, rc_label) in enumerate(r_all):
+    sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
+    p1_frac = sub['p1_prec'].values / PBAR
+    total_eq = sub['barD1sq_eq'].values + sub['barD2sq_eq'].values
+    color = cmap_r(idx / (len(r_all) - 1))
+    ax.plot(p1_frac, total_eq, lw=2.2, color=color, label=rc_label)
+ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
+ax.set_ylabel(r'$\int (\bar{D}_1^2 + \bar{D}_2^2)\, dt$', fontsize=12)
+ax.set_title('Total destructive effort (equilibrium)', fontsize=12)
+ax.legend(fontsize=8, loc='best')
+ax.grid(alpha=0.3)
+
+# Right panel: eq/ce ratio
+ax = axes[1]
+for idx, (rc_key, rc_label) in enumerate(r_all):
+    sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
+    p1_frac = sub['p1_prec'].values / PBAR
+    total_eq = sub['barD1sq_eq'].values + sub['barD2sq_eq'].values
+    total_ce = sub['barD1sq_ce'].values + sub['barD2sq_ce'].values
+    ratio = total_eq / total_ce
+    color = cmap_r(idx / (len(r_all) - 1))
+    ax.plot(p1_frac, ratio, lw=2.2, color=color, label=rc_label)
+ax.axhline(1.0, color='k', lw=1, ls=':', alpha=0.5)
+ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
+ax.set_ylabel('Eq / CE effort ratio', fontsize=12)
+ax.set_title('Strategic moderation vs distortion', fontsize=12)
+ax.legend(fontsize=8, loc='best')
+ax.grid(alpha=0.3)
+
+fig.suptitle(r'Competitive targets: destructive effort across control costs '
+             r'($P^1\!+\!P^2\!=\!%g$, $\sigma\!=\!0.5$)' % PBAR,
+             fontsize=14, y=1.01)
+fig.tight_layout()
+fig.savefig(f'{FIGDIR}/fig_effort_ratio.pdf')
+plt.close(fig)
+
 print("\nAll figures saved to", FIGDIR)
