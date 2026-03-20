@@ -426,13 +426,6 @@ int main() {
     g_r2 = R2_ALLOC;
     g_sigma = SIGMA_ALLOC;
 
-    // Compute Riccati S(t) for CE benchmark
-    std::array<double, N_MAX> S_ce;
-    S_ce.fill(0.0);
-    S_ce[g_n - 1] = TERMINAL_STATE_WEIGHT;
-    for (int j = g_n - 2; j >= 0; --j)
-        S_ce[j] = S_ce[j + 1] + g_dt * (1.0 - (1.0 / R1_ALLOC + 1.0 / R2_ALLOC) * S_ce[j + 1] * S_ce[j + 1]);
-
     struct AllocTarget {
         double b1, b2;
         std::string label;
@@ -486,45 +479,7 @@ int main() {
     }
     std::cout << "  Equilibria solved.\n";
 
-    // CE solver: iterate forward pass with D = -(S/r)*Xtilde
-    // Accepts optional initial guesses for warm-starting
-    auto solve_ce = [&](double p1v, double p2v,
-                        const Kernel2D* D1_init = nullptr,
-                        const Kernel2D* D2_init = nullptr) -> std::pair<Kernel2D, Kernel2D> {
-        Kernel2D D1_ce, D2_ce;
-        if (D1_init) { D1_ce = *D1_init; D2_ce = *D2_init; }
-        else { D1_ce.setZero(); D2_ce.setZero(); }
-        EnvironmentResult env_ce;
-
-        for (int it = 0; it < 500; ++it) {
-            forward_environment(D1_ce, D2_ce, p1v, p2v, FORWARD_INNER_ITERS,
-                                Pi1(), 1, Pi2(), 2, env_ce);
-            Kernel2D D1_new, D2_new;
-            for (int t = 0; t < g_n; ++t) {
-                double s_gain = S_ce[t];
-                for (int s = 0; s <= t; ++s) {
-                    D1_new[t][s] = -(s_gain / g_r1) * env_ce.Xtilde1[t][s];
-                    D2_new[t][s] = -(s_gain / g_r2) * env_ce.Xtilde2[t][s];
-                }
-            }
-            double norm_f = 0.0, norm_g = 0.0;
-            int TRI = g_n * (g_n + 1) / 2;
-            for (int i = 0; i < TRI; ++i) {
-                norm_f += (D1_new.data[i] - D1_ce.data[i]).squaredNorm()
-                        + (D2_new.data[i] - D2_ce.data[i]).squaredNorm();
-                norm_g += D1_new.data[i].squaredNorm() + D2_new.data[i].squaredNorm();
-            }
-            double err = std::sqrt(norm_f) / std::max(1.0, std::sqrt(norm_g));
-
-            for (int i = 0; i < TRI; ++i) {
-                D1_ce.data[i] += 0.3 * (D1_new.data[i] - D1_ce.data[i]);
-                D2_ce.data[i] += 0.3 * (D2_new.data[i] - D2_ce.data[i]);
-            }
-            if (err < 1e-6) break;
-        }
-        return {std::move(D1_ce), std::move(D2_ce)};
-    };
-
+    // Full-info benchmark: large precision so both players effectively observe X
     // Sweep over multiple (r1, r2) configurations
     struct RConfig {
         double r1, r2;
@@ -542,21 +497,47 @@ int main() {
     {
         std::ofstream f(DATA_DIR + "/fig13_precision_allocation.csv");
         f << std::setprecision(12);
-        f << "config,r_config,r1,r2,p1_root,p1_prec,J1_eq,J2_eq,Jtotal_eq,J1_ce,J2_ce,Jtotal_ce,V1_total,V2_total,barD1sq_eq,barD2sq_eq,barD1sq_ce,barD2sq_ce\n";
+        f << "config,r_config,r1,r2,p1_root,p1_prec,J1_eq,J2_eq,Jtotal_eq,J1_fi,J2_fi,Jtotal_fi,V1_total,V2_total,barD1sq_eq,barD2sq_eq,barD1sq_fi,barD2sq_fi\n";
 
         for (auto& rcfg : r_configs) {
             g_r1 = rcfg.r1;
             g_r2 = rcfg.r2;
 
-            // Recompute Riccati S for this (r1,r2)
-            S_ce.fill(0.0);
-            S_ce[g_n - 1] = TERMINAL_STATE_WEIGHT;
-            for (int j = g_n - 2; j >= 0; --j)
-                S_ce[j] = S_ce[j + 1] + g_dt * (1.0 - (1.0 / rcfg.r1 + 1.0 / rcfg.r2) * S_ce[j + 1] * S_ce[j + 1]);
-
             // Clear caches for new r values
             eq_cache.clear();
             bar_cache.clear();
+
+            // Full-info benchmark: coupled Riccati for two-player Nash with full observation
+            // Ṡ_i = S_i²/r_i + 2·S_i·S_j/r_j − 1,  S_i(T)=0
+            // Variance cost for player i: ∫ σ² S_i dt
+            std::array<double, N_MAX> S_fi1{}, S_fi2{};
+            S_fi1[g_n - 1] = TERMINAL_STATE_WEIGHT;
+            S_fi2[g_n - 1] = TERMINAL_STATE_WEIGHT;
+            for (int j = g_n - 2; j >= 0; --j) {
+                double s1 = S_fi1[j + 1], s2 = S_fi2[j + 1];
+                S_fi1[j] = s1 + g_dt * (1.0 - s1 * s1 / rcfg.r1 - 2.0 * s1 * s2 / rcfg.r2);
+                S_fi2[j] = s2 + g_dt * (1.0 - s2 * s2 / rcfg.r2 - 2.0 * s1 * s2 / rcfg.r1);
+            }
+            // Variance costs
+            double J1_fi_var = 0.0, J2_fi_var = 0.0;
+            for (int j = 0; j < g_n; ++j) {
+                J1_fi_var += SIGMA_ALLOC * SIGMA_ALLOC * S_fi1[j] * g_dt;
+                J2_fi_var += SIGMA_ALLOC * SIGMA_ALLOC * S_fi2[j] * g_dt;
+            }
+            // Full-info control costs from variance: ∫ (S_i/r_i)² σ² · Var(X) dt
+            // We need the full-info Var(X)(t).  dVar/dt = -2(S1/r1 + S2/r2)*Var + σ²
+            std::array<double, N_MAX> Var_fi{};
+            Var_fi[0] = 0.0;  // X₀ deterministic
+            for (int j = 0; j < g_n - 1; ++j) {
+                double k_sum = S_fi1[j] / rcfg.r1 + S_fi2[j] / rcfg.r2;
+                Var_fi[j + 1] = Var_fi[j] + g_dt * (-2.0 * k_sum * Var_fi[j] + SIGMA_ALLOC * SIGMA_ALLOC);
+            }
+            // Full variance cost: J_i_var = ∫ (1 + r_i K_i²) Var dt  where K_i = S_i/r_i
+            // But from the value function: J_i_var = S_i(0)·Var(0) + ∫σ²S_i dt = ∫σ²S_i dt  (since Var(0)=0)
+            // So J1_fi_var and J2_fi_var are already correct.
+
+            std::cout << "\n  Full-info Riccati for " << rcfg.label
+                      << ": J1_var=" << J1_fi_var << " J2_var=" << J2_fi_var << "\n";
 
             // Pre-solve equilibria for this r config (warm-started from middle)
             std::cout << "\n  Pre-solving for " << rcfg.label << " ...\n";
@@ -583,9 +564,51 @@ int main() {
                 g_b1 = cfg.b1;
                 g_b2 = cfg.b2;
 
-                // Track previous CE solution for warm-starting
-                Kernel2D prev_D1_ce, prev_D2_ce;
-                bool have_prev_ce = false;
+                // Full-info bar (mean-field) game: both players observe X̄ directly
+                // Bar controls: D̄_i = -(S_fi_i/r_i) · X̄   (full-info Nash feedback)
+                // But the bar backward adjoints depend on targets (θ_i).
+                // For full info, the bar game has its own coupled Riccati:
+                //   Ṁ_i = (1-θ_i)² − M_i²/r_i − 2M_iM_j/r_j,  M_i(T)=0
+                // where (1-θ_i)² is the bar running cost for player i.
+                // Bar controls: D̄_i = -(M_i/r_i)·X̄
+                // Total bar cost for player i: M_i(0)·X₀² + ∫ σ²·M_i dt ... no,
+                // X̄ is deterministic so there's no σ² term in bar.
+                // J_i_bar = M_i(0)·X₀²  (= 0 since X₀=0)
+                // So the full-info total cost is purely the variance part when X₀=0!
+                // J_i = J_i_var = ∫ σ² S_i dt  (already computed)
+
+                // Actually, the bar game still matters for barD effort:
+                std::array<double, N_MAX> M_fi1{}, M_fi2{};
+                double q1 = (1.0 - cfg.b1) * (1.0 - cfg.b1);
+                double q2 = (1.0 - cfg.b2) * (1.0 - cfg.b2);
+                for (int j = g_n - 2; j >= 0; --j) {
+                    double m1 = M_fi1[j + 1], m2 = M_fi2[j + 1];
+                    M_fi1[j] = m1 + g_dt * (q1 - m1 * m1 / rcfg.r1 - 2.0 * m1 * m2 / rcfg.r2);
+                    M_fi2[j] = m2 + g_dt * (q2 - m2 * m2 / rcfg.r2 - 2.0 * m1 * m2 / rcfg.r1);
+                }
+                // Full-info bar trajectory: dX̄/dt = -(M1/r1 + M2/r2)·X̄
+                std::array<double, N_MAX> barX_fi{};
+                std::array<double, N_MAX> barD1_fi{}, barD2_fi{};
+                barX_fi[0] = X0;
+                for (int j = 0; j < g_n; ++j) {
+                    barD1_fi[j] = -(M_fi1[j] / rcfg.r1) * barX_fi[j];
+                    barD2_fi[j] = -(M_fi2[j] / rcfg.r2) * barX_fi[j];
+                    if (j < g_n - 1)
+                        barX_fi[j + 1] = barX_fi[j] + g_dt * (barD1_fi[j] + barD2_fi[j]);
+                }
+                // Full-info costs: variance + bar
+                // J_i = ∫[(1+r_iK_i²)Var + ((1-θ_i)² + r_iK_i²)X̄²] dt  where K_i = S_i/r_i
+                // Since X₀=0 and bar dynamics are deterministic, X̄=0 for all t when X₀=0.
+                // So J_i = J_i_var.  Bar effort also = 0 when X₀=0.
+                double j1_fi = J1_fi_var;
+                double j2_fi = J2_fi_var;
+                double barD1sq_fi = 0.0, barD2sq_fi = 0.0;
+                for (int j = 0; j < g_n; ++j) {
+                    barD1sq_fi += barD1_fi[j] * barD1_fi[j] * g_dt;
+                    barD2sq_fi += barD2_fi[j] * barD2_fi[j] * g_dt;
+                }
+                std::cout << "    Full-info: J=" << (j1_fi + j2_fi)
+                          << " barD1sq=" << barD1sq_fi << " barD2sq=" << barD2sq_fi << "\n";
 
                 for (int i = 0; i < N_SWEEP; ++i) {
                     double p1v = p1_sweep[i];
@@ -619,45 +642,20 @@ int main() {
                         V2_total += v2_t * (p1v * p1v) * g_dt;
                     }
 
-                    // --- CE cost (warm-started from previous sweep point) ---
-                    auto [D1_ce, D2_ce] = have_prev_ce
-                        ? solve_ce(p1v, p2v, &prev_D1_ce, &prev_D2_ce)
-                        : solve_ce(p1v, p2v);
-                    prev_D1_ce = D1_ce;
-                    prev_D2_ce = D2_ce;
-                    have_prev_ce = true;
-                    EnvironmentResult env_ce;
-                    forward_environment(D1_ce, D2_ce, p1v, p2v, FORWARD_INNER_ITERS,
-                                        Pi1(), 1, Pi2(), 2, env_ce);
-                    Kernel2D calD1_ce, calD2_ce;
-                    primitive_control_kernel(D1_ce, env_ce.Xtilde1, env_ce.A_store1,
-                                             p1v, 1, Pi1(), calD1_ce);
-                    primitive_control_kernel(D2_ce, env_ce.Xtilde2, env_ce.A_store2,
-                                             p2v, 2, Pi2(), calD2_ce);
-                    auto bar_ce = solve_bar_equilibrium(env_ce, D1_ce, D2_ce,
-                                                         p1v*p1v, p2v*p2v,
-                                                         2000, 0.08, 1e-10);
-                    auto [j1_ce, j2_ce] = compute_costs_general(
-                        env_ce, calD1_ce, calD2_ce, bar_ce,
-                        rcfg.r1, rcfg.r2, cfg.b1, cfg.b2);
-
-                    // --- Mean control energy (socially destructive effort) ---
+                    // --- Mean control energy ---
                     double barD1sq_eq = 0.0, barD2sq_eq = 0.0;
-                    double barD1sq_ce = 0.0, barD2sq_ce = 0.0;
                     for (int j = 0; j < g_n; ++j) {
                         barD1sq_eq += bar_a.barD1[j] * bar_a.barD1[j] * g_dt;
                         barD2sq_eq += bar_a.barD2[j] * bar_a.barD2[j] * g_dt;
-                        barD1sq_ce += bar_ce.barD1[j] * bar_ce.barD1[j] * g_dt;
-                        barD2sq_ce += bar_ce.barD2[j] * bar_ce.barD2[j] * g_dt;
                     }
 
                     f << cfg.label << "," << rcfg.label << "," << rcfg.r1 << "," << rcfg.r2 << ","
                       << p1v << "," << (p1v*p1v) << ","
                       << j1_eq << "," << j2_eq << "," << (j1_eq + j2_eq) << ","
-                      << j1_ce << "," << j2_ce << "," << (j1_ce + j2_ce) << ","
+                      << j1_fi << "," << j2_fi << "," << (j1_fi + j2_fi) << ","
                       << V1_total << "," << V2_total << ","
                       << barD1sq_eq << "," << barD2sq_eq << ","
-                      << barD1sq_ce << "," << barD2sq_ce << "\n";
+                      << barD1sq_fi << "," << barD2sq_fi << "\n";
 
                     if (i % 15 == 0)
                         std::cout << "    p1=" << p1v << ": J_eq=" << (j1_eq + j2_eq)

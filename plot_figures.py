@@ -363,18 +363,16 @@ for ax, (cfg_key, label) in zip(axes, configs_alloc):
     p1 = sub['p1_root'].values
     p1_frac = sub['p1_prec'].values / PBAR  # fraction of total precision to player 1
     J_eq = sub['Jtotal_eq'].values
-    J_ce = sub['Jtotal_ce'].values
+    J_fi = sub['Jtotal_fi'].values
 
     ax.plot(p1_frac, J_eq, lw=2.5, color='C0', label=r'Equilibrium $J^1\!+\!J^2$')
-    ax.plot(p1_frac, J_ce, lw=2.0, ls='--', color='C1', alpha=0.8, label=r'CE (Riccati) $J^1\!+\!J^2$')
+    ax.axhline(J_fi[0], lw=2.0, ls='--', color='C1', alpha=0.8,
+               label=r'Full info $J^1\!+\!J^2=%.3f$' % J_fi[0])
 
-    # Mark optima
+    # Mark equilibrium optimum
     idx_eq = np.argmin(J_eq)
-    idx_ce = np.argmin(J_ce)
     ax.axvline(p1_frac[idx_eq], color='k', ls='--', lw=1.2, alpha=0.7,
                label=f'Eq. optimum $P^1/\\bar{{P}}\\!={p1_frac[idx_eq]:.2f}$')
-    ax.axvline(p1_frac[idx_ce], color='gray', ls='--', lw=1.2, alpha=0.7,
-               label=f'CE optimum $P^1/\\bar{{P}}\\!={p1_frac[idx_ce]:.2f}$')
 
     ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
     ax.set_ylabel(r'$J^1 + J^2$', fontsize=13)
@@ -421,10 +419,10 @@ for row, (rc_key, rc_label) in enumerate(r_cases):
             label=r'$\int \bar{D}_1^2\, dt$ (eq)')
     ax.plot(p1_frac, sub['barD2sq_eq'].values, lw=2.2, color='C3',
             label=r'$\int \bar{D}_2^2\, dt$ (eq)')
-    ax.plot(p1_frac, sub['barD1sq_ce'].values, lw=1.8, ls='--', color='C0', alpha=0.6,
-            label=r'$\int \bar{D}_1^2\, dt$ (CE)')
-    ax.plot(p1_frac, sub['barD2sq_ce'].values, lw=1.8, ls='--', color='C3', alpha=0.6,
-            label=r'$\int \bar{D}_2^2\, dt$ (CE)')
+    ax.plot(p1_frac, sub['barD1sq_fi'].values, lw=1.8, ls='--', color='C0', alpha=0.6,
+            label=r'$\int \bar{D}_1^2\, dt$ (full info)')
+    ax.plot(p1_frac, sub['barD2sq_fi'].values, lw=1.8, ls='--', color='C3', alpha=0.6,
+            label=r'$\int \bar{D}_2^2\, dt$ (full info)')
     ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
     ax.set_ylabel(r'Mean control energy', fontsize=12)
     ax.set_title(f'Individual efforts — {rc_label}', fontsize=10)
@@ -434,10 +432,10 @@ for row, (rc_key, rc_label) in enumerate(r_cases):
     # (b) Total destructive effort
     ax = axes[row, 1]
     total_eq = sub['barD1sq_eq'].values + sub['barD2sq_eq'].values
-    total_ce = sub['barD1sq_ce'].values + sub['barD2sq_ce'].values
+    total_fi = sub['barD1sq_fi'].values + sub['barD2sq_fi'].values
     ax.plot(p1_frac, total_eq, lw=2.5, color='C0', label='Equilibrium')
-    ax.plot(p1_frac, total_ce, lw=2.0, ls='--', color='C1', alpha=0.8, label='CE (Riccati)')
-    ax.fill_between(p1_frac, total_eq, total_ce, alpha=0.12, color='C1')
+    ax.plot(p1_frac, total_fi, lw=2.0, ls='--', color='C1', alpha=0.8, label='Full info')
+    ax.fill_between(p1_frac, total_eq, total_fi, alpha=0.12, color='C1')
     ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
     ax.set_ylabel(r'$\int (\bar{D}_1^2 + \bar{D}_2^2)\, dt$', fontsize=12)
     ax.set_title(f'Total destructive effort — {rc_label}', fontsize=10)
@@ -503,13 +501,13 @@ for idx, (rc_key, rc_label) in enumerate(r_all):
     sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
     p1_frac = sub['p1_prec'].values / PBAR
     total_eq = sub['barD1sq_eq'].values + sub['barD2sq_eq'].values
-    total_ce = sub['barD1sq_ce'].values + sub['barD2sq_ce'].values
-    ratio = total_eq / total_ce
+    total_fi = sub['barD1sq_fi'].values + sub['barD2sq_fi'].values
+    ratio = total_eq / total_fi
     color = cmap_r(idx / (len(r_all) - 1))
     ax.plot(p1_frac, ratio, lw=2.2, color=color, label=rc_label)
 ax.axhline(1.0, color='k', lw=1, ls=':', alpha=0.5)
 ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
-ax.set_ylabel('Eq / CE effort ratio', fontsize=12)
+ax.set_ylabel('Eq / full-info effort ratio', fontsize=12)
 ax.set_title('Strategic moderation vs distortion', fontsize=12)
 ax.legend(fontsize=8, loc='best')
 ax.grid(alpha=0.3)
