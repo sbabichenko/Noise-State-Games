@@ -345,4 +345,94 @@ fig.tight_layout()
 fig.savefig(f'{FIGDIR}/fig12_costs_private_vs_pooled.pdf')
 plt.close(fig)
 
+# ============================================================
+# FIGURE 14: Mean control energy & wedge decomposition
+# ============================================================
+print("Figure 14: Mean control energy & wedges ...")
+PBAR = 20.0
+df14 = pd.read_csv(f'{DATA_DIR}/fig13_precision_allocation.csv')
+
+# --- Panel layout: 2 rows x 3 cols ---
+# Row 1: Asymmetric r (r1=0.05, r2=0.2) — the "starving" story
+#   (a) Individual efforts barD1², barD2² for eq vs CE
+#   (b) Total destructive effort eq vs CE
+#   (c) Wedges V1, V2
+# Row 2: Symmetric r (r1=0.1, r2=0.1)
+#   (a) Individual efforts
+#   (b) Total destructive effort
+#   (c) Wedges V1, V2
+
+r_cases = [
+    ('r0.05_0.2', r'Asymmetric $r_1\!=\!0.05,\; r_2\!=\!0.2$'),
+    ('r0.1_0.1',  r'Symmetric $r_1\!=\!r_2\!=\!0.1$'),
+]
+
+fig, axes = plt.subplots(2, 3, figsize=(17, 9))
+
+for row, (rc_key, rc_label) in enumerate(r_cases):
+    sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
+    p1_frac = sub['p1_prec'].values / PBAR
+
+    # (a) Individual efforts (weighted by r_i)
+    ax = axes[row, 0]
+    r1_vals = sub['r1'].values
+    r2_vals = sub['r2'].values
+    ax.plot(p1_frac, r1_vals * sub['barD1sq_eq'].values, lw=2.2, color='C0',
+            label=r'$r_1\!\int \bar{D}_1^2\, dt$ (eq)')
+    ax.plot(p1_frac, r2_vals * sub['barD2sq_eq'].values, lw=2.2, color='C3',
+            label=r'$r_2\!\int \bar{D}_2^2\, dt$ (eq)')
+    ax.plot(p1_frac, r1_vals * sub['barD1sq_fi'].values, lw=1.8, ls='--', color='C0', alpha=0.6,
+            label=r'$r_1\!\int \bar{D}_1^2\, dt$ (full info)')
+    ax.plot(p1_frac, r2_vals * sub['barD2sq_fi'].values, lw=1.8, ls='--', color='C3', alpha=0.6,
+            label=r'$r_2\!\int \bar{D}_2^2\, dt$ (full info)')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'Mean control cost', fontsize=12)
+    ax.set_title(f'Individual efforts — {rc_label}', fontsize=10)
+    ax.legend(fontsize=8, loc='best')
+    ax.grid(alpha=0.3)
+    ax.set_ylim(bottom=0)
+
+    # (b) Total destructive effort (weighted by r_i)
+    ax = axes[row, 1]
+    total_eq = r1_vals * sub['barD1sq_eq'].values + r2_vals * sub['barD2sq_eq'].values
+    total_fi = r1_vals * sub['barD1sq_fi'].values + r2_vals * sub['barD2sq_fi'].values
+    ax.plot(p1_frac, total_eq, lw=2.5, color='C0', label='Equilibrium')
+    ax.plot(p1_frac, total_fi, lw=2.0, ls='--', color='C1', alpha=0.8, label='Full info')
+    ax.fill_between(p1_frac, total_eq, total_fi, alpha=0.12, color='C1')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'$\int (r_1 \bar{D}_1^2 + r_2 \bar{D}_2^2)\, dt$', fontsize=12)
+    ax.set_title(f'Total destructive cost — {rc_label}', fontsize=10)
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+    ax.set_ylim(bottom=0)
+
+    # (c) Mean controls & mean state: eq (solid) vs full-info (dotted)
+    ax = axes[row, 2]
+    ax.plot(p1_frac, sub['barD1_avg_eq'].values, lw=2.2, color='C0',
+            label=r'$\bar{D}_1$ (eq)')
+    ax.plot(p1_frac, sub['barD2_avg_eq'].values, lw=2.2, color='C3',
+            label=r'$\bar{D}_2$ (eq)')
+    ax.plot(p1_frac, sub['barD1_avg_fi'].values, lw=1.5, ls=':', color='C0',
+            label=r'$\bar{D}_1$ (CE)')
+    ax.plot(p1_frac, sub['barD2_avg_fi'].values, lw=1.5, ls=':', color='C3',
+            label=r'$\bar{D}_2$ (CE)')
+    ax.axhline(0, color='gray', lw=0.5, ls=':')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'$\int \bar{D}_i\, dt$', fontsize=12)
+    ax.plot(p1_frac, sub['barX_avg_eq'].values, lw=2.0, color='k',
+            label=r'$\bar{X}$ (eq)')
+    ax.plot(p1_frac, sub['barX_avg_fi'].values, lw=1.5, ls=':', color='k',
+            label=r'$\bar{X}$ (CE)')
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    ax.set_title(f'Mean controls & state — {rc_label}', fontsize=10)
+
+fig.suptitle(r'Competitive targets ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$): '
+             r'$P^1\!+\!P^2\!=\!\bar{P}\!=\!%g$, $\sigma\!=\!0.5$' % PBAR,
+             fontsize=14, y=1.01)
+fig.tight_layout()
+fig.savefig(f'{FIGDIR}/fig_control_energy_wedges.pdf')
+plt.close(fig)
+
+
 print("\nAll figures saved to", FIGDIR)

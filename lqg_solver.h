@@ -48,6 +48,7 @@ extern double g_b1;
 extern double g_b2;
 extern double g_r1;  // player 1 control cost weight
 extern double g_r2;  // player 2 control cost weight
+extern double g_sigma;  // state diffusion coefficient (default 1.0)
 
 // ---------- type aliases ----------
 using Vec3 = Eigen::Vector3d;
@@ -221,6 +222,14 @@ struct EquilibriumResult {
 
 EquilibriumResult solve_equilibrium(
     double p1_val, double p2_val, bool verbose = true,
+    const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
+    const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
+
+// Warm-started version: uses D1_init, D2_init as initial guesses
+EquilibriumResult solve_equilibrium_warm(
+    double p1_val, double p2_val,
+    const Kernel2D& D1_init, const Kernel2D& D2_init,
+    bool verbose = true,
     const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
     const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
 
