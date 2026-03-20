@@ -356,32 +356,33 @@ configs_alloc = [
     ('cooperative', r'Cooperative ($\theta_1\!=\!\theta_2\!=\!0$)'),
 ]
 
-PBAR = 6.0
+PBAR = 20.0
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 for ax, (cfg_key, label) in zip(axes, configs_alloc):
     sub = df[df['config'] == cfg_key].sort_values('p1_root')
     p1 = sub['p1_root'].values
+    p1_frac = sub['p1_prec'].values / PBAR  # fraction of total precision to player 1
     J_eq = sub['Jtotal_eq'].values
     J_ce = sub['Jtotal_ce'].values
 
-    ax.plot(p1, J_eq, lw=2.5, color='C0', label=r'Equilibrium $J^1\!+\!J^2$')
-    ax.plot(p1, J_ce, lw=2.0, ls='--', color='C1', alpha=0.8, label=r'CE (Riccati) $J^1\!+\!J^2$')
+    ax.plot(p1_frac, J_eq, lw=2.5, color='C0', label=r'Equilibrium $J^1\!+\!J^2$')
+    ax.plot(p1_frac, J_ce, lw=2.0, ls='--', color='C1', alpha=0.8, label=r'CE (Riccati) $J^1\!+\!J^2$')
 
     # Mark optima
     idx_eq = np.argmin(J_eq)
     idx_ce = np.argmin(J_ce)
-    ax.axvline(p1[idx_eq], color='k', ls='--', lw=1.2, alpha=0.7,
-               label=f'Eq. optimum $p_1^*\\!={p1[idx_eq]:.2f}$')
-    ax.axvline(p1[idx_ce], color='gray', ls='--', lw=1.2, alpha=0.7,
-               label=f'CE optimum $p_1^*\\!={p1[idx_ce]:.2f}$')
+    ax.axvline(p1_frac[idx_eq], color='k', ls='--', lw=1.2, alpha=0.7,
+               label=f'Eq. optimum $P^1/\\bar{{P}}\\!={p1_frac[idx_eq]:.2f}$')
+    ax.axvline(p1_frac[idx_ce], color='gray', ls='--', lw=1.2, alpha=0.7,
+               label=f'CE optimum $P^1/\\bar{{P}}\\!={p1_frac[idx_ce]:.2f}$')
 
-    ax.set_xlabel(r'$p_1$', fontsize=13)
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=13)
     ax.set_ylabel(r'$J^1 + J^2$', fontsize=13)
     ax.set_title(label, fontsize=12)
     ax.legend(fontsize=9, loc='best')
     ax.grid(alpha=0.3)
 
-fig.suptitle(r'Precision allocation: $p_1+p_2=\bar{P}=%g$, $r_1=0.05$, $r_2=0.2$, $T=1$' % PBAR,
+fig.suptitle(r'Precision allocation: $P^1\!+\!P^2=\bar{P}=%g$, $r=0.1$, $\sigma=0.5$, $T=1$' % PBAR,
              fontsize=14, y=1.01)
 fig.tight_layout()
 fig.savefig(f'{FIGDIR}/fig_precision_allocation.pdf')

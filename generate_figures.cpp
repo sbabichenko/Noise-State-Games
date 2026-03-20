@@ -406,24 +406,27 @@ int main() {
 
     // ============================================================
     // FIGURE 13: Precision allocation sweep
-    // Pbar=6 (root precision budget), r1=0.05, r2=0.2, T=1
+    // Budget: p1^2 + p2^2 = Pbar (total actual precision)
+    // Symmetric costs r1=r2=0.1, sigma=0.5, T=1
     // Competitive (theta1=1, theta2=-1) and cooperative (theta1=theta2=0)
     // ============================================================
     std::cout << "\nFigure 13: Precision allocation sweep ...\n";
 
-    // Clear caches since we're changing r1, r2
+    // Clear caches since we're changing parameters
     eq_cache.clear();
     bar_cache.clear();
 
-    const double PBAR = 6.0;        // root-precision budget: p1 + p2 = PBAR
-    const double R1_ALLOC = 0.05;
-    const double R2_ALLOC = 0.2;
+    const double PBAR = 20.0;       // total actual precision budget: p1^2 + p2^2 = PBAR
+    const double R1_ALLOC = 0.1;    // symmetric control costs
+    const double R2_ALLOC = 0.1;
+    const double SIGMA_ALLOC = 0.5; // reduced state diffusion amplifies strategic effects
     const int N_SWEEP = 61;         // number of sweep points
 
     g_r1 = R1_ALLOC;
     g_r2 = R2_ALLOC;
+    g_sigma = SIGMA_ALLOC;
 
-    // Compute Riccati S(t) for CE benchmark (uses asymmetric r1, r2)
+    // Compute Riccati S(t) for CE benchmark
     std::array<double, N_MAX> S_ce;
     S_ce.fill(0.0);
     S_ce[g_n - 1] = TERMINAL_STATE_WEIGHT;
@@ -440,33 +443,35 @@ int main() {
         {0.0,  0.0, "cooperative"},
     };
 
-    // Budget: p1 + p2 = PBAR (root-precision budget)
-    // Sweep p1 from near 0 to near PBAR
-    const double P1_MAX = PBAR;
+    // Budget: p1^2 + p2^2 = PBAR  =>  p2 = sqrt(PBAR - p1^2)
+    // Sweep p1 (root precision) from near 0 to near sqrt(PBAR)
+    const double P1_MAX_ROOT = std::sqrt(PBAR);  // max root precision for player 1
     const double MARGIN = 0.15;
     std::vector<double> p1_sweep(N_SWEEP);
     for (int i = 0; i < N_SWEEP; ++i)
-        p1_sweep[i] = MARGIN + (P1_MAX - 2.0 * MARGIN) * i / (N_SWEEP - 1);
+        p1_sweep[i] = MARGIN + (P1_MAX_ROOT - 2.0 * MARGIN) * i / (N_SWEEP - 1);
+
+    // Precompute p2 values from budget constraint
+    std::vector<double> p2_sweep(N_SWEEP);
+    for (int i = 0; i < N_SWEEP; ++i)
+        p2_sweep[i] = std::sqrt(PBAR - p1_sweep[i] * p1_sweep[i]);
 
     std::cout << "  Pre-solving " << N_SWEEP << " equilibria for precision sweep ...\n";
     {
         std::vector<EquilibriumResult> eq_results(N_SWEEP);
         #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i < N_SWEEP; ++i) {
-            double p1v = p1_sweep[i];
-            double p2v = PBAR - p1v;
-            eq_results[i] = solve_equilibrium(p1v, p2v, false);
+            eq_results[i] = solve_equilibrium(p1_sweep[i], p2_sweep[i], false);
         }
         // Insert into cache
         for (int i = 0; i < N_SWEEP; ++i) {
-            auto key = make_eq_key(p1_sweep[i], PBAR - p1_sweep[i], 1, 2);
+            auto key = make_eq_key(p1_sweep[i], p2_sweep[i], 1, 2);
             eq_cache.emplace(key, std::move(eq_results[i]));
         }
     }
     std::cout << "  Equilibria solved.\n";
 
-    // Also solve CE equilibria: iterate forward pass with D = -(S/r)*Xtilde
-    // For each p1, converge to the CE (separated/Riccati) solution
+    // CE solver: iterate forward pass with D = -(S/r)*Xtilde
     auto solve_ce = [&](double p1v, double p2v) -> std::pair<Kernel2D, Kernel2D> {
         Kernel2D D1_ce, D2_ce;
         D1_ce.setZero();
@@ -484,7 +489,6 @@ int main() {
                     D2_new[t][s] = -(s_gain / R2_ALLOC) * env_ce.Xtilde2[t][s];
                 }
             }
-            // Check convergence
             double norm_f = 0.0, norm_g = 0.0;
             int TRI = g_n * (g_n + 1) / 2;
             for (int i = 0; i < TRI; ++i) {
@@ -494,7 +498,6 @@ int main() {
             }
             double err = std::sqrt(norm_f) / std::max(1.0, std::sqrt(norm_g));
 
-            // Relaxed update
             for (int i = 0; i < TRI; ++i) {
                 D1_ce.data[i] += 0.3 * (D1_new.data[i] - D1_ce.data[i]);
                 D2_ce.data[i] += 0.3 * (D2_new.data[i] - D2_ce.data[i]);
@@ -516,7 +519,7 @@ int main() {
 
             for (int i = 0; i < N_SWEEP; ++i) {
                 double p1v = p1_sweep[i];
-                double p2v = PBAR - p1v;
+                double p2v = p2_sweep[i];
 
                 // --- Equilibrium cost ---
                 auto& eq_a = cached_solve(p1v, p2v);
@@ -528,17 +531,14 @@ int main() {
 
                 // --- CE cost ---
                 auto [D1_ce, D2_ce] = solve_ce(p1v, p2v);
-                // Recompute environment with CE kernels
                 EnvironmentResult env_ce;
                 forward_environment(D1_ce, D2_ce, p1v, p2v, FORWARD_INNER_ITERS,
                                     Pi1(), 1, Pi2(), 2, env_ce);
-                // Compute calD for CE
                 Kernel2D calD1_ce, calD2_ce;
                 primitive_control_kernel(D1_ce, env_ce.Xtilde1, env_ce.A_store1,
                                          p1v, 1, Pi1(), calD1_ce);
                 primitive_control_kernel(D2_ce, env_ce.Xtilde2, env_ce.A_store2,
                                          p2v, 2, Pi2(), calD2_ce);
-                // Bar equilibrium under CE kernels
                 auto bar_ce = solve_bar_equilibrium(env_ce, D1_ce, D2_ce,
                                                      p1v*p1v, p2v*p2v,
                                                      2000, 0.08, 1e-10);
@@ -550,7 +550,8 @@ int main() {
                   << (j1_eq + j2_eq) << "," << (j1_ce + j2_ce) << "\n";
 
                 if (i % 10 == 0)
-                    std::cout << "    p1=" << p1v << " (prec=" << (p1v*p1v) << "): J_eq=" << (j1_eq + j2_eq)
+                    std::cout << "    p1=" << p1v << " (prec=" << (p1v*p1v)
+                              << ", p2=" << p2v << "): J_eq=" << (j1_eq + j2_eq)
                               << " J_ce=" << (j1_ce + j2_ce) << "\n";
             }
         }
