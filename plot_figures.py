@@ -446,19 +446,31 @@ for row, (rc_key, rc_label) in enumerate(r_cases):
     ax.grid(alpha=0.3)
     ax.set_ylim(bottom=0)
 
-    # (c) Wedges
+    # (c) Mean controls & mean state
     ax = axes[row, 2]
-    ax.plot(p1_frac, sub['V1_total'].values, lw=2.2, color='C0',
-            label=r'$\mathcal{V}^1$ (player 1 wedge)')
-    ax.plot(p1_frac, sub['V2_total'].values, lw=2.2, color='C3',
-            label=r'$\mathcal{V}^2$ (player 2 wedge)')
-    ax.plot(p1_frac, sub['V1_total'].values + sub['V2_total'].values,
-            lw=1.8, ls=':', color='k', alpha=0.7, label=r'$\mathcal{V}^1 + \mathcal{V}^2$')
+    ax.plot(p1_frac, sub['barD1_avg_eq'].values, lw=2.2, color='C0',
+            label=r'$\int \bar{D}_1\, dt$ (eq)')
+    ax.plot(p1_frac, sub['barD2_avg_eq'].values, lw=2.2, color='C3',
+            label=r'$\int \bar{D}_2\, dt$ (eq)')
+    ax.plot(p1_frac, sub['barD1_avg_fi'].values, lw=1.8, ls='--', color='C0', alpha=0.6,
+            label=r'$\int \bar{D}_1\, dt$ (full info)')
+    ax.plot(p1_frac, sub['barD2_avg_fi'].values, lw=1.8, ls='--', color='C3', alpha=0.6,
+            label=r'$\int \bar{D}_2\, dt$ (full info)')
+    ax2 = ax.twinx()
+    ax2.plot(p1_frac, sub['barX_avg_eq'].values, lw=2.0, color='C2',
+             label=r'$\int \bar{X}\, dt$ (eq)')
+    ax2.plot(p1_frac, sub['barX_avg_fi'].values, lw=1.8, ls='--', color='C2', alpha=0.6,
+             label=r'$\int \bar{X}\, dt$ (full info)')
+    ax2.set_ylabel(r'$\int \bar{X}\, dt$', fontsize=12, color='C2')
+    ax2.tick_params(axis='y', labelcolor='C2')
     ax.axhline(0, color='gray', lw=0.5, ls=':')
     ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
-    ax.set_ylabel(r'Integrated wedge', fontsize=12)
-    ax.set_title(f'Information wedges — {rc_label}', fontsize=10)
-    ax.legend(fontsize=8, loc='best')
+    ax.set_ylabel(r'$\int \bar{D}_i\, dt$', fontsize=12)
+    ax.set_title(f'Mean controls & state — {rc_label}', fontsize=10)
+    # Combine legends from both axes
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, fontsize=7, loc='best')
     ax.grid(alpha=0.3)
 
 fig.suptitle(r'Competitive targets ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$): '

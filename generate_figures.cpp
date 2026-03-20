@@ -497,7 +497,7 @@ int main() {
     {
         std::ofstream f(DATA_DIR + "/fig13_precision_allocation.csv");
         f << std::setprecision(12);
-        f << "config,r_config,r1,r2,p1_root,p1_prec,J1_eq,J2_eq,Jtotal_eq,J1_fi,J2_fi,Jtotal_fi,V1_total,V2_total,barD1sq_eq,barD2sq_eq,barD1sq_fi,barD2sq_fi\n";
+        f << "config,r_config,r1,r2,p1_root,p1_prec,J1_eq,J2_eq,Jtotal_eq,J1_fi,J2_fi,Jtotal_fi,V1_total,V2_total,barD1sq_eq,barD2sq_eq,barD1sq_fi,barD2sq_fi,barD1_avg_eq,barD2_avg_eq,barX_avg_eq,barD1_avg_fi,barD2_avg_fi,barX_avg_fi\n";
 
         for (auto& rcfg : r_configs) {
             g_r1 = rcfg.r1;
@@ -649,11 +649,23 @@ int main() {
                         V2_total += v2_t * (p1v * p1v) * g_dt;
                     }
 
-                    // --- Mean control energy ---
+                    // --- Mean control energy and time-averaged bar quantities ---
                     double barD1sq_eq = 0.0, barD2sq_eq = 0.0;
+                    double barD1_avg_eq = 0.0, barD2_avg_eq = 0.0, barX_avg_eq = 0.0;
                     for (int j = 0; j < g_n; ++j) {
                         barD1sq_eq += bar_a.barD1[j] * bar_a.barD1[j] * g_dt;
                         barD2sq_eq += bar_a.barD2[j] * bar_a.barD2[j] * g_dt;
+                        barD1_avg_eq += bar_a.barD1[j] * g_dt;
+                        barD2_avg_eq += bar_a.barD2[j] * g_dt;
+                        barX_avg_eq += bar_a.barX[j] * g_dt;
+                    }
+
+                    // Full-info time-averaged bar quantities
+                    double barD1_avg_fi_v = 0.0, barD2_avg_fi_v = 0.0, barX_avg_fi_v = 0.0;
+                    for (int j = 0; j < g_n; ++j) {
+                        barD1_avg_fi_v += barD1_fi[j] * g_dt;
+                        barD2_avg_fi_v += barD2_fi[j] * g_dt;
+                        barX_avg_fi_v += barX_fi[j] * g_dt;
                     }
 
                     f << cfg.label << "," << rcfg.label << "," << rcfg.r1 << "," << rcfg.r2 << ","
@@ -662,7 +674,9 @@ int main() {
                       << j1_fi << "," << j2_fi << "," << (j1_fi + j2_fi) << ","
                       << V1_total << "," << V2_total << ","
                       << barD1sq_eq << "," << barD2sq_eq << ","
-                      << barD1sq_fi << "," << barD2sq_fi << "\n";
+                      << barD1sq_fi << "," << barD2sq_fi << ","
+                      << barD1_avg_eq << "," << barD2_avg_eq << "," << barX_avg_eq << ","
+                      << barD1_avg_fi_v << "," << barD2_avg_fi_v << "," << barX_avg_fi_v << "\n";
 
                     if (i % 15 == 0)
                         std::cout << "    p1=" << p1v << ": J_eq=" << (j1_eq + j2_eq)
