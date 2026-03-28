@@ -109,6 +109,10 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     border: 1px solid #d0d4da; border-radius: 5px; background: #fff; }
 #impulse-channel:focus, #rank-kernel-select:focus {
     outline: none; border-color: #1f77b4; box-shadow: 0 0 0 2px rgba(31,119,180,0.15); }
+
+/* Guide tab cross-links */
+.guide-link { color: #1f77b4; text-decoration: none; font-weight: 600; cursor: pointer; }
+.guide-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -270,10 +274,12 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
           <td>Grid points (numerical resolution)</td></tr>
     </table>
 
+    <div id="model-params-live" style="margin-top:18px; padding:10px 14px; background:#f0f1f3;
+         border-radius:6px; font-family:'SF Mono','Cascadia Code','Fira Code',monospace;
+         font-size:0.85em; color:#555; text-align:center;"></div>
+
   </div>
 </div>
-
-<!-- Tab 0.5: Guide -->
 <div id="tab-guide" class="tab-panel">
   <div style="max-width:820px; margin:0 auto; line-height:1.7; font-size:1.05em;">
     <h2 style="margin:10px 0 8px; font-size:1.25em;">What the plots show</h2>
@@ -298,7 +304,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">State kernel $X(t,s)$</h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>State/Control Kernels</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
       $X(t,s)$ is the impulse response of the state: how much a unit shock at
@@ -312,7 +318,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       Control kernels $D^i(t,s)$ and $\mathcal{D}^i(t,s)$
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>State/Control Kernels</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
       $D^i(t,s)$ is player $i$'s feedback kernel in <em>filtered</em> coordinates
@@ -327,7 +333,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       Unresolved state $\widetilde{X}^i(t,s)$
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Filter Kernels</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
       $\widetilde{X}^i(t,s)$ is the component of the state's impulse response
@@ -341,7 +347,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       Filtration kernel $F^i(t,u,s)$
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Filter Kernels</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
       $F^i(t,u,s)$ maps from primitive coordinates $(s)$ to filtered coordinates
@@ -354,7 +360,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       Mean controls $\bar{D}^i(t)$ and mean state $\bar{X}(t)$
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Equilibrium</strong> tab (top panel).
+      <a href="#" class="guide-link" data-target="tab-equilibrium">Equilibrium</a> tab (top panel).
     </p>
     <p>
       The deterministic components of the equilibrium. Dotted lines show the
@@ -367,7 +373,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
       Mean $\bar{V}^i(t)$ and full kernel $\mathcal{V}^i(t,r)$ on the
-      <strong>Equilibrium</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-equilibrium">Equilibrium</a> tab.
     </p>
     <p>
       Player $i$'s optimality condition gives
@@ -392,7 +398,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Comparative statics</h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Comparative Statics</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-statics">Statics</a> tab.
     </p>
     <p>
       Sweeps $p_2$ with all else fixed. Dashed lines show pooled-information costs
@@ -403,7 +409,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Simulation</h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Simulation</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-simulation">Simulation</a> tab.
     </p>
     <p>
       Generates pathwise realizations of the state, player estimates, and controls
@@ -419,7 +425,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Diagnostics</h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Diagnostics</strong> tab.
+      <a href="#" class="guide-link" data-target="tab-diagnostics">Diagnostics</a> tab.
     </p>
     <p>
       Anderson-accelerated Picard iteration on the best-response map
@@ -434,24 +440,25 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
   <div class="figure-block">
     <div id="plot-controls" class="plot"></div>
     <div class="figure-caption">
-      Left: mean equilibrium controls D&#x0304;&#xB9; (blue) and D&#x0304;&#xB2; (red), with perfect-information
-      Riccati benchmarks (dotted, same colors). The gap between solid and dotted lines is
-      the mean-channel distortion driven by the information wedge; it vanishes as
-      precision &#x2192; &#x221E;.
-      Center: mean state path X&#x0304;(t) with bliss-point targets b&#x2081; and b&#x2082; (dashed).
-      Right: aggregate mean effort |D&#x0304;&#xB9;|+|D&#x0304;&#xB2;|. The gap above the perfect-information
-      benchmark is the deadweight loss from bilateral belief manipulation.
+      Left: mean equilibrium controls $\bar{D}^1$ (blue) and $\bar{D}^2$ (red), with
+      perfect-information Riccati benchmarks (dotted, same colors). The gap between solid
+      and dotted lines is the mean-channel distortion driven by the information wedge;
+      it vanishes as precision $\to \infty$.
+      Center: mean state path $\bar{X}(t)$ with bliss-point targets $b_1$ and $b_2$ (dashed).
+      Right: aggregate mean effort $|\bar{D}^1|+|\bar{D}^2|$. The gap above the
+      perfect-information benchmark is the deadweight loss from bilateral belief manipulation.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-wedges" class="plot"></div>
     <div class="figure-caption">
-      Mean information wedges V&#x0304;&#xB9;(t) and V&#x0304;&#xB2;(t). V&#x0304;&#x2071;(t) prices the
-      marginal value to player i of shifting the opponent's posterior at time t &mdash;
-      the additional costate term from bilateral belief manipulation (Theorem 3.2).
-      Both wedges are hump-shaped: zero at t=0 (no inference yet) and t=T (terminal
-      condition on the belief adjoint). Higher opponent precision amplifies the wedge,
-      since a better-informed opponent reacts more sharply to drift perturbations.
+      Mean information wedges $\bar{V}^1(t)$ and $\bar{V}^2(t)$.
+      $\bar{V}^i(t)$ prices the marginal value to player $i$ of shifting the opponent's
+      posterior at time $t$ &mdash; the additional costate term from bilateral belief
+      manipulation (Theorem 3.2). Both wedges are hump-shaped: zero at $t=0$ (no
+      inference yet) and $t=T$ (terminal condition on the belief adjoint). Higher
+      opponent precision amplifies the wedge, since a better-informed opponent reacts
+      more sharply to drift perturbations.
     </div>
   </div>
 </div>
@@ -500,8 +507,8 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 <!-- Tab 2: Kernels (consolidated) -->
 <div id="tab-kernels" class="tab-panel">
   <p class="figure-caption" style="margin-bottom:10px; font-style:italic;">
-    All kernel plots show three sub-panels for noise channels W&#x2070; (system), W&#xB9; (player 1 obs.),
-    W&#xB2; (player 2 obs.). Curves colored by evaluation time t (purple&#x2192;yellow = early&#x2192;late).
+    All kernel plots show three sub-panels for noise channels $W^0$ (system), $W^1$ (player 1 obs.),
+    $W^2$ (player 2 obs.). Curves colored by evaluation time $t$ (purple $\to$ yellow = early $\to$ late).
   </p>
   <div style="border-bottom:1px solid #ddd; margin-bottom:10px;">
     <button class="subtab-btn active" data-subtab="kern-state" data-group="kernels">State</button>
@@ -526,13 +533,13 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <div class="figure-block">
       <div id="plot-D1" class="plot"></div>
       <div class="figure-caption">
-        Player 1 noise-state feedback D&#xB9;(t,s): control response to noise-state estimate.
+        Player 1 noise-state feedback $D^1(t,s)$: control response to noise-state estimate.
       </div>
     </div>
     <div class="figure-block">
       <div id="plot-D2" class="plot"></div>
       <div class="figure-caption">
-        Player 2 noise-state feedback D&#xB2;(t,s): symmetric counterpart.
+        Player 2 noise-state feedback $D^2(t,s)$: symmetric counterpart.
       </div>
     </div>
   </div>
@@ -541,13 +548,13 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <div class="figure-block">
       <div id="plot-calD1" class="plot"></div>
       <div class="figure-caption">
-        Primitive control &#x1D4D3;&#xB9;(t,s): player 1 control in primitive Brownian coordinates.
+        Primitive control $\mathcal{D}^1(t,s)$: player 1 control in primitive Brownian coordinates.
       </div>
     </div>
     <div class="figure-block">
       <div id="plot-calD2" class="plot"></div>
       <div class="figure-caption">
-        Primitive control &#x1D4D3;&#xB2;(t,s): symmetric counterpart.
+        Primitive control $\mathcal{D}^2(t,s)$: symmetric counterpart.
       </div>
     </div>
   </div>
@@ -556,14 +563,14 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <div class="figure-block">
       <div id="plot-Xtilde1" class="plot"></div>
       <div class="figure-caption">
-        Player 1 unresolved state X&#x0303;&#xB9;(t,s): what player 1 has not yet resolved about the shock at s.
-        The W&#xB9; channel is identically zero (player 1 directly observes W&#xB9;).
+        Player 1 unresolved state $\tilde{X}^1(t,s)$: what player 1 has not yet resolved about the shock at $s$.
+        The $W^1$ channel is identically zero (player 1 directly observes $W^1$).
       </div>
     </div>
     <div class="figure-block">
       <div id="plot-Xtilde2" class="plot"></div>
       <div class="figure-caption">
-        Player 2 unresolved state X&#x0303;&#xB2;(t,s): symmetric, with W&#xB2; channel zero.
+        Player 2 unresolved state $\tilde{X}^2(t,s)$: symmetric, with $W^2$ channel zero.
       </div>
     </div>
   </div>
@@ -572,14 +579,14 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <div class="figure-block">
       <div id="plot-F1" class="plot"></div>
       <div class="figure-caption">
-        Player 1 filtration kernel F&#xB9;(T,u,s): density kernel of the noise-state conditional mean.
-        3&#xD7;3 grid maps source channel (column) to target channel (row).
+        Player 1 filtration kernel $F^1(T,u,s)$: density kernel of the noise-state conditional mean.
+        $3\times 3$ grid maps source channel (column) to target channel (row).
       </div>
     </div>
     <div class="figure-block">
       <div id="plot-F2" class="plot"></div>
       <div class="figure-caption">
-        Player 2 filtration kernel F&#xB2;(T,u,s): symmetric counterpart.
+        Player 2 filtration kernel $F^2(T,u,s)$: symmetric counterpart.
       </div>
     </div>
   </div>
@@ -606,12 +613,12 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
         <label style="font-weight:600; font-size:0.85em;">Kernel:</label>
         <select id="rank-kernel-select" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
           <option value="X">X (state)</option>
-          <option value="D1">D&#xB9; (feedback 1)</option>
-          <option value="D2">D&#xB2; (feedback 2)</option>
-          <option value="calD1">&#x1D4D3;&#xB9; (control 1)</option>
-          <option value="calD2">&#x1D4D3;&#xB2; (control 2)</option>
-          <option value="Xtilde1">X&#x0303;&#xB9; (unresolved 1)</option>
-          <option value="Xtilde2">X&#x0303;&#xB2; (unresolved 2)</option>
+          <option value="D1">D&#xB9; (feedback)</option>
+          <option value="D2">D&#xB2; (feedback)</option>
+          <option value="calD1">&#x1D4D3;&#xB9; (control)</option>
+          <option value="calD2">&#x1D4D3;&#xB2; (control)</option>
+          <option value="Xtilde1">X&#x0303;&#xB9; (unresolved)</option>
+          <option value="Xtilde2">X&#x0303;&#xB2; (unresolved)</option>
         </select>
       </div>
       <p style="font-size:0.85em; color:#666; margin:0;">
@@ -632,6 +639,10 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 
 <!-- Tab 2.5: Impulse Response -->
 <div id="tab-impulse" class="tab-panel">
+  <p style="font-size:0.92em; color:#555; max-width:880px; margin:0 auto 12px; line-height:1.6; text-align:center;">
+    A unit shock hits noise channel $W^r$ at source time $s$. The panels below show how it
+    propagates through the physical state, each player's controls, and their information sets.
+  </p>
   <div style="display:flex; gap:24px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
     <div>
       <label style="font-weight:600; font-size:0.85em;">Shock source:</label>
@@ -642,10 +653,10 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       </select>
     </div>
     <div class="slider-group" style="min-width:250px; max-width:400px;">
-      <label style="font-weight:600; font-size:0.85em;">Shock time s</label>
+      <label style="font-weight:600; font-size:0.85em;">Shock time $s$</label>
       <div class="slider-row">
         <input type="range" id="impulse-s" min="0" max="39" step="1" value="0">
-        <span class="val" id="impulse-s-val">0.000</span>
+        <span id="impulse-s-val" style="font-family:'SF Mono','Cascadia Code','Fira Code',monospace; font-size:0.85em; min-width:3.5em; text-align:right; color:#1f77b4; font-weight:600;">0.000</span>
       </div>
     </div>
   </div>
@@ -698,27 +709,27 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <div id="plot-costs" class="plot"></div>
     <div class="figure-caption">
       Equilibrium costs under private information (solid) vs pooled information (dashed)
-      as player 2's observation precision p&#x2082; varies.
+      as player 2's observation precision $p_2$ varies.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-barD1-sweep" class="plot"></div>
     <div class="figure-caption">
-      Player 1's mean control path D&#x0304;&#xB9;(t) for each p&#x2082; value.
-      Color encodes p&#x2082;; dashed gray is the perfect-information Riccati solution.
+      Player 1's mean control path $\bar{D}^1(t)$ for each $p_2$ value.
+      Color encodes $p_2$; dashed gray is the perfect-information Riccati solution.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-barD2-sweep" class="plot"></div>
     <div class="figure-caption">
-      Player 2's mean control path D&#x0304;&#xB2;(t) for each p&#x2082; value.
-      Color encodes p&#x2082;; dashed gray is the perfect-information Riccati solution.
+      Player 2's mean control path $\bar{D}^2(t)$ for each $p_2$ value.
+      Color encodes $p_2$; dashed gray is the perfect-information Riccati solution.
     </div>
   </div>
   <div class="figure-block">
     <div id="plot-wedges-sweep" class="plot"></div>
     <div class="figure-caption">
-      Information wedges V&#xB9;(t) and V&#xB2;(t) across the p&#x2082; sweep.
+      Information wedges $\bar{V}^1(t)$ and $\bar{V}^2(t)$ across the $p_2$ sweep.
     </div>
   </div>
 </div>
@@ -728,13 +739,16 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
   <div class="figure-block">
     <div id="plot-residual" class="plot"></div>
     <div class="figure-caption">
-      Relative residual &#x2016;G(D)&#x2212;D&#x2016;/&#x2016;G(D)&#x2016; of the Anderson-accelerated
+      Relative residual $\|G(D)-D\|/\|G(D)\|$ of the Anderson-accelerated
       Picard iteration on the best-response map (Definition C.2). Convergence to
-      10&#x207B;&#x2075; typically requires 19&#x2013;47 iterations. The trace may be non-monotonic
+      $10^{-5}$ typically requires 19&ndash;47 iterations. The trace may be non-monotonic
       &mdash; Anderson mixing is not a descent method and can overshoot before converging,
       especially at small r (large control gains).
     </div>
   </div>
+  <div id="diag-summary" style="max-width:700px; margin:20px auto; padding:14px 20px;
+       background:#fff; border:1px solid #e0e3e8; border-radius:8px; font-size:0.9em;
+       line-height:1.7; color:#555;"></div>
 </div>
 
 </div>
@@ -1656,6 +1670,27 @@ function getParams() {
     };
 }
 
+function paramsToHash(p, tab) {
+    const defaults = {p1:3, p2:3, r1:0.1, r2:0.1, b1:1, b2:-1, N:40, T:1};
+    const parts = [];
+    for (const [k, v] of Object.entries(p)) {
+        if (v !== defaults[k]) parts.push(k + '=' + v);
+    }
+    if (tab && tab !== 'tab-model') parts.push('tab=' + tab.replace('tab-',''));
+    return parts.length ? '#' + parts.join('&') : '';
+}
+
+function hashToParams() {
+    const hash = window.location.hash.slice(1);
+    if (!hash) return null;
+    const p = {};
+    for (const pair of hash.split('&')) {
+        const [k, v] = pair.split('=');
+        if (k && v !== undefined) p[k] = k === 'tab' ? v : parseFloat(v);
+    }
+    return p;
+}
+
 function updateLabels() {
     const p = getParams();
     document.getElementById('val-p1').textContent = p.p1.toFixed(1);
@@ -1666,6 +1701,10 @@ function updateLabels() {
     document.getElementById('val-r2').textContent = p.r2.toFixed(2);
     document.getElementById('val-N').textContent = p.N;
     document.getElementById('val-T').textContent = p.T.toFixed(2);
+    const liveEl = document.getElementById('model-params-live');
+    if (liveEl) {
+        liveEl.textContent = `Current: p\u2081=${p.p1} p\u2082=${p.p2} r\u2081=${p.r1} r\u2082=${p.r2} b\u2081=${p.b1} b\u2082=${p.b2} T=${p.T} N=${p.N}`;
+    }
 }
 
 function applyGrid(p) {
@@ -2090,6 +2129,7 @@ function renderTab(tab, p) {
                 break;
             }
             case 'tab-statics': {
+                document.getElementById('status').textContent = 'Computing comparative statics (11 equilibria)...';
                 const sweep = ensureSweep(p);
                 if (!sweep) { ok = false; break; }
                 plotCosts('plot-costs', sweep);
@@ -2102,6 +2142,22 @@ function renderTab(tab, p) {
                 const data = ensureLight(p);
                 if (!data) { ok = false; break; }
                 plotResidual('plot-residual', data);
+                const summaryEl = document.getElementById('diag-summary');
+                if (summaryEl && data) {
+                    const finalResid = data.residuals && data.residuals.length > 0
+                        ? data.residuals[data.residuals.length - 1].toExponential(2) : 'N/A';
+                    const convergedStr = data.converged === false
+                        ? '<span style="color:#d62728; font-weight:600;">NOT CONVERGED</span>'
+                        : '<span style="color:#2d9e2d; font-weight:600;">Converged</span>';
+                    summaryEl.innerHTML =
+                        `<strong>Solver summary</strong><br>` +
+                        `Method: Anderson-accelerated Picard iteration on the best-response map D \u2192 G(D)<br>` +
+                        `Iterations: ${data.n_iters}<br>` +
+                        `Final relative residual: ${finalResid}<br>` +
+                        `Status: ${convergedStr}<br>` +
+                        `Grid: N=${p.N}, T=${p.T}<br>` +
+                        `Equilibrium costs: J\u00B9 = ${data.J1.toFixed(6)}, J\u00B2 = ${data.J2.toFixed(6)}`;
+                }
                 break;
             }
         }
@@ -2162,6 +2218,11 @@ function updateActive() {
 
 function onSliderChange() {
     updateLabels();
+    const p = getParams();
+    const newHash = paramsToHash(p, activeTab);
+    if (window.location.hash !== newHash) {
+        history.replaceState(null, '', newHash || window.location.pathname);
+    }
     // Mark all tabs dirty
     for (const k in dirty) dirty[k] = true;
     // If a solve is already running, ensure it re-runs with latest values
@@ -2175,6 +2236,9 @@ function onSliderChange() {
 
 function onTabSwitch(tab) {
     activeTab = tab;
+    const p = getParams();
+    const newHash = paramsToHash(p, tab);
+    history.replaceState(null, '', newHash || window.location.pathname);
     if (dirty[tab]) updateActive();
 }
 
@@ -2213,6 +2277,20 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         document.getElementById(e.target.dataset.subtab).classList.add('active');
     });
 
+    // Guide tab cross-links
+    document.addEventListener('click', function(e) {
+        if (!e.target.classList.contains('guide-link')) return;
+        e.preventDefault();
+        const target = e.target.dataset.target;
+        if (!target) return;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        const btn = document.querySelector(`.tab-btn[data-tab="${target}"]`);
+        if (btn) btn.classList.add('active');
+        document.getElementById(target).classList.add('active');
+        onTabSwitch(target);
+    });
+
     // Impulse response controls — always do a full re-render
     function onImpulseChange() {
         if (activeTab !== 'tab-impulse') return;
@@ -2248,6 +2326,31 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         if (!data) return;
         plotRankAnalysis('plot-svd', 'rank-table', data, this.value);
     });
+
+    // Restore params from URL hash if present
+    const hashParams = hashToParams();
+    if (hashParams) {
+        // Restore tab first (and remove from params so it doesn't hit slider loop)
+        if (hashParams.tab) {
+            const tabName = 'tab-' + hashParams.tab;
+            delete hashParams.tab;
+            const tabBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+            if (tabBtn) {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                tabBtn.classList.add('active');
+                document.getElementById(tabName).classList.add('active');
+                activeTab = tabName;
+            }
+        }
+        // Restore slider values
+        const sliderMap = {p1:'sl-p1', p2:'sl-p2', r1:'sl-r1', r2:'sl-r2',
+                           b1:'sl-b1', b2:'sl-b2', N:'sl-N', T:'sl-T'};
+        for (const [k, v] of Object.entries(hashParams)) {
+            const el = document.getElementById(sliderMap[k]);
+            if (el && !isNaN(v)) el.value = v;
+        }
+    }
 
 updateLabels();
     updateActive();
