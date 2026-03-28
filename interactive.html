@@ -489,21 +489,10 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div class="figure-block">
       <div id="plot-imp-state" class="plot"></div>
       <div class="figure-caption">
-        <strong>Impulse response of the physical state.</strong>
-        A unit shock in the selected noise source arrives at time $s$.
-        The black curve is the true state $X(t,s)$. Dashed curves show what each player
-        has resolved (conditional mean $X - \widetilde{X}^i$): the gap between the black
-        curve and each dashed curve is what that player does not yet know.
-      </div>
-    </div>
-    <div class="figure-block">
-      <div id="plot-imp-controls" class="plot"></div>
-      <div class="figure-caption">
-        <strong>Control responses.</strong>
-        How each player's equilibrium control reacts to the shock over time.
-        Left: primitive controls $\mathcal{D}^i(t,s)$ (what enters the state equation).
-        Right: unresolved state components $\widetilde{X}^i(t,s)$ (the residual uncertainty
-        each player faces about the shock's effect on the state).
+        <strong>Physical state impulse response.</strong>
+        Left: true state $X(t,s)$ (solid) and each player's resolved estimate
+        $X - \widetilde{X}^i$ (dashed). Center: primitive controls $\mathcal{D}^i(t,s)$.
+        Right: unresolved state $\widetilde{X}^i(t,s)$.
       </div>
     </div>
   </div>
@@ -512,13 +501,9 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       <div id="plot-imp-p1-slices" class="plot"></div>
       <div class="figure-caption">
         <strong>Impulse response of player 1's noise state.</strong>
-        Each curve shows how a shock at source time $s$ (colored purple&#x2192;yellow for
-        early&#x2192;late $s$) propagates into the $W^r$ component of player 1's
-        noise-state coordinate at filtered time $u$ (x-axis), evaluated at $t = T$.
-        The three panels correspond to the three target components of the noise state.
-        The diagonal structure reflects $\Pi^1$ (player 1 directly observes $W^1$);
-        off-diagonal panels show cross-channel inference mediated by the state dynamics
-        and observation precision $p_1$.
+        Each curve is a different evaluation time $t$ (light&#x2192;dark = early&#x2192;late).
+        The x-axis is filtered time $u$; the shock arrives at source time $s$ (set by the slider).
+        The three panels show the loading on each noise-state component $W^r$.
       </div>
     </div>
   </div>
@@ -527,8 +512,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       <div id="plot-imp-p2-slices" class="plot"></div>
       <div class="figure-caption">
         <strong>Impulse response of player 2's noise state.</strong>
-        Symmetric counterpart to player 1, with 1&#x2194;2 swapped.
-        $\Pi^2$ selects the $W^2$ observation channel.
+        Same as player 1, with $\Pi^2$ selecting the $W^2$ observation channel.
       </div>
     </div>
   </div>
@@ -1149,46 +1133,39 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
     const vline = {type:'line', x0:t[sIdx], x1:t[sIdx], y0:0, y1:1,
                    yref:'y domain', line:{dash:'dot', color:'rgba(0,0,0,0.2)', width:1}};
 
-    // Plot 1: State + resolved estimates
-    Plotly.react(stateDiv, [
-        {x: tSlice, y: X_col, name: 'Physical state X(t,s)',
-         line: {width: 3, color: '#333'}},
-        {x: tSlice, y: resolved1, name: 'Player 1 resolved (X \u2212 X\u0303\u00B9)',
-         line: {width: 2, color: '#1f77b4', dash: 'dash'}},
-        {x: tSlice, y: resolved2, name: 'Player 2 resolved (X \u2212 X\u0303\u00B2)',
-         line: {width: 2, color: '#d62728', dash: 'dash'}},
-    ], {
-        height: 280, margin: {t: 50, b: 45, l: 60, r: 30},
-        xaxis: {title: 'time t'}, yaxis: {title: 'state'},
-        shapes: [vline],
-        title: {text: `Physical state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}`,
-                font: {size: 14}},
-    }, plotCfg);
+    // Single row: state | controls | unresolved
+    const traces = [
+        {x: tSlice, y: X_col, name: 'State X(t,s)',
+         line: {width: 2.5, color: '#333'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: tSlice, y: resolved1, name: 'P1 resolved',
+         line: {width: 1.5, color: '#1f77b4', dash: 'dash'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: tSlice, y: resolved2, name: 'P2 resolved',
+         line: {width: 1.5, color: '#d62728', dash: 'dash'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: tSlice, y: calD1_col, name: 'P1 \uD835\uDCD3\u00B9',
+         line: {width: 2, color: '#1f77b4'}, xaxis: 'x2', yaxis: 'y2', showlegend: false},
+        {x: tSlice, y: calD2_col, name: 'P2 \uD835\uDCD3\u00B2',
+         line: {width: 2, color: '#d62728'}, xaxis: 'x2', yaxis: 'y2', showlegend: false},
+        {x: tSlice, y: Xt1_col, name: 'P1 X\u0303\u00B9',
+         line: {width: 2, color: '#1f77b4'}, xaxis: 'x3', yaxis: 'y3', showlegend: false},
+        {x: tSlice, y: Xt2_col, name: 'P2 X\u0303\u00B2',
+         line: {width: 2, color: '#d62728'}, xaxis: 'x3', yaxis: 'y3', showlegend: false},
+    ];
 
-    // Plot 2: Controls + unresolved
-    Plotly.react(ctrlDiv, [
-        {x: tSlice, y: calD1_col, name: 'Player 1 control \uD835\uDCD3\u00B9(t,s)',
-         line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: tSlice, y: calD2_col, name: 'Player 2 control \uD835\uDCD3\u00B2(t,s)',
-         line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: tSlice, y: Xt1_col, name: 'Player 1 unresolved X\u0303\u00B9(t,s)',
-         line: {width: 2, color: '#1f77b4'}, xaxis: 'x2', yaxis: 'y2'},
-        {x: tSlice, y: Xt2_col, name: 'Player 2 unresolved X\u0303\u00B2(t,s)',
-         line: {width: 2, color: '#d62728'}, xaxis: 'x2', yaxis: 'y2'},
-    ], {
-        height: 260, margin: {t: 45, b: 45, l: 60, r: 30},
-        grid: {rows: 1, columns: 2, pattern: 'independent', xgap: 0.12},
-        xaxis1: {title: 'time t'}, yaxis1: {title: 'control'},
-        xaxis2: {title: 'time t'}, yaxis2: {title: 'unresolved'},
-        shapes: [
-            {...vline, xref: 'x1'},
-            {...vline, xref: 'x2'},
-        ],
+    Plotly.react(stateDiv, traces, {
+        height: 300, margin: {t: 60, b: 45, l: 50, r: 20},
+        grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.06},
+        xaxis1: {title: 't'}, yaxis1: {title: 'state'},
+        xaxis2: {title: 't'}, yaxis2: {title: 'control'},
+        xaxis3: {title: 't'}, yaxis3: {title: 'unresolved'},
+        shapes: [{...vline, xref:'x1'}, {...vline, xref:'x2'}, {...vline, xref:'x3'}],
+        legend: {orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center'},
         annotations: [
-            {text: 'Primitive controls', xref: 'paper', yref: 'paper',
-             x: 0.22, y: 1.06, showarrow: false, font: {size: 13}},
-            {text: 'Unresolved state', xref: 'paper', yref: 'paper',
-             x: 0.78, y: 1.06, showarrow: false, font: {size: 13}},
+            {text: `State + resolved \u2014 ${chNames[channel]} shock at s=${sTime}`,
+             xref:'paper', yref:'paper', x:1/6, y:1.08, showarrow:false, font:{size:12}},
+            {text: 'Primitive controls', xref:'paper', yref:'paper',
+             x:0.5, y:1.08, showarrow:false, font:{size:12}},
+            {text: 'Unresolved state', xref:'paper', yref:'paper',
+             x:5/6, y:1.08, showarrow:false, font:{size:12}},
         ],
     }, plotCfg);
 }
@@ -1280,7 +1257,6 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
     const aStore = fullData[aKey];
     const hasAStore = xt && aStore;
 
-    // Need either A_store (for multi-t) or F kernel at T (for single-t fallback)
     if (!hasAStore && !fkData) return;
 
     const obsGain = playerNum === 1 ? (lightData.obs_gain1 || lightData.p1) : (lightData.obs_gain2 || lightData.p2);
@@ -1289,15 +1265,19 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
     const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
     const traces = [];
     const viridis = makeViridis(n);
-    const nCurves = n <= 60 ? 15 : 10;
-    const step = Math.max(1, Math.floor(n / nCurves));
 
     const sSlider = document.getElementById('impulse-s');
     const sIdx = Math.min(parseInt(sSlider.value), n - 1);
 
     if (hasAStore) {
-        // Full multi-t computation from A_store
-        for (let ti = step; ti < n; ti += step) {
+        // Compute F at multiple evaluation times t, extract column at s=sIdx.
+        // Only meaningful for ti >= sIdx (shock must have occurred).
+        const nCurves = n <= 60 ? 12 : 8;
+        const startTi = Math.max(sIdx + 1, 2);
+        const rangeTi = (n - 1) - startTi;
+        const step = Math.max(1, Math.floor(rangeTi / nCurves));
+
+        for (let ti = startTi; ti < n; ti += step) {
             const F = computeFColumnAtT(xt, aStore, obsGain, obsIdx, channel, ti);
             for (let r = 0; r < 3; r++) {
                 const col = [], uVals = [];
@@ -1314,8 +1294,26 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
                 });
             }
         }
+        // Always include t=T as the final (darkest) curve
+        if ((n - 1) % step !== 0 || startTi >= n) {
+            const F = computeFColumnAtT(xt, aStore, obsGain, obsIdx, channel, n - 1);
+            for (let r = 0; r < 3; r++) {
+                const col = [], uVals = [];
+                for (let u = 0; u < n; u++) {
+                    uVals.push(t[u]);
+                    col.push(F[r][u][sIdx]);
+                }
+                traces.push({
+                    x: uVals, y: col,
+                    mode: 'lines', line: {color: viridis[n - 1], width: 2},
+                    showlegend: false,
+                    xaxis: 'x' + (r + 1), yaxis: 'y' + (r + 1),
+                    hovertemplate: `t=T<br>u=%{x:.3f}<br>loading=%{y:.4g}`,
+                });
+            }
+        }
     } else {
-        // Fallback: use F kernel at T from WASM
+        // Fallback: F at T only
         const F = fkData[fKey];
         for (let r = 0; r < 3; r++) {
             const col = [], uVals = [];
@@ -1327,31 +1325,24 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
             traces.push({
                 x: uVals, y: col,
                 mode: 'lines', line: {color: '#333', width: 2},
-                name: `t = T (${t[n-1].toFixed(2)})`,
-                showlegend: r === 0,
+                name: `t = T`, showlegend: r === 0,
                 xaxis: 'x' + (r + 1), yaxis: 'y' + (r + 1),
-                hovertemplate: `t=T<br>u=%{x:.3f}<br>loading=%{y:.4g}`,
             });
         }
     }
 
     const sTime = t[sIdx].toFixed(3);
-    const modeNote = hasAStore ? '' : ' (t=T only \u2014 recompile WASM for multi-t)';
-    const subtitles = chNames.map(ch => `Effect on ${ch} component`);
-    const annotations = subtitles.map((l, i) => ({
-        text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.06, showarrow: false, font: {size: 13},
+    const annotations = chNames.map((ch, i) => ({
+        text: `Effect on ${ch}`, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 3, y: 1.02, showarrow: false, font: {size: 12},
     }));
-    annotations.push({
-        text: `Player ${playerNum} noise-state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}${modeNote}`,
-        xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.17, showarrow: false, font: {size: 14, color: '#333'},
-    });
 
     const layout = {
-        height: 340, margin: {t: 70, b: 55, l: 60, r: 30},
-        grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.08},
+        height: 300, margin: {t: 50, b: 50, l: 50, r: 20},
+        grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.06},
         annotations,
+        title: {text: `Player ${playerNum} noise-state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}`,
+                font: {size: 13}, y: 0.98},
     };
     for (let i = 1; i <= 3; i++) {
         layout['xaxis' + i] = {title: 'filtered time u'};
@@ -1646,7 +1637,7 @@ function renderTab(tab, p) {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
                 document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
-                plotImpulsePhysical('plot-imp-state', 'plot-imp-controls', data, ch, sIdx);
+                plotImpulsePhysical('plot-imp-state', null, data, ch, sIdx);
 
                 const light = ensureLight(p);
                 if (!light) { ok = false; break; }
