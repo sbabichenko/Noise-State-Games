@@ -139,6 +139,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <button class="tab-btn active" data-tab="tab-model">Model</button>
   <button class="tab-btn" data-tab="tab-guide">Guide</button>
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
+  <button class="tab-btn" data-tab="tab-simulation">Simulation</button>
   <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
   <button class="tab-btn" data-tab="tab-impulse">Impulse</button>
   <button class="tab-btn" data-tab="tab-statics">Statics</button>
@@ -339,6 +340,22 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       belief manipulation.
     </p>
 
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">Simulation</h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <strong>Simulation</strong> tab.
+    </p>
+    <p>
+      Generates pathwise realizations of the state, player estimates, and controls
+      using the computed kernels. Each path is constructed as
+      $X_j = \bar{X}_j + \sum_{k \le j}\sum_{\mathrm{ch}} X(j,k,\mathrm{ch})\,\Delta W^{\mathrm{ch}}_k$
+      where $\Delta W^{\mathrm{ch}}_k = \sqrt{\Delta t}\,Z$ with $Z\sim\mathcal{N}(0,1)$.
+      The $\pm 2\sigma$ bands are computed analytically from kernel norms:
+      $\mathrm{Var}(X_j) = \Delta t \sum_{k \le j}\sum_{\mathrm{ch}} X(j,k,\mathrm{ch})^2$.
+      Player estimates use $\hat{X}^i = X - \tilde{X}^i$ (state minus unresolved component).
+      The filter-error plot shows $X - \hat{X}^i = \tilde{X}^i$, the part of the state
+      invisible to each player. Use the Resample button or change the seed to draw new paths.
+    </p>
+
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Diagnostics</h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
       <strong>Diagnostics</strong> tab.
@@ -374,6 +391,45 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       Both wedges are hump-shaped: zero at t=0 (no inference yet) and t=T (terminal
       condition on the belief adjoint). Higher opponent precision amplifies the wedge,
       since a better-informed opponent reacts more sharply to drift perturbations.
+    </div>
+  </div>
+</div>
+
+<!-- Simulation tab -->
+<div id="tab-simulation" class="tab-panel">
+  <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; margin-bottom:12px; padding:4px 0;">
+    <button id="sim-resample" style="padding:6px 18px; font-weight:600; cursor:pointer;">Resample</button>
+    <label style="font-size:0.88em; font-weight:600;">
+      Paths: <input type="range" id="sim-npaths" min="1" max="30" value="5" style="vertical-align:middle; width:100px;">
+      <span id="sim-npaths-val">5</span>
+    </label>
+    <label style="font-size:0.88em; font-weight:600;">
+      <input type="checkbox" id="sim-bands" checked style="vertical-align:middle;"> Show &#xB1;2&#x3C3; bands
+    </label>
+    <label style="font-size:0.88em; font-weight:600;">
+      Seed: <input type="number" id="sim-seed" value="42" min="1" max="999999" style="width:70px; font-family:monospace;">
+    </label>
+  </div>
+  <div class="figure-block">
+    <div id="plot-sim-state" class="plot"></div>
+    <div class="figure-caption">
+      Pathwise state $X_t$ (gray) and player estimates $\hat{X}^i_t$ (blue/red),
+      with $\pm 2\sigma$ analytical variance bands (shaded). The mean path $\bar{X}(t)$ is shown dashed.
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-sim-controls" class="plot"></div>
+    <div class="figure-caption">
+      Realized controls $\mathcal{D}^1_t$ and $\mathcal{D}^2_t$ (primitive, pre-feedback)
+      with $\pm 2\sigma$ bands. These are the controls each player would apply given
+      their information set.
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-sim-filter" class="plot"></div>
+    <div class="figure-caption">
+      Filter errors $X_t - \hat{X}^i_t$ for each player with $\pm 2\sigma$ envelopes.
+      Wider envelopes indicate greater residual uncertainty.
     </div>
   </div>
 </div>
@@ -1472,7 +1528,7 @@ let pendingUpdate = false;  // Re-run after current solve finishes
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
 let lastParamsKey = '';
-const dirty = { 'tab-equilibrium': true, 'tab-kernels': true, 'tab-impulse': true, 'tab-statics': true, 'tab-diagnostics': true };
+const dirty = { 'tab-equilibrium': true, 'tab-simulation': true, 'tab-kernels': true, 'tab-impulse': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
 let currentN = 40, currentT = 1.0;
@@ -1524,6 +1580,271 @@ function invalidateIfChanged(p) {
     }
 }
 
+// ========== Simulation tab: seeded PRNG + pathwise realizations ==========
+
+// xorshift128 PRNG
+function xorshift128(state) {
+    let t = state[3];
+    t ^= t << 11; t ^= t >>> 8;
+    state[3] = state[2]; state[2] = state[1]; state[1] = state[0];
+    let s = state[0];
+    t ^= s; t ^= s >>> 19;
+    state[0] = t;
+    return (t >>> 0) / 4294967296;
+}
+
+function makeRng(seed) {
+    // Initialize state from seed using simple mixing
+    const s = [seed ^ 0xDEADBEEF, seed * 2654435761 >>> 0, seed * 340573321 >>> 0, seed ^ 0xCAFEBABE];
+    // Warm up
+    for (let i = 0; i < 20; i++) xorshift128(s);
+    let spare = null;
+    return function randn() {
+        // Box-Muller
+        if (spare !== null) { const v = spare; spare = null; return v; }
+        let u, v, s2;
+        do {
+            u = 2 * xorshift128(s) - 1;
+            v = 2 * xorshift128(s) - 1;
+            s2 = u * u + v * v;
+        } while (s2 >= 1 || s2 === 0);
+        const f = Math.sqrt(-2 * Math.log(s2) / s2);
+        spare = v * f;
+        return u * f;
+    };
+}
+
+function simulatePaths(data, lightData, nPaths, seed) {
+    const n = data.t.length;
+    const dt = data.t.length > 1 ? data.t[1] - data.t[0] : 1;
+    const sqrtDt = Math.sqrt(dt);
+    const paths = [];
+
+    for (let p = 0; p < nPaths; p++) {
+        const rng = makeRng(seed + p * 7919);
+
+        // Generate dW[ch][k] for ch=0,1,2 and k=0..n-1
+        const dW = [[], [], []];
+        for (let k = 0; k < n; k++) {
+            dW[0].push(sqrtDt * rng());
+            dW[1].push(sqrtDt * rng());
+            dW[2].push(sqrtDt * rng());
+        }
+
+        // X[j] = barX[j] + sum_{k<=j} sum_ch X_kernel[j][k][ch] * dW[ch][k]
+        const X = new Float64Array(n);
+        const Xhat1 = new Float64Array(n);  // player 1 estimate
+        const Xhat2 = new Float64Array(n);  // player 2 estimate
+        const calD1 = new Float64Array(n);  // primitive control 1
+        const calD2 = new Float64Array(n);  // primitive control 2
+
+        for (let j = 0; j < n; j++) {
+            let xj = lightData.barX[j];
+            let xh1 = lightData.barX[j];  // estimate starts from mean
+            let xh2 = lightData.barX[j];
+            let cd1 = lightData.barD1[j];
+            let cd2 = lightData.barD2[j];
+
+            for (let k = 0; k <= j; k++) {
+                for (let ch = 0; ch < 3; ch++) {
+                    const w = dW[ch][k];
+                    xj += data.X['ch' + ch][j][k] * w;
+                    // Xtilde^i = X - Xhat^i, so Xhat^i = X - Xtilde^i
+                    // i.e., Xhat1[j] = barX[j] + sum (X - Xtilde1) kernel * dW
+                    if (data.Xtilde1) {
+                        xh1 += (data.X['ch' + ch][j][k] - data.Xtilde1['ch' + ch][j][k]) * w;
+                        xh2 += (data.X['ch' + ch][j][k] - data.Xtilde2['ch' + ch][j][k]) * w;
+                    }
+                    cd1 += data.calD1['ch' + ch][j][k] * w;
+                    cd2 += data.calD2['ch' + ch][j][k] * w;
+                }
+            }
+            X[j] = xj;
+            Xhat1[j] = xh1;
+            Xhat2[j] = xh2;
+            calD1[j] = cd1;
+            calD2[j] = cd2;
+        }
+
+        paths.push({ X, Xhat1, Xhat2, calD1, calD2 });
+    }
+    return paths;
+}
+
+function computeBands(data, lightData) {
+    const n = data.t.length;
+    const dt = data.t.length > 1 ? data.t[1] - data.t[0] : 1;
+
+    // Variance of X[j] = sum_{k<=j} sum_ch X_kernel[j][k][ch]^2 * dt
+    const varX = new Float64Array(n);
+    const varXhat1 = new Float64Array(n);
+    const varXhat2 = new Float64Array(n);
+    const varCalD1 = new Float64Array(n);
+    const varCalD2 = new Float64Array(n);
+    const varErr1 = new Float64Array(n);  // var(X - Xhat1) = var(Xtilde1)
+    const varErr2 = new Float64Array(n);
+
+    for (let j = 0; j < n; j++) {
+        let vx = 0, vh1 = 0, vh2 = 0, vd1 = 0, vd2 = 0, ve1 = 0, ve2 = 0;
+        for (let k = 0; k <= j; k++) {
+            for (let ch = 0; ch < 3; ch++) {
+                const xk = data.X['ch' + ch][j][k];
+                vx += xk * xk * dt;
+                vd1 += data.calD1['ch' + ch][j][k] ** 2 * dt;
+                vd2 += data.calD2['ch' + ch][j][k] ** 2 * dt;
+                if (data.Xtilde1) {
+                    const xth1 = data.Xtilde1['ch' + ch][j][k];
+                    const xth2 = data.Xtilde2['ch' + ch][j][k];
+                    ve1 += xth1 * xth1 * dt;
+                    ve2 += xth2 * xth2 * dt;
+                    vh1 += (xk - xth1) ** 2 * dt;
+                    vh2 += (xk - xth2) ** 2 * dt;
+                }
+            }
+        }
+        varX[j] = vx;
+        varXhat1[j] = vh1;
+        varXhat2[j] = vh2;
+        varCalD1[j] = vd1;
+        varCalD2[j] = vd2;
+        varErr1[j] = ve1;
+        varErr2[j] = ve2;
+    }
+
+    return { varX, varXhat1, varXhat2, varCalD1, varCalD2, varErr1, varErr2 };
+}
+
+function plotSimState(divId, t, paths, bands, lightData, showBands) {
+    const traces = [];
+    const barX = lightData.barX;
+
+    // Mean path (dashed)
+    traces.push({ x: t, y: barX, mode: 'lines', line: { color: '#333', dash: 'dash', width: 2 },
+                  name: 'Mean X\u0304(t)', legendgroup: 'mean' });
+
+    // ±2σ bands for X
+    if (showBands) {
+        const upper = t.map((_, j) => barX[j] + 2 * Math.sqrt(bands.varX[j]));
+        const lower = t.map((_, j) => barX[j] - 2 * Math.sqrt(bands.varX[j]));
+        traces.push({ x: t, y: upper, mode: 'lines', line: { width: 0 }, showlegend: false });
+        traces.push({ x: t, y: lower, mode: 'lines', line: { width: 0 }, fill: 'tonexty',
+                      fillcolor: 'rgba(150,150,150,0.15)', name: '±2σ (state)', legendgroup: 'bandX' });
+    }
+
+    // Path traces
+    for (let p = 0; p < paths.length; p++) {
+        traces.push({ x: t, y: Array.from(paths[p].X), mode: 'lines',
+                      line: { color: 'rgba(120,120,120,0.5)', width: 1 },
+                      name: p === 0 ? 'X(t) paths' : undefined, legendgroup: 'pathX',
+                      showlegend: p === 0 });
+        traces.push({ x: t, y: Array.from(paths[p].Xhat1), mode: 'lines',
+                      line: { color: 'rgba(31,119,180,0.4)', width: 1 },
+                      name: p === 0 ? 'X\u0302\u00b9(t) paths' : undefined, legendgroup: 'pathXh1',
+                      showlegend: p === 0 });
+        traces.push({ x: t, y: Array.from(paths[p].Xhat2), mode: 'lines',
+                      line: { color: 'rgba(214,39,40,0.4)', width: 1 },
+                      name: p === 0 ? 'X\u0302\u00b2(t) paths' : undefined, legendgroup: 'pathXh2',
+                      showlegend: p === 0 });
+    }
+
+    Plotly.react(divId, traces, {
+        title: { text: 'State and Player Estimates', y: 0.98 },
+        xaxis: { title: 't' }, yaxis: { title: '' },
+        margin: { t: 40, b: 40, l: 50, r: 20 },
+        legend: { orientation: 'h', y: -0.15 },
+        height: 380
+    }, { responsive: true });
+}
+
+function plotSimControls(divId, t, paths, bands, lightData, showBands) {
+    const traces = [];
+
+    // Mean controls (dashed)
+    traces.push({ x: t, y: lightData.barD1, mode: 'lines',
+                  line: { color: '#1f77b4', dash: 'dash', width: 2 }, name: 'Mean D\u0304\u00b9' });
+    traces.push({ x: t, y: lightData.barD2, mode: 'lines',
+                  line: { color: '#d62728', dash: 'dash', width: 2 }, name: 'Mean D\u0304\u00b2' });
+
+    // Bands
+    if (showBands) {
+        const u1 = t.map((_, j) => lightData.barD1[j] + 2 * Math.sqrt(bands.varCalD1[j]));
+        const l1 = t.map((_, j) => lightData.barD1[j] - 2 * Math.sqrt(bands.varCalD1[j]));
+        traces.push({ x: t, y: u1, mode: 'lines', line: { width: 0 }, showlegend: false });
+        traces.push({ x: t, y: l1, mode: 'lines', line: { width: 0 }, fill: 'tonexty',
+                      fillcolor: 'rgba(31,119,180,0.12)', name: '±2σ (D\u00b9)', legendgroup: 'bd1' });
+        const u2 = t.map((_, j) => lightData.barD2[j] + 2 * Math.sqrt(bands.varCalD2[j]));
+        const l2 = t.map((_, j) => lightData.barD2[j] - 2 * Math.sqrt(bands.varCalD2[j]));
+        traces.push({ x: t, y: u2, mode: 'lines', line: { width: 0 }, showlegend: false });
+        traces.push({ x: t, y: l2, mode: 'lines', line: { width: 0 }, fill: 'tonexty',
+                      fillcolor: 'rgba(214,39,40,0.12)', name: '±2σ (D\u00b2)', legendgroup: 'bd2' });
+    }
+
+    // Path traces
+    for (let p = 0; p < paths.length; p++) {
+        traces.push({ x: t, y: Array.from(paths[p].calD1), mode: 'lines',
+                      line: { color: 'rgba(31,119,180,0.4)', width: 1 },
+                      name: p === 0 ? 'D\u00b9(t) paths' : undefined, legendgroup: 'pd1',
+                      showlegend: p === 0 });
+        traces.push({ x: t, y: Array.from(paths[p].calD2), mode: 'lines',
+                      line: { color: 'rgba(214,39,40,0.4)', width: 1 },
+                      name: p === 0 ? 'D\u00b2(t) paths' : undefined, legendgroup: 'pd2',
+                      showlegend: p === 0 });
+    }
+
+    Plotly.react(divId, traces, {
+        title: { text: 'Realized Controls (Primitive)', y: 0.98 },
+        xaxis: { title: 't' }, yaxis: { title: '' },
+        margin: { t: 40, b: 40, l: 50, r: 20 },
+        legend: { orientation: 'h', y: -0.15 },
+        height: 380
+    }, { responsive: true });
+}
+
+function plotSimFilterError(divId, t, paths, bands, showBands) {
+    const traces = [];
+
+    // Bands
+    if (showBands) {
+        const u1 = t.map((_, j) => 2 * Math.sqrt(bands.varErr1[j]));
+        const l1 = t.map((_, j) => -2 * Math.sqrt(bands.varErr1[j]));
+        traces.push({ x: t, y: u1, mode: 'lines', line: { width: 0 }, showlegend: false });
+        traces.push({ x: t, y: l1, mode: 'lines', line: { width: 0 }, fill: 'tonexty',
+                      fillcolor: 'rgba(31,119,180,0.12)', name: '±2σ (err\u00b9)', legendgroup: 'be1' });
+        const u2 = t.map((_, j) => 2 * Math.sqrt(bands.varErr2[j]));
+        const l2 = t.map((_, j) => -2 * Math.sqrt(bands.varErr2[j]));
+        traces.push({ x: t, y: u2, mode: 'lines', line: { width: 0 }, showlegend: false });
+        traces.push({ x: t, y: l2, mode: 'lines', line: { width: 0 }, fill: 'tonexty',
+                      fillcolor: 'rgba(214,39,40,0.12)', name: '±2σ (err\u00b2)', legendgroup: 'be2' });
+    }
+
+    // Path traces: filter error = X - Xhat
+    for (let p = 0; p < paths.length; p++) {
+        const n = paths[p].X.length;
+        const err1 = new Float64Array(n);
+        const err2 = new Float64Array(n);
+        for (let j = 0; j < n; j++) {
+            err1[j] = paths[p].X[j] - paths[p].Xhat1[j];
+            err2[j] = paths[p].X[j] - paths[p].Xhat2[j];
+        }
+        traces.push({ x: t, y: Array.from(err1), mode: 'lines',
+                      line: { color: 'rgba(31,119,180,0.4)', width: 1 },
+                      name: p === 0 ? 'X-X\u0302\u00b9 paths' : undefined, legendgroup: 'pe1',
+                      showlegend: p === 0 });
+        traces.push({ x: t, y: Array.from(err2), mode: 'lines',
+                      line: { color: 'rgba(214,39,40,0.4)', width: 1 },
+                      name: p === 0 ? 'X-X\u0302\u00b2 paths' : undefined, legendgroup: 'pe2',
+                      showlegend: p === 0 });
+    }
+
+    Plotly.react(divId, traces, {
+        title: { text: 'Filter Errors', y: 0.98 },
+        xaxis: { title: 't' }, yaxis: { title: '' },
+        margin: { t: 40, b: 40, l: 50, r: 20 },
+        legend: { orientation: 'h', y: -0.15 },
+        height: 380
+    }, { responsive: true });
+}
+
 function ensureLight(p) {
     invalidateIfChanged(p);
     if (!lightData) {
@@ -1569,6 +1890,21 @@ function renderTab(tab, p) {
                 if (!data) { ok = false; break; }
                 plotControls('plot-controls', data, p.b1, p.b2);
                 plotWedges('plot-wedges', data);
+                break;
+            }
+            case 'tab-simulation': {
+                const data = ensureFull(p);
+                if (!data) { ok = false; break; }
+                const light = ensureLight(p);
+                if (!light) { ok = false; break; }
+                const nPaths = parseInt(document.getElementById('sim-npaths').value) || 5;
+                const seed = parseInt(document.getElementById('sim-seed').value) || 42;
+                const showBands = document.getElementById('sim-bands').checked;
+                const paths = simulatePaths(data, light, nPaths, seed);
+                const bands = computeBands(data, light);
+                plotSimState('plot-sim-state', data.t, paths, bands, light, showBands);
+                plotSimControls('plot-sim-controls', data.t, paths, bands, light, showBands);
+                plotSimFilterError('plot-sim-filter', data.t, paths, bands, showBands);
                 break;
             }
             case 'tab-kernels': {
@@ -1766,6 +2102,25 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     }
     document.getElementById('impulse-s').addEventListener('input', onImpulseChange);
     document.getElementById('impulse-channel').addEventListener('change', onImpulseChange);
+
+    // Simulation controls
+    function onSimChange() {
+        if (activeTab !== 'tab-simulation') return;
+        dirty['tab-simulation'] = true;
+        updateActive();
+    }
+    document.getElementById('sim-resample').addEventListener('click', function() {
+        // Increment seed to get new paths
+        const seedEl = document.getElementById('sim-seed');
+        seedEl.value = parseInt(seedEl.value) + 1;
+        onSimChange();
+    });
+    document.getElementById('sim-npaths').addEventListener('input', function() {
+        document.getElementById('sim-npaths-val').textContent = this.value;
+        onSimChange();
+    });
+    document.getElementById('sim-bands').addEventListener('change', onSimChange);
+    document.getElementById('sim-seed').addEventListener('change', onSimChange);
 
     // Rank kernel selector — re-render the rank subtab
     document.getElementById('rank-kernel-select').addEventListener('change', function() {
