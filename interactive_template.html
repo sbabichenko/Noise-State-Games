@@ -1157,7 +1157,7 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
         {x: tSlice, y: resolved2, name: 'Player 2 resolved (X \u2212 X\u0303\u00B2)',
          line: {width: 2, color: '#d62728', dash: 'dash'}},
     ], {
-        height: 380, margin: {t: 50, b: 50, l: 60, r: 30},
+        height: 280, margin: {t: 50, b: 45, l: 60, r: 30},
         xaxis: {title: 'time t'}, yaxis: {title: 'state'},
         shapes: [vline],
         title: {text: `Physical state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}`,
@@ -1175,7 +1175,7 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
         {x: tSlice, y: Xt2_col, name: 'Player 2 unresolved X\u0303\u00B2(t,s)',
          line: {width: 2, color: '#d62728'}, xaxis: 'x2', yaxis: 'y2'},
     ], {
-        height: 340, margin: {t: 45, b: 50, l: 60, r: 30},
+        height: 260, margin: {t: 45, b: 45, l: 60, r: 30},
         grid: {rows: 1, columns: 2, pattern: 'independent', xgap: 0.12},
         xaxis1: {title: 'time t'}, yaxis1: {title: 'control'},
         xaxis2: {title: 'time t'}, yaxis2: {title: 'unresolved'},
@@ -1268,17 +1268,20 @@ function computeFColumnAtT(Xtilde, A_store, obsGain, obsIdx, source, tIdx) {
     return result; // result[target_ch][u][s]
 }
 
-function plotImpulsePlayerSlices(divId, fullData, lightData, playerNum, channel) {
+function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, channel) {
     const t = fullData.t;
     const n = t.length;
 
     const xtKey = playerNum === 1 ? 'Xtilde1' : 'Xtilde2';
     const aKey = playerNum === 1 ? 'A_store1' : 'A_store2';
+    const fKey = playerNum === 1 ? 'F1' : 'F2';
     const xt = fullData[xtKey];
     const aStore = fullData[aKey];
-    if (!xt || !aStore) return;
+    const hasAStore = xt && aStore;
 
-    // Get observation parameters from light data
+    // Need either A_store (for multi-t) or F kernel at T (for single-t fallback)
+    if (!hasAStore && !fkData) return;
+
     const obsGain = playerNum === 1 ? (lightData.obs_gain1 || lightData.p1) : (lightData.obs_gain2 || lightData.p2);
     const obsIdx = playerNum === 1 ? (lightData.obs_idx1 != null ? lightData.obs_idx1 : 1) : (lightData.obs_idx2 != null ? lightData.obs_idx2 : 2);
 
@@ -1288,48 +1291,64 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, playerNum, channel)
     const nCurves = n <= 60 ? 15 : 10;
     const step = Math.max(1, Math.floor(n / nCurves));
 
-    // Get shock time from slider
     const sSlider = document.getElementById('impulse-s');
     const sIdx = Math.min(parseInt(sSlider.value), n - 1);
 
-    // Compute F at multiple evaluation times t and extract the column at s=sIdx
-    for (let ti = step; ti < n; ti += step) {
-        // Compute F^i(ti, u, s)[r][channel] for all u,s
-        const F = computeFColumnAtT(xt, aStore, obsGain, obsIdx, channel, ti);
-
-        for (let r = 0; r < 3; r++) {
-            // Extract column at s=sIdx: F(ti, u, sIdx)[r] for u=0..ti
-            const col = [];
-            const uVals = [];
-            for (let u = 0; u <= ti; u++) {
-                uVals.push(t[u]);
-                col.push(F[r][u][sIdx]);
+    if (hasAStore) {
+        // Full multi-t computation from A_store
+        for (let ti = step; ti < n; ti += step) {
+            const F = computeFColumnAtT(xt, aStore, obsGain, obsIdx, channel, ti);
+            for (let r = 0; r < 3; r++) {
+                const col = [], uVals = [];
+                for (let u = 0; u <= ti; u++) {
+                    uVals.push(t[u]);
+                    col.push(F[r][u][sIdx]);
+                }
+                traces.push({
+                    x: uVals, y: col,
+                    mode: 'lines', line: {color: viridis[ti], width: 1.5},
+                    showlegend: false,
+                    xaxis: 'x' + (r + 1), yaxis: 'y' + (r + 1),
+                    hovertemplate: `t=${t[ti].toFixed(3)}<br>u=%{x:.3f}<br>loading=%{y:.4g}`,
+                });
             }
-
+        }
+    } else {
+        // Fallback: use F kernel at T from WASM
+        const F = fkData[fKey];
+        for (let r = 0; r < 3; r++) {
+            const col = [], uVals = [];
+            const key = `r${r}c${channel}`;
+            for (let u = 0; u < n; u++) {
+                uVals.push(t[u]);
+                col.push(F[key][u][sIdx]);
+            }
             traces.push({
                 x: uVals, y: col,
-                mode: 'lines', line: {color: viridis[ti], width: 1.5},
-                showlegend: false,
+                mode: 'lines', line: {color: '#333', width: 2},
+                name: `t = T (${t[n-1].toFixed(2)})`,
+                showlegend: r === 0,
                 xaxis: 'x' + (r + 1), yaxis: 'y' + (r + 1),
-                hovertemplate: `t=${t[ti].toFixed(3)}<br>u=%{x:.3f}<br>loading=%{y:.4g}`,
+                hovertemplate: `t=T<br>u=%{x:.3f}<br>loading=%{y:.4g}`,
             });
         }
     }
 
     const sTime = t[sIdx].toFixed(3);
+    const modeNote = hasAStore ? '' : ' (t=T only \u2014 recompile WASM for multi-t)';
     const subtitles = chNames.map(ch => `Effect on ${ch} component`);
     const annotations = subtitles.map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
         x: (i + 0.5) / 3, y: 1.06, showarrow: false, font: {size: 13},
     }));
     annotations.push({
-        text: `Player ${playerNum} noise-state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}`,
+        text: `Player ${playerNum} noise-state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}${modeNote}`,
         xref: 'paper', yref: 'paper',
         x: 0.5, y: 1.17, showarrow: false, font: {size: 14, color: '#333'},
     });
 
     const layout = {
-        height: 420, margin: {t: 70, b: 55, l: 60, r: 30},
+        height: 340, margin: {t: 70, b: 55, l: 60, r: 30},
         grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.08},
         annotations,
     };
@@ -1630,8 +1649,10 @@ function renderTab(tab, p) {
 
                 const light = ensureLight(p);
                 if (!light) { ok = false; break; }
-                plotImpulsePlayerSlices('plot-imp-p1-slices', data, light, 1, ch);
-                plotImpulsePlayerSlices('plot-imp-p2-slices', data, light, 2, ch);
+                // Use F kernel at T as fallback when A_store is not available
+                const fk = data.A_store1 ? null : ensureFKernel(p);
+                plotImpulsePlayerSlices('plot-imp-p1-slices', data, light, fk, 1, ch);
+                plotImpulsePlayerSlices('plot-imp-p2-slices', data, light, fk, 2, ch);
                 break;
             }
             case 'tab-fkernel': {
