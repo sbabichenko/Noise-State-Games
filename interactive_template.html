@@ -487,13 +487,23 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   </div>
   <div id="imp-physical" class="imp-panel">
     <div class="figure-block">
-      <div id="plot-imp-physical" class="plot"></div>
+      <div id="plot-imp-state" class="plot"></div>
       <div class="figure-caption">
-        Impulse response of the physical state and its resolved/unresolved decomposition
-        for each player, for a unit shock in the selected noise at time s.
-        <strong>Left</strong>: state X(t,s), resolved estimates X&minus;X&#x0303;&#xB9; and X&minus;X&#x0303;&#xB2;.
-        <strong>Center</strong>: unresolved components X&#x0303;&#xB9; and X&#x0303;&#xB2;.
-        <strong>Right</strong>: control responses &#x1D4D3;&#xB9; and &#x1D4D3;&#xB2;.
+        <strong>Impulse response of the physical state.</strong>
+        A unit shock in the selected noise source arrives at time $s$.
+        The black curve is the true state $X(t,s)$. Dashed curves show what each player
+        has resolved (conditional mean $X - \widetilde{X}^i$): the gap between the black
+        curve and each dashed curve is what that player does not yet know.
+      </div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-imp-controls" class="plot"></div>
+      <div class="figure-caption">
+        <strong>Control responses.</strong>
+        How each player's equilibrium control reacts to the shock over time.
+        Left: primitive controls $\mathcal{D}^i(t,s)$ (what enters the state equation).
+        Right: unresolved state components $\widetilde{X}^i(t,s)$ (the residual uncertainty
+        each player faces about the shock's effect on the state).
       </div>
     </div>
   </div>
@@ -501,13 +511,14 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div class="figure-block">
       <div id="plot-imp-p1-slices" class="plot"></div>
       <div class="figure-caption">
-        Player 1's filtration kernel $F^1(T,u,s)$ for the selected source channel:
-        how a shock at source time $s$ in the chosen noise maps into player 1's
-        noise state at filtered time $u$ (at terminal evaluation $t=T$).
-        Each panel shows a target channel ($W^0$, $W^1$, $W^2$).
-        Curves are colored by $u$ from purple (early) to yellow (late).
-        The observation projection $\Pi^1$ and signal precision $p_1$ shape which
-        components player 1 resolves quickly vs. slowly.
+        <strong>Impulse response of player 1's noise state.</strong>
+        Each curve shows how a shock at source time $s$ (colored purple&#x2192;yellow for
+        early&#x2192;late $s$) propagates into the $W^r$ component of player 1's
+        noise-state coordinate at filtered time $u$ (x-axis), evaluated at $t = T$.
+        The three panels correspond to the three target components of the noise state.
+        The diagonal structure reflects $\Pi^1$ (player 1 directly observes $W^1$);
+        off-diagonal panels show cross-channel inference mediated by the state dynamics
+        and observation precision $p_1$.
       </div>
     </div>
   </div>
@@ -515,8 +526,8 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div class="figure-block">
       <div id="plot-imp-p2-slices" class="plot"></div>
       <div class="figure-caption">
-        Player 2's filtration kernel $F^2(T,u,s)$ for the selected source channel:
-        symmetric counterpart to $F^1$, with 1&#x2194;2 swapped.
+        <strong>Impulse response of player 2's noise state.</strong>
+        Symmetric counterpart to player 1, with 1&#x2194;2 swapped.
         $\Pi^2$ selects the $W^2$ observation channel.
       </div>
     </div>
@@ -736,6 +747,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
     const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
     if (numKernels >= 7) kernelNames.push('Xtilde1', 'Xtilde2');
     if (numKernels >= 9) kernelNames.push('Vkernel1', 'Vkernel2');
+    if (numKernels >= 11) kernelNames.push('A_store1', 'A_store2');
     const result = {t};
     let offset = 0;
     for (const name of kernelNames) {
@@ -1112,7 +1124,7 @@ function plotWedgesSweep(divId, sweep) {
 }
 
 // --- impulse response ---
-function plotImpulsePhysical(divId, fullData, channel, sIdx) {
+function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
     const t = fullData.t;
     const n = t.length;
     const tSlice = t.slice(sIdx);
@@ -1128,108 +1140,202 @@ function plotImpulsePhysical(divId, fullData, channel, sIdx) {
     const Xt2_col = fullData.Xtilde2 ? getCol(fullData.Xtilde2, channel, sIdx) : X_col.map(() => 0);
     const calD1_col = getCol(fullData.calD1, channel, sIdx);
     const calD2_col = getCol(fullData.calD2, channel, sIdx);
-
     const resolved1 = X_col.map((x, i) => x - Xt1_col[i]);
     const resolved2 = X_col.map((x, i) => x - Xt2_col[i]);
 
     const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
+    const sTime = t[sIdx].toFixed(3);
+    const vline = {type:'line', x0:t[sIdx], x1:t[sIdx], y0:0, y1:1,
+                   yref:'y domain', line:{dash:'dot', color:'rgba(0,0,0,0.2)', width:1}};
 
-    const traces = [
-        // Panel 1: State + resolved
-        {x: tSlice, y: X_col, name: '$X(t,s)$', line: {width: 2.5, color: '#333'},
-         xaxis: 'x1', yaxis: 'y1'},
-        {x: tSlice, y: resolved1, name: '$X-\\tilde{X}^1$', line: {width: 2, color: '#1f77b4', dash: 'dash'},
-         xaxis: 'x1', yaxis: 'y1'},
-        {x: tSlice, y: resolved2, name: '$X-\\tilde{X}^2$', line: {width: 2, color: '#d62728', dash: 'dash'},
-         xaxis: 'x1', yaxis: 'y1'},
-        // Panel 2: Unresolved
-        {x: tSlice, y: Xt1_col, name: '$\\tilde{X}^1$', line: {width: 2, color: '#1f77b4'},
-         xaxis: 'x2', yaxis: 'y2'},
-        {x: tSlice, y: Xt2_col, name: '$\\tilde{X}^2$', line: {width: 2, color: '#d62728'},
-         xaxis: 'x2', yaxis: 'y2'},
-        // Panel 3: Controls
-        {x: tSlice, y: calD1_col, name: '$\\mathcal{D}^1$', line: {width: 2, color: '#1f77b4'},
-         xaxis: 'x3', yaxis: 'y3'},
-        {x: tSlice, y: calD2_col, name: '$\\mathcal{D}^2$', line: {width: 2, color: '#d62728'},
-         xaxis: 'x3', yaxis: 'y3'},
-    ];
+    // Plot 1: State + resolved estimates
+    Plotly.react(stateDiv, [
+        {x: tSlice, y: X_col, name: 'Physical state X(t,s)',
+         line: {width: 3, color: '#333'}},
+        {x: tSlice, y: resolved1, name: 'Player 1 resolved (X \u2212 X\u0303\u00B9)',
+         line: {width: 2, color: '#1f77b4', dash: 'dash'}},
+        {x: tSlice, y: resolved2, name: 'Player 2 resolved (X \u2212 X\u0303\u00B2)',
+         line: {width: 2, color: '#d62728', dash: 'dash'}},
+    ], {
+        height: 380, margin: {t: 50, b: 50, l: 60, r: 30},
+        xaxis: {title: 'time t'}, yaxis: {title: 'state'},
+        shapes: [vline],
+        title: {text: `Physical state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}`,
+                font: {size: 14}},
+    }, plotCfg);
 
-    const subtitles = ['State & resolved', 'Unresolved', 'Controls'];
-    const annotations = subtitles.map((l, i) => ({
-        text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
-    }));
-    annotations.push({
-        text: `${chNames[channel]} shock at s = ${t[sIdx].toFixed(3)}`,
-        xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
-    });
-
-    const layout = {
-        height: 340, margin: {...margin, t: 60},
-        grid: {rows: 1, columns: 3, pattern: 'independent'},
-        annotations,
-        legend: {orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center'},
-        shapes: [],
-    };
-    for (let i = 1; i <= 3; i++) {
-        layout['xaxis' + i] = {title: 't'};
-        layout['yaxis' + i] = {};
-        layout.shapes.push({
-            type: 'line', x0: t[sIdx], x1: t[sIdx], y0: 0, y1: 1,
-            yref: 'y' + i + ' domain', xref: 'x' + i,
-            line: {dash: 'dot', color: 'rgba(0,0,0,0.25)', width: 1},
-        });
-    }
-    Plotly.react(divId, traces, layout, plotCfg);
+    // Plot 2: Controls + unresolved
+    Plotly.react(ctrlDiv, [
+        {x: tSlice, y: calD1_col, name: 'Player 1 control \uD835\uDCD3\u00B9(t,s)',
+         line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: tSlice, y: calD2_col, name: 'Player 2 control \uD835\uDCD3\u00B2(t,s)',
+         line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: tSlice, y: Xt1_col, name: 'Player 1 unresolved X\u0303\u00B9(t,s)',
+         line: {width: 2, color: '#1f77b4'}, xaxis: 'x2', yaxis: 'y2'},
+        {x: tSlice, y: Xt2_col, name: 'Player 2 unresolved X\u0303\u00B2(t,s)',
+         line: {width: 2, color: '#d62728'}, xaxis: 'x2', yaxis: 'y2'},
+    ], {
+        height: 340, margin: {t: 45, b: 50, l: 60, r: 30},
+        grid: {rows: 1, columns: 2, pattern: 'independent', xgap: 0.12},
+        xaxis1: {title: 'time t'}, yaxis1: {title: 'control'},
+        xaxis2: {title: 'time t'}, yaxis2: {title: 'unresolved'},
+        shapes: [
+            {...vline, xref: 'x1'},
+            {...vline, xref: 'x2'},
+        ],
+        annotations: [
+            {text: 'Primitive controls', xref: 'paper', yref: 'paper',
+             x: 0.22, y: 1.06, showarrow: false, font: {size: 13}},
+            {text: 'Unresolved state', xref: 'paper', yref: 'paper',
+             x: 0.78, y: 1.06, showarrow: false, font: {size: 13}},
+        ],
+    }, plotCfg);
 }
 
-function plotImpulsePlayerSlices(divId, fKernelData, playerNum, channel) {
-    const t = fKernelData.t;
-    const fKey = playerNum === 1 ? 'F1' : 'F2';
-    const fPlayer = fKernelData[fKey];
-    if (!fPlayer) return;
+// Compute F^i(t, u, source)[target][source] for all u at a given t_idx,
+// using the rank-1 recurrence: F[j][u][s] = F[j-1][u][s] + Xtilde[j][u] * A[j][s]
+// For a fixed source channel, this reduces to a scalar recurrence per (u, target).
+function computeFColumnAtT(Xtilde, A_store, obsGain, obsIdx, source, tIdx) {
+    const n = N;
+    // result[target][u] = F^i(tIdx, u, source)[target]
+    // We only need the 'source' column of the 3x3 matrix at each (u).
+    // F[j][u][source](target) = F[j-1][u][source](target) + Xtilde[j][u](target) * A[j][source](source_ch)
+    //
+    // But the border terms also matter:
+    // F[j][u][j](target) = obsGain * Xtilde[j][u](target) * e_i(source)  (new column at s=j)
+    // F[j][j][u](target) = obsGain * e_i(target) * Xtilde[j][u](source)  (new row at u=j)
+
+    // We track F[j][u][source] as a vector of length 3 for each u <= j
+    // But source is fixed (the selected shock channel), so we compute F[:, :, source_time]
+    // Actually we want F(t, u, source_channel) which sums over all primitive shock times.
+    // No — we want the column of F at a fixed source TIME s from the slider, not source channel.
+
+    // Wait — re-reading. The function signature has 'source' = source channel index.
+    // For the impulse response of the noise state, we want:
+    // For a specific source channel j (= channel dropdown),
+    // F^i(t, u, s)[r][j] gives the loading on the r-th component of the noise state
+    // at filtered time u, from a shock in channel j at primitive time s.
+    //
+    // To show slices at each t: for each evaluation time t_idx,
+    // we need the FULL F[t_idx][u][s] for the source column j.
+    // Then for a fixed s (from the slider), we extract F[t_idx][:][s][:, j] vs u.
+    //
+    // So we need to build F[t_idx] fully for the source column j.
+
+    // F_col[u][s] = F(tIdx, u, s)[target][source] — but we do this for all 3 targets at once.
+    // Store as: F_col[u * n + s] = [target0, target1, target2]
+    // Actually let's just store per-target: result_r[u][s]
+    const result = [
+        Array.from({length: n}, () => new Float64Array(n)),
+        Array.from({length: n}, () => new Float64Array(n)),
+        Array.from({length: n}, () => new Float64Array(n)),
+    ];
+
+    const xtCh = [Xtilde['ch0'], Xtilde['ch1'], Xtilde['ch2']];
+    const aCh = [A_store['ch0'], A_store['ch1'], A_store['ch2']];
+
+    for (let j = 1; j <= tIdx; j++) {
+        // Border: new column s=j
+        for (let u = 0; u < j; u++) {
+            for (let r = 0; r < 3; r++) {
+                // F[j][u][j](r, source) = obsGain * Xtilde[j][u](r) * e_i(source)
+                // e_i(source) = 1 if source == obsIdx, else 0
+                result[r][u][j] = (source === obsIdx) ? obsGain * xtCh[r][j][u] : 0;
+            }
+        }
+        // Border: new row u=j
+        for (let s = 0; s < j; s++) {
+            for (let r = 0; r < 3; r++) {
+                // F[j][j][s](r, source) = obsGain * e_i(r) * Xtilde[j][s](source)
+                // e_i(r) = 1 if r == obsIdx, else 0
+                result[r][j][s] = (r === obsIdx) ? obsGain * xtCh[source][j][s] : 0;
+            }
+        }
+        // F[j][j][j] = 0
+        for (let r = 0; r < 3; r++) result[r][j][j] = 0;
+
+        // Interior: F[j][u][s] += Xtilde[j][u](r) * A_store[j][s](source)
+        for (let u = 0; u < j; u++) {
+            for (let s = 0; s < j; s++) {
+                const a_val = aCh[source][j][s];
+                for (let r = 0; r < 3; r++) {
+                    result[r][u][s] += xtCh[r][j][u] * a_val;
+                }
+            }
+        }
+    }
+
+    return result; // result[target_ch][u][s]
+}
+
+function plotImpulsePlayerSlices(divId, fullData, lightData, playerNum, channel) {
+    const t = fullData.t;
+    const n = t.length;
+
+    const xtKey = playerNum === 1 ? 'Xtilde1' : 'Xtilde2';
+    const aKey = playerNum === 1 ? 'A_store1' : 'A_store2';
+    const xt = fullData[xtKey];
+    const aStore = fullData[aKey];
+    if (!xt || !aStore) return;
+
+    // Get observation parameters from light data
+    const obsGain = playerNum === 1 ? (lightData.obs_gain1 || lightData.p1) : (lightData.obs_gain2 || lightData.p2);
+    const obsIdx = playerNum === 1 ? (lightData.obs_idx1 != null ? lightData.obs_idx1 : 1) : (lightData.obs_idx2 != null ? lightData.obs_idx2 : 2);
 
     const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
     const traces = [];
-    const viridis = makeViridis(N);
-    const nCurves = N <= 60 ? 15 : 10;
-    const step = Math.max(1, Math.floor(N / nCurves));
+    const viridis = makeViridis(n);
+    const nCurves = n <= 60 ? 15 : 10;
+    const step = Math.max(1, Math.floor(n / nCurves));
 
-    // 3 panels: one per target channel r, showing F^i(T,u,s)[r][channel] as slices over u
-    for (let r = 0; r < 3; r++) {
-        const key = `r${r}c${channel}`;
-        const z = fPlayer[key]; // z[u][s]
-        for (let ui = 0; ui < N; ui += step) {
+    // Get shock time from slider
+    const sSlider = document.getElementById('impulse-s');
+    const sIdx = Math.min(parseInt(sSlider.value), n - 1);
+
+    // Compute F at multiple evaluation times t and extract the column at s=sIdx
+    for (let ti = step; ti < n; ti += step) {
+        // Compute F^i(ti, u, s)[r][channel] for all u,s
+        const F = computeFColumnAtT(xt, aStore, obsGain, obsIdx, channel, ti);
+
+        for (let r = 0; r < 3; r++) {
+            // Extract column at s=sIdx: F(ti, u, sIdx)[r] for u=0..ti
+            const col = [];
+            const uVals = [];
+            for (let u = 0; u <= ti; u++) {
+                uVals.push(t[u]);
+                col.push(F[r][u][sIdx]);
+            }
+
             traces.push({
-                x: t, y: z[ui],
-                mode: 'lines', line: {color: viridis[ui], width: 1.5},
+                x: uVals, y: col,
+                mode: 'lines', line: {color: viridis[ti], width: 1.5},
                 showlegend: false,
                 xaxis: 'x' + (r + 1), yaxis: 'y' + (r + 1),
-                hovertemplate: `u=${t[ui].toFixed(3)}<br>s=%{x:.3f}<br>val=%{y:.4g}`,
+                hovertemplate: `t=${t[ti].toFixed(3)}<br>u=%{x:.3f}<br>loading=%{y:.4g}`,
             });
         }
     }
 
-    const subtitles = chNames.map(n => `$${n} \\leftarrow ${chNames[channel]}$`);
+    const sTime = t[sIdx].toFixed(3);
+    const subtitles = chNames.map(ch => `Effect on ${ch} component`);
     const annotations = subtitles.map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+        x: (i + 0.5) / 3, y: 1.06, showarrow: false, font: {size: 13},
     }));
     annotations.push({
-        text: `Player ${playerNum} Filtration $F^${playerNum}(T,u,s)$ \u2014 ${chNames[channel]} source`,
+        text: `Player ${playerNum} noise-state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}`,
         xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+        x: 0.5, y: 1.17, showarrow: false, font: {size: 14, color: '#333'},
     });
 
     const layout = {
-        height: 340, margin: {...margin, t: 60},
-        grid: {rows: 1, columns: 3, pattern: 'independent'},
+        height: 420, margin: {t: 70, b: 55, l: 60, r: 30},
+        grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.08},
         annotations,
     };
     for (let i = 1; i <= 3; i++) {
-        layout['xaxis' + i] = {title: 's'};
-        layout['yaxis' + i] = {title: i === 1 ? 'value' : ''};
+        layout['xaxis' + i] = {title: 'filtered time u'};
+        layout['yaxis' + i] = {title: i === 1 ? 'loading' : ''};
     }
     Plotly.react(divId, traces, layout, plotCfg);
 }
@@ -1520,12 +1626,12 @@ function renderTab(tab, p) {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
                 document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
-                plotImpulsePhysical('plot-imp-physical', data, ch, sIdx);
+                plotImpulsePhysical('plot-imp-state', 'plot-imp-controls', data, ch, sIdx);
 
-                const fk = ensureFKernel(p);
-                if (!fk) { ok = false; break; }
-                plotImpulsePlayerSlices('plot-imp-p1-slices', fk, 1, ch);
-                plotImpulsePlayerSlices('plot-imp-p2-slices', fk, 2, ch);
+                const light = ensureLight(p);
+                if (!light) { ok = false; break; }
+                plotImpulsePlayerSlices('plot-imp-p1-slices', data, light, 1, ch);
+                plotImpulsePlayerSlices('plot-imp-p2-slices', data, light, 2, ch);
                 break;
             }
             case 'tab-fkernel': {

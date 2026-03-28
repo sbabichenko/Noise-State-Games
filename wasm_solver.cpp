@@ -192,6 +192,9 @@ static void serialize_light() {
     out(",\"converged\":%s", converged ? "true" : "false");
     out(",\"p1\":%.6g,\"p2\":%.6g,\"b1\":%.6g,\"b2\":%.6g",
         g_cache.p1, g_cache.p2, g_cache.b1, g_cache.b2);
+    out(",\"obs_gain1\":%.6g,\"obs_idx1\":%d,\"obs_gain2\":%.6g,\"obs_idx2\":%d",
+        g_cache.eq.env.obs_gain1, g_cache.eq.env.obs_idx1,
+        g_cache.eq.env.obs_gain2, g_cache.eq.env.obs_idx2);
     out("}");
 }
 
@@ -222,7 +225,7 @@ const char* solve_light(double p1, double p2, double b1, double b2, double r1, d
 static std::vector<double> g_full_buf;
 
 EMSCRIPTEN_KEEPALIVE
-int full_kernel_count() { return 9; }
+int full_kernel_count() { return 11; }
 
 EMSCRIPTEN_KEEPALIVE
 double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, double r2) {
@@ -230,16 +233,17 @@ double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, do
 
     const int n = g_n;
     const int block = n * n;
-    // 9 kernels × 3 channels × N×N
-    g_full_buf.resize(9 * 3 * block);
+    // 11 kernels × 3 channels × N×N
+    g_full_buf.resize(11 * 3 * block);
 
-    const Kernel2D* kernels[9] = {
+    const Kernel2D* kernels[11] = {
         &g_cache.eq.env.X, &g_cache.eq.D1, &g_cache.eq.D2, &g_cache.eq.calD1, &g_cache.eq.calD2,
         &g_cache.eq.env.Xtilde1, &g_cache.eq.env.Xtilde2,
-        &g_cache.Vkernel1, &g_cache.Vkernel2
+        &g_cache.Vkernel1, &g_cache.Vkernel2,
+        &g_cache.eq.env.A_store1, &g_cache.eq.env.A_store2
     };
 
-    for (int k = 0; k < 9; ++k) {
+    for (int k = 0; k < 11; ++k) {
         const Kernel2D& K = *kernels[k];
         for (int ch = 0; ch < 3; ++ch) {
             double* dst = g_full_buf.data() + (k * 3 + ch) * block;
