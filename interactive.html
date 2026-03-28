@@ -43,12 +43,13 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
                    max-width: 900px; margin: 4px auto 0; padding: 0 20px; }
 .plot { width: 100%; }
 #loading { text-align: center; padding: 40px; font-size: 1.2em; color: #999; }
-.imp-tab-btn { padding: 6px 16px; font-size: 0.88em; font-weight: 600; cursor: pointer;
-               background: none; border: none; border-bottom: 2px solid transparent;
-               color: #888; transition: color 0.15s; }
-.imp-tab-btn:hover { color: #555; }
-.imp-tab-btn.active { color: #333; border-bottom-color: #1f77b4; }
-.imp-panel { padding-top: 10px; }
+.subtab-btn { padding: 6px 16px; font-size: 0.88em; font-weight: 600; cursor: pointer;
+              background: none; border: none; border-bottom: 2px solid transparent;
+              color: #888; transition: color 0.15s; }
+.subtab-btn:hover { color: #555; }
+.subtab-btn.active { color: #333; border-bottom-color: #1f77b4; }
+.subtab-panel { display: none; padding-top: 10px; }
+.subtab-panel.active { display: block; }
 </style>
 </head>
 <body>
@@ -138,11 +139,8 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <button class="tab-btn active" data-tab="tab-model">Model</button>
   <button class="tab-btn" data-tab="tab-guide">Guide</button>
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
-  <button class="tab-btn" data-tab="tab-wedge">Wedge</button>
   <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
   <button class="tab-btn" data-tab="tab-impulse">Impulse</button>
-  <button class="tab-btn" data-tab="tab-fkernel">Filter</button>
-  <button class="tab-btn" data-tab="tab-rank">Rank</button>
   <button class="tab-btn" data-tab="tab-statics">Statics</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
@@ -380,83 +378,135 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   </div>
 </div>
 
-<!-- Tab 1.5: Information Wedge -->
-<div id="tab-wedge" class="tab-panel">
-  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
-    Kernel information wedges $\mathcal{V}^i(t,r)$ &mdash; the additive correction to the
-    costate backward equation that separates the noise-state equilibrium from the
-    perfect-information Riccati solution. The $W^0$ channel is typically the dominant
-    source of equilibrium distortion, since common noise is the hardest to resolve.
-  </p>
-  <div class="figure-block">
-    <div id="plot-Vkernel1" class="plot"></div>
-    <div class="figure-caption">
-      Kernel information wedge $\mathcal{V}^1(t,r)$: captures how bilateral belief manipulation
-      distorts the equilibrium impulse response to the $r$-th shock (equation 3.5).
-      Computed as $\mathcal{V}^1(t,r) = p_2^2 \int_0^t \widetilde{X}^2(t,z) \cdot H^{2,1}(t,z,r)\,dz$
-      where $H^{2,1}$ is the kernel belief-adjoint.
-      The W&#x2070; channel shows distortion of the fundamental-shock response &mdash;
-      the dominant source of excess state variance from strategic friction.
-      Vanishes at $t=T$ by the terminal condition on $H^{2,1}$.
-    </div>
-  </div>
-  <div class="figure-block">
-    <div id="plot-Vkernel2" class="plot"></div>
-    <div class="figure-caption">
-      Kernel information wedge $\mathcal{V}^2(t,r)$: symmetric counterpart for player 2,
-      with $1 \leftrightarrow 2$ swapped.
-    </div>
-  </div>
-</div>
-
-<!-- Tab 2: State/Control Kernels -->
+<!-- Tab 2: Kernels (consolidated) -->
 <div id="tab-kernels" class="tab-panel">
-  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
-    All kernel plots show three sub-panels for noise channels W&#x2070; (system), W&#xB9; (player 1 observation),
-    W&#xB2; (player 2 observation). Curves are colored by evaluation time t from purple (early) to yellow (late).
-    Each curve traces the kernel value as a function of source-noise time s &#x2208; [0,&thinsp;t] &mdash;
-    the causal constraint means later-time curves (yellow) extend further.
+  <p class="figure-caption" style="margin-bottom:10px; font-style:italic;">
+    All kernel plots show three sub-panels for noise channels W&#x2070; (system), W&#xB9; (player 1 obs.),
+    W&#xB2; (player 2 obs.). Curves colored by evaluation time t (purple&#x2192;yellow = early&#x2192;late).
   </p>
-  <div class="figure-block">
-    <div id="plot-X" class="plot"></div>
-    <div class="figure-caption">
-      State kernel X(t,s): the primitive-noise impulse response of the state.
-      The W&#x2070; channel starts at 1 (direct shock) and decays as both players
-      jointly stabilize older shocks. The W&#xB9; and W&#xB2; channels are zero at s and build up
-      through drift-based inference as controls feed back through the state.
+  <div style="border-bottom:1px solid #ddd; margin-bottom:10px;">
+    <button class="subtab-btn active" data-subtab="kern-state" data-group="kernels">State</button>
+    <button class="subtab-btn" data-subtab="kern-feedback" data-group="kernels">Feedback</button>
+    <button class="subtab-btn" data-subtab="kern-controls" data-group="kernels">Controls</button>
+    <button class="subtab-btn" data-subtab="kern-unresolved" data-group="kernels">Unresolved</button>
+    <button class="subtab-btn" data-subtab="kern-filtration" data-group="kernels">Filtration</button>
+    <button class="subtab-btn" data-subtab="kern-wedge" data-group="kernels">Wedge</button>
+    <button class="subtab-btn" data-subtab="kern-rank" data-group="kernels">Rank</button>
+  </div>
+
+  <div id="kern-state" class="subtab-panel active">
+    <div class="figure-block">
+      <div id="plot-X" class="plot"></div>
+      <div class="figure-caption">
+        State kernel X(t,s): the primitive-noise impulse response of the state.
+      </div>
     </div>
   </div>
-  <div class="figure-block">
-    <div id="plot-D1" class="plot"></div>
-    <div class="figure-caption">
-      Player 1's noise-state feedback kernel D&#xB9;(t,s): governs how player 1's control
-      at time t responds to their noise-state estimate at source time s (in filtered
-      coordinates). The W&#x2070; channel dominates because fundamental shocks are most
-      relevant for state tracking; the W&#xB9;, W&#xB2; channels reflect drift-based inference
-      about the opponent's behavior.
+
+  <div id="kern-feedback" class="subtab-panel">
+    <div class="figure-block">
+      <div id="plot-D1" class="plot"></div>
+      <div class="figure-caption">
+        Player 1 noise-state feedback D&#xB9;(t,s): control response to noise-state estimate.
+      </div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-D2" class="plot"></div>
+      <div class="figure-caption">
+        Player 2 noise-state feedback D&#xB2;(t,s): symmetric counterpart.
+      </div>
     </div>
   </div>
-  <div class="figure-block">
-    <div id="plot-D2" class="plot"></div>
-    <div class="figure-caption">
-      Player 2's noise-state feedback kernel D&#xB2;(t,s): symmetric counterpart to D&#xB9;,
-      with players 1&#x2194;2 swapped.
+
+  <div id="kern-controls" class="subtab-panel">
+    <div class="figure-block">
+      <div id="plot-calD1" class="plot"></div>
+      <div class="figure-caption">
+        Primitive control &#x1D4D3;&#xB9;(t,s): player 1 control in primitive Brownian coordinates.
+      </div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-calD2" class="plot"></div>
+      <div class="figure-caption">
+        Primitive control &#x1D4D3;&#xB2;(t,s): symmetric counterpart.
+      </div>
     </div>
   </div>
-  <div class="figure-block">
-    <div id="plot-calD1" class="plot"></div>
-    <div class="figure-caption">
-      Primitive control kernel &#x1D4D3;&#xB9;(t,s): player 1's control expressed in terms of
-      primitive (unobserved) Brownian shocks W rather than filtered observations.
-      Obtained from D&#xB9; by convolving with the filtration kernel F&#xB9;.
-      This is the kernel that enters the state dynamics and determines equilibrium volatility.
+
+  <div id="kern-unresolved" class="subtab-panel">
+    <div class="figure-block">
+      <div id="plot-Xtilde1" class="plot"></div>
+      <div class="figure-caption">
+        Player 1 unresolved state X&#x0303;&#xB9;(t,s): what player 1 has not yet resolved about the shock at s.
+        The W&#xB9; channel is identically zero (player 1 directly observes W&#xB9;).
+      </div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-Xtilde2" class="plot"></div>
+      <div class="figure-caption">
+        Player 2 unresolved state X&#x0303;&#xB2;(t,s): symmetric, with W&#xB2; channel zero.
+      </div>
     </div>
   </div>
-  <div class="figure-block">
-    <div id="plot-calD2" class="plot"></div>
-    <div class="figure-caption">
-      Primitive control kernel &#x1D4D3;&#xB2;(t,s): symmetric counterpart to &#x1D4D3;&#xB9;,
-      with players 1&#x2194;2 swapped.
+
+  <div id="kern-filtration" class="subtab-panel">
+    <div class="figure-block">
+      <div id="plot-F1" class="plot"></div>
+      <div class="figure-caption">
+        Player 1 filtration kernel F&#xB9;(T,u,s): density kernel of the noise-state conditional mean.
+        3&#xD7;3 grid maps source channel (column) to target channel (row).
+      </div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-F2" class="plot"></div>
+      <div class="figure-caption">
+        Player 2 filtration kernel F&#xB2;(T,u,s): symmetric counterpart.
+      </div>
+    </div>
+  </div>
+
+  <div id="kern-wedge" class="subtab-panel">
+    <div class="figure-block">
+      <div id="plot-Vkernel1" class="plot"></div>
+      <div class="figure-caption">
+        Kernel information wedge $\mathcal{V}^1(t,r)$: the additive costate correction from
+        bilateral belief manipulation (eq. 3.5). Vanishes at $t=T$.
+      </div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-Vkernel2" class="plot"></div>
+      <div class="figure-caption">
+        Kernel information wedge $\mathcal{V}^2(t,r)$: symmetric counterpart.
+      </div>
+    </div>
+  </div>
+
+  <div id="kern-rank" class="subtab-panel">
+    <div style="display:flex; gap:24px; align-items:center; margin-bottom:15px; flex-wrap:wrap;">
+      <div>
+        <label style="font-weight:600; font-size:0.85em;">Kernel:</label>
+        <select id="rank-kernel-select" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
+          <option value="X">X (state)</option>
+          <option value="D1">D&#xB9; (feedback 1)</option>
+          <option value="D2">D&#xB2; (feedback 2)</option>
+          <option value="calD1">&#x1D4D3;&#xB9; (control 1)</option>
+          <option value="calD2">&#x1D4D3;&#xB2; (control 2)</option>
+          <option value="Xtilde1">X&#x0303;&#xB9; (unresolved 1)</option>
+          <option value="Xtilde2">X&#x0303;&#xB2; (unresolved 2)</option>
+        </select>
+      </div>
+      <p style="font-size:0.85em; color:#666; margin:0;">
+        SVD of the selected kernel per channel. Rapid decay indicates low-rank structure.
+      </p>
+    </div>
+    <div class="figure-block">
+      <div id="plot-svd" class="plot"></div>
+      <div class="figure-caption">
+        Left: normalized singular values (log scale). Right: cumulative energy. Dashed = 99%.
+      </div>
+    </div>
+    <div class="figure-block" style="max-width:700px; margin:0 auto;">
+      <div id="rank-table" style="font-family:monospace; font-size:0.85em; line-height:1.6;"></div>
     </div>
   </div>
 </div>
@@ -481,11 +531,11 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     </div>
   </div>
   <div class="tab-bar" style="margin-top:0; border-bottom-width:1px;">
-    <button class="imp-tab-btn active" data-imptab="imp-physical">Physical State</button>
-    <button class="imp-tab-btn" data-imptab="imp-player1">Player 1</button>
-    <button class="imp-tab-btn" data-imptab="imp-player2">Player 2</button>
+    <button class="subtab-btn active" data-subtab="imp-physical" data-group="impulse">Physical State</button>
+    <button class="subtab-btn" data-subtab="imp-player1" data-group="impulse">Player 1</button>
+    <button class="subtab-btn" data-subtab="imp-player2" data-group="impulse">Player 2</button>
   </div>
-  <div id="imp-physical" class="imp-panel">
+  <div id="imp-physical" class="subtab-panel active">
     <div class="figure-block">
       <div id="plot-imp-state" class="plot"></div>
       <div class="figure-caption">
@@ -496,7 +546,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       </div>
     </div>
   </div>
-  <div id="imp-player1" class="imp-panel" style="display:none;">
+  <div id="imp-player1" class="subtab-panel">
     <div class="figure-block">
       <div id="plot-imp-p1-slices" class="plot"></div>
       <div class="figure-caption">
@@ -509,7 +559,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       </div>
     </div>
   </div>
-  <div id="imp-player2" class="imp-panel" style="display:none;">
+  <div id="imp-player2" class="subtab-panel">
     <div class="figure-block">
       <div id="plot-imp-p2-slices" class="plot"></div>
       <div class="figure-caption">
@@ -522,80 +572,6 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 </div>
 
 <!-- Tab 3: Filter Kernels -->
-<div id="tab-fkernel" class="tab-panel">
-  <div class="figure-block">
-    <div id="plot-Xtilde1" class="plot"></div>
-    <div class="figure-caption">
-      Player 1's unresolved state kernel X&#x0303;&#xB9;(t,s): the component of the state's impulse
-      response to the s-th shock that player 1 has not yet resolved at time t. Serves as
-      the filtering gain in the noise-state update (Theorem 3.1). Large for recent shocks
-      or weak observation channels, shrinking as observations accumulate. The W&#xB9; channel
-      is identically zero &mdash; W&#xB9; enters the state only through player 1's own
-      actions, which propagate deterministically and are measurable to player 1,
-      so they contribute nothing to the unresolved component. (This relies on
-      players having uncorrelated measurements; it need not hold otherwise.)
-    </div>
-  </div>
-  <div class="figure-block">
-    <div id="plot-Xtilde2" class="plot"></div>
-    <div class="figure-caption">
-      Player 2's unresolved state kernel X&#x0303;&#xB2;(t,s): symmetric counterpart to X&#x0303;&#xB9;.
-      The W&#xB2; channel is identically zero (same reasoning, with players swapped).
-    </div>
-  </div>
-  <div class="figure-block">
-    <div id="plot-F1" class="plot"></div>
-    <div class="figure-caption">
-      Player 1's filtration kernel F&#xB9;(T,u,s): the density kernel of the noise-state
-      conditional mean at terminal time (Theorem 3.1). The 3&#xD7;3 grid maps source noise
-      channel (column) to target channel (row); each subplot shows slice curves over s,
-      colored by u. The grid is transpose-symmetric (F&#x2071;(u,s) = F&#x2071;(s,u)&#x1D40;, Remark A.4).
-      Diagonal blocks (same channel &#x2192; same channel) tend to dominate; off-diagonal
-      blocks capture cross-channel inference mediated by the state dynamics.
-    </div>
-  </div>
-  <div class="figure-block">
-    <div id="plot-F2" class="plot"></div>
-    <div class="figure-caption">
-      Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;,
-      with players 1&#x2194;2 swapped.
-    </div>
-  </div>
-</div>
-
-<!-- Tab 3.5: Rank Analysis -->
-<div id="tab-rank" class="tab-panel">
-  <div style="display:flex; gap:24px; align-items:center; margin-bottom:15px; flex-wrap:wrap;">
-    <div>
-      <label style="font-weight:600; font-size:0.85em;">Kernel:</label>
-      <select id="rank-kernel-select" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
-        <option value="X">X (state)</option>
-        <option value="D1">D&#xB9; (player 1 feedback)</option>
-        <option value="D2">D&#xB2; (player 2 feedback)</option>
-        <option value="calD1">&#x1D4D3;&#xB9; (primitive control 1)</option>
-        <option value="calD2">&#x1D4D3;&#xB2; (primitive control 2)</option>
-        <option value="Xtilde1">X&#x0303;&#xB9; (P1 unresolved)</option>
-        <option value="Xtilde2">X&#x0303;&#xB2; (P2 unresolved)</option>
-      </select>
-    </div>
-    <p style="font-size:0.85em; color:#666; margin:0;">
-      Singular value decomposition of the selected kernel matrix per noise channel.
-      Rapid decay indicates low-rank structure amenable to finite-dimensional approximation.
-    </p>
-  </div>
-  <div class="figure-block">
-    <div id="plot-svd" class="plot"></div>
-    <div class="figure-caption">
-      Left: normalized singular values $\sigma_k / \sigma_1$ (log scale).
-      Right: cumulative explained energy
-      $E(k) = \sum_{i=1}^{k} \sigma_i^2 / \|\cdot\|_F^2$.
-      The dashed line marks 99% energy.
-    </div>
-  </div>
-  <div class="figure-block" style="max-width:700px; margin:0 auto;">
-    <div id="rank-table" style="font-family:monospace; font-size:0.85em; line-height:1.6;"></div>
-  </div>
-</div>
 
 <!-- Tab 4: Comparative Statics -->
 <div id="tab-statics" class="tab-panel">
@@ -1177,37 +1153,12 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
 // Compute F^i(t, u, source)[target][source] for all u at a given t_idx,
 // using the rank-1 recurrence: F[j][u][s] = F[j-1][u][s] + Xtilde[j][u] * A[j][s]
 // For a fixed source channel, this reduces to a scalar recurrence per (u, target).
-function computeFColumnAtT(Xtilde, A_store, obsGain, obsIdx, source, tIdx) {
+// Incrementally compute F^i(t, u, s) for all t, snapshotting at requested times.
+// Returns snapshots[ti] = result[r][u][sIdx] for each ti in snapshotTimes.
+function computeFIncrementalColumn(Xtilde, A_store, obsGain, obsIdx, source, sIdx, snapshotTimes) {
     const n = N;
-    // result[target][u] = F^i(tIdx, u, source)[target]
-    // We only need the 'source' column of the 3x3 matrix at each (u).
-    // F[j][u][source](target) = F[j-1][u][source](target) + Xtilde[j][u](target) * A[j][source](source_ch)
-    //
-    // But the border terms also matter:
-    // F[j][u][j](target) = obsGain * Xtilde[j][u](target) * e_i(source)  (new column at s=j)
-    // F[j][j][u](target) = obsGain * e_i(target) * Xtilde[j][u](source)  (new row at u=j)
-
-    // We track F[j][u][source] as a vector of length 3 for each u <= j
-    // But source is fixed (the selected shock channel), so we compute F[:, :, source_time]
-    // Actually we want F(t, u, source_channel) which sums over all primitive shock times.
-    // No — we want the column of F at a fixed source TIME s from the slider, not source channel.
-
-    // Wait — re-reading. The function signature has 'source' = source channel index.
-    // For the impulse response of the noise state, we want:
-    // For a specific source channel j (= channel dropdown),
-    // F^i(t, u, s)[r][j] gives the loading on the r-th component of the noise state
-    // at filtered time u, from a shock in channel j at primitive time s.
-    //
-    // To show slices at each t: for each evaluation time t_idx,
-    // we need the FULL F[t_idx][u][s] for the source column j.
-    // Then for a fixed s (from the slider), we extract F[t_idx][:][s][:, j] vs u.
-    //
-    // So we need to build F[t_idx] fully for the source column j.
-
-    // F_col[u][s] = F(tIdx, u, s)[target][source] — but we do this for all 3 targets at once.
-    // Store as: F_col[u * n + s] = [target0, target1, target2]
-    // Actually let's just store per-target: result_r[u][s]
-    const result = [
+    // F[r][u][s] accumulated in-place across j steps
+    const F = [
         Array.from({length: n}, () => new Float64Array(n)),
         Array.from({length: n}, () => new Float64Array(n)),
         Array.from({length: n}, () => new Float64Array(n)),
@@ -1215,39 +1166,41 @@ function computeFColumnAtT(Xtilde, A_store, obsGain, obsIdx, source, tIdx) {
 
     const xtCh = [Xtilde['ch0'], Xtilde['ch1'], Xtilde['ch2']];
     const aCh = [A_store['ch0'], A_store['ch1'], A_store['ch2']];
+    const snapSet = new Set(snapshotTimes);
+    const snapshots = {};
 
-    for (let j = 1; j <= tIdx; j++) {
+    for (let j = 1; j < n; j++) {
         // Border: new column s=j
         for (let u = 0; u < j; u++) {
-            for (let r = 0; r < 3; r++) {
-                // F[j][u][j](r, source) = obsGain * Xtilde[j][u](r) * e_i(source)
-                // e_i(source) = 1 if source == obsIdx, else 0
-                result[r][u][j] = (source === obsIdx) ? obsGain * xtCh[r][j][u] : 0;
-            }
+            for (let r = 0; r < 3; r++)
+                F[r][u][j] = (source === obsIdx) ? obsGain * xtCh[r][j][u] : 0;
         }
         // Border: new row u=j
         for (let s = 0; s < j; s++) {
-            for (let r = 0; r < 3; r++) {
-                // F[j][j][s](r, source) = obsGain * e_i(r) * Xtilde[j][s](source)
-                // e_i(r) = 1 if r == obsIdx, else 0
-                result[r][j][s] = (r === obsIdx) ? obsGain * xtCh[source][j][s] : 0;
-            }
+            for (let r = 0; r < 3; r++)
+                F[r][j][s] = (r === obsIdx) ? obsGain * xtCh[source][j][s] : 0;
         }
-        // F[j][j][j] = 0
-        for (let r = 0; r < 3; r++) result[r][j][j] = 0;
+        for (let r = 0; r < 3; r++) F[r][j][j] = 0;
 
         // Interior: F[j][u][s] += Xtilde[j][u](r) * A_store[j][s](source)
         for (let u = 0; u < j; u++) {
             for (let s = 0; s < j; s++) {
                 const a_val = aCh[source][j][s];
-                for (let r = 0; r < 3; r++) {
-                    result[r][u][s] += xtCh[r][j][u] * a_val;
-                }
+                for (let r = 0; r < 3; r++)
+                    F[r][u][s] += xtCh[r][j][u] * a_val;
             }
         }
-    }
 
-    return result; // result[target_ch][u][s]
+        // Snapshot: extract column at sIdx for this t
+        if (snapSet.has(j)) {
+            const col = [new Float64Array(j + 1), new Float64Array(j + 1), new Float64Array(j + 1)];
+            for (let r = 0; r < 3; r++)
+                for (let u = 0; u <= j; u++)
+                    col[r][u] = F[r][u][sIdx];
+            snapshots[j] = col;
+        }
+    }
+    return snapshots; // snapshots[ti][r][u]
 }
 
 function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, channel) {
@@ -1274,37 +1227,39 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
     const sIdx = Math.min(parseInt(sSlider.value), n - 1);
 
     if (hasAStore) {
-        // Compute F at multiple evaluation times t, extract column at s=sIdx.
+        // Compute F incrementally at multiple evaluation times t.
         // Only meaningful for ti >= sIdx (shock must have occurred).
         const nCurves = n <= 60 ? 12 : 8;
         const startTi = Math.max(sIdx + 1, 2);
         const rangeTi = (n - 1) - startTi;
         const step = Math.max(1, Math.floor(rangeTi / nCurves));
 
-        // Collect all ti values to pick legend representatives
         const tiVals = [];
         for (let ti = startTi; ti < n; ti += step) tiVals.push(ti);
         if (tiVals.length === 0 || tiVals[tiVals.length - 1] !== n - 1) tiVals.push(n - 1);
-        // Pick first, middle, last for legend
+
+        // Single incremental pass — O(n^2) total instead of O(nCurves * n^2)
+        const snapshots = computeFIncrementalColumn(xt, aStore, obsGain, obsIdx, channel, sIdx, tiVals);
+
         const legendTis = new Set();
         legendTis.add(tiVals[0]);
         legendTis.add(tiVals[Math.floor(tiVals.length / 2)]);
         legendTis.add(tiVals[tiVals.length - 1]);
 
         for (const ti of tiVals) {
-            const F = computeFColumnAtT(xt, aStore, obsGain, obsIdx, channel, ti);
+            const col = snapshots[ti];
+            if (!col) continue;
             const isLast = ti === n - 1;
             const inLegend = legendTis.has(ti);
             for (let r = 0; r < 3; r++) {
-                const col = [], uVals = [];
+                const yVals = [], uVals = [];
                 for (let u = 0; u <= ti; u++) {
                     uVals.push(t[u]);
-                    // Full impulse response = F^i + Pi^i delta(u,s)
                     const piCorr = (u === sIdx && r === obsIdx && channel === obsIdx) ? 1 : 0;
-                    col.push(F[r][u][sIdx] + piCorr);
+                    yVals.push(col[r][u] + piCorr);
                 }
                 traces.push({
-                    x: uVals, y: col,
+                    x: uVals, y: yVals,
                     mode: 'lines', line: {color: viridis[ti], width: isLast ? 2.5 : 1.5},
                     name: inLegend ? `t = ${t[ti].toFixed(2)}` : '',
                     showlegend: inLegend && r === 0,
@@ -1517,7 +1472,7 @@ let pendingUpdate = false;  // Re-run after current solve finishes
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
 let lastParamsKey = '';
-const dirty = { 'tab-equilibrium': true, 'tab-wedge': true, 'tab-kernels': true, 'tab-impulse': true, 'tab-fkernel': true, 'tab-rank': true, 'tab-statics': true, 'tab-diagnostics': true };
+const dirty = { 'tab-equilibrium': true, 'tab-kernels': true, 'tab-impulse': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
 let currentN = 40, currentT = 1.0;
@@ -1616,21 +1571,39 @@ function renderTab(tab, p) {
                 plotWedges('plot-wedges', data);
                 break;
             }
-            case 'tab-wedge': {
-                const full = ensureFull(p);
-                if (!full || !full.Vkernel1) { ok = false; break; }
-                plotKernel('plot-Vkernel1', full.t, full.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
-                plotKernel('plot-Vkernel2', full.t, full.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
-                break;
-            }
             case 'tab-kernels': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
+
+                // Show all subtab panels so Plotly can measure widths
+                const kPanels = document.querySelectorAll('#tab-kernels .subtab-panel');
+                const kActiveBtn = document.querySelector('#tab-kernels .subtab-btn.active');
+                const kActiveId = kActiveBtn ? kActiveBtn.dataset.subtab : 'kern-state';
+                kPanels.forEach(el => el.classList.add('active'));
+
                 plotKernel('plot-X', data.t, data.X, 'State Kernel $X(t,s)$');
                 plotKernel('plot-D1', data.t, data.D1, 'Player 1 Feedback $D^1(t,s)$');
                 plotKernel('plot-D2', data.t, data.D2, 'Player 2 Feedback $D^2(t,s)$');
                 plotKernel('plot-calD1', data.t, data.calD1, 'Primitive Control $\\mathcal{D}^1(t,s)$');
                 plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control $\\mathcal{D}^2(t,s)$');
+                if (data.Xtilde1) {
+                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved $\\tilde{X}^1(t,s)$');
+                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved $\\tilde{X}^2(t,s)$');
+                }
+                if (data.Vkernel1) {
+                    plotKernel('plot-Vkernel1', data.t, data.Vkernel1, 'Player 1 Kernel Wedge $\\mathcal{V}^1(t,r)$');
+                    plotKernel('plot-Vkernel2', data.t, data.Vkernel2, 'Player 2 Kernel Wedge $\\mathcal{V}^2(t,r)$');
+                }
+                const fk = ensureFKernel(p);
+                if (fk) {
+                    plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$`);
+                    plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$`);
+                }
+                const selKernel = document.getElementById('rank-kernel-select').value;
+                plotRankAnalysis('plot-svd', 'rank-table', data, selKernel);
+
+                // Restore: hide non-active subtabs
+                kPanels.forEach(el => { if (el.id !== kActiveId) el.classList.remove('active'); });
                 break;
             }
             case 'tab-impulse': {
@@ -1644,11 +1617,11 @@ function renderTab(tab, p) {
                 if (!data) { ok = false; break; }
                 document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
 
-                // Show all panels so Plotly can measure widths, then restore visibility
-                const panels = document.querySelectorAll('.imp-panel');
-                const activeBtn = document.querySelector('.imp-tab-btn.active');
-                const activeId = activeBtn ? activeBtn.dataset.imptab : 'imp-physical';
-                panels.forEach(p => p.style.display = 'block');
+                // Show all panels so Plotly can measure widths
+                const iPanels = document.querySelectorAll('#tab-impulse .subtab-panel');
+                const iActiveBtn = document.querySelector('#tab-impulse .subtab-btn.active');
+                const iActiveId = iActiveBtn ? iActiveBtn.dataset.subtab : 'imp-physical';
+                iPanels.forEach(el => el.classList.add('active'));
 
                 plotImpulsePhysical('plot-imp-state', null, data, ch, sIdx);
                 const light = ensureLight(p);
@@ -1658,27 +1631,7 @@ function renderTab(tab, p) {
                 plotImpulsePlayerSlices('plot-imp-p2-slices', data, light, fk, 2, ch);
 
                 // Restore: hide non-active panels
-                panels.forEach(el => el.style.display = el.id === activeId ? 'block' : 'none');
-                break;
-            }
-            case 'tab-fkernel': {
-                const data = ensureFull(p);
-                if (!data) { ok = false; break; }
-                if (data.Xtilde1) {
-                    plotKernel('plot-Xtilde1', data.t, data.Xtilde1, 'Player 1 Unresolved State $\\tilde{X}^1(t,s)$');
-                    plotKernel('plot-Xtilde2', data.t, data.Xtilde2, 'Player 2 Unresolved State $\\tilde{X}^2(t,s)$');
-                }
-                const fk = ensureFKernel(p);
-                if (!fk) { ok = false; break; }
-                plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
-                plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
-                break;
-            }
-            case 'tab-rank': {
-                const data = ensureFull(p);
-                if (!data) { ok = false; break; }
-                const selKernel = document.getElementById('rank-kernel-select').value;
-                plotRankAnalysis('plot-svd', 'rank-table', data, selKernel);
+                iPanels.forEach(el => { if (el.id !== iActiveId) el.classList.remove('active'); });
                 break;
             }
             case 'tab-statics': {
@@ -1792,13 +1745,17 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
 
-    // Impulse subtab switching — just toggle visibility
+    // Generic subtab switching (works for both impulse and kernel subtabs)
     document.addEventListener('click', function(e) {
-        if (!e.target.classList.contains('imp-tab-btn')) return;
-        document.querySelectorAll('.imp-tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.imp-panel').forEach(p => p.style.display = 'none');
+        if (!e.target.classList.contains('subtab-btn')) return;
+        const group = e.target.dataset.group;
+        // Deactivate siblings in same group
+        document.querySelectorAll(`.subtab-btn[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+        document.querySelectorAll(`.subtab-btn[data-group="${group}"]`).forEach(b => {
+            document.getElementById(b.dataset.subtab).classList.remove('active');
+        });
         e.target.classList.add('active');
-        document.getElementById(e.target.dataset.imptab).style.display = 'block';
+        document.getElementById(e.target.dataset.subtab).classList.add('active');
     });
 
     // Impulse response controls — always do a full re-render
@@ -1810,9 +1767,9 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     document.getElementById('impulse-s').addEventListener('input', onImpulseChange);
     document.getElementById('impulse-channel').addEventListener('change', onImpulseChange);
 
-    // Rank kernel selector
+    // Rank kernel selector — re-render the rank subtab
     document.getElementById('rank-kernel-select').addEventListener('change', function() {
-        if (activeTab !== 'tab-rank') return;
+        if (activeTab !== 'tab-kernels') return;
         const data = fullData;
         if (!data) return;
         plotRankAnalysis('plot-svd', 'rank-table', data, this.value);
