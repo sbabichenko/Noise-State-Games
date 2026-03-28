@@ -134,7 +134,9 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
   <button class="tab-btn" data-tab="tab-wedge">Wedge</button>
   <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
+  <button class="tab-btn" data-tab="tab-impulse">Impulse</button>
   <button class="tab-btn" data-tab="tab-fkernel">Filter</button>
+  <button class="tab-btn" data-tab="tab-rank">Rank</button>
   <button class="tab-btn" data-tab="tab-statics">Statics</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
@@ -230,7 +232,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">State kernel $X(t,s)$</h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Kernels</strong> tab.
+      <strong>State/Control Kernels</strong> tab.
     </p>
     <p>
       $X(t,s)$ is the impulse response of the state: how much a unit shock at
@@ -244,7 +246,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       Control kernels $D^i(t,s)$ and $\mathcal{D}^i(t,s)$
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Kernels</strong> tab.
+      <strong>State/Control Kernels</strong> tab.
     </p>
     <p>
       $D^i(t,s)$ is player $i$'s feedback kernel in <em>filtered</em> coordinates
@@ -259,7 +261,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       Unresolved state $\widetilde{X}^i(t,s)$
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Filter</strong> tab.
+      <strong>Filter Kernels</strong> tab.
     </p>
     <p>
       $\widetilde{X}^i(t,s)$ is the component of the state's impulse response
@@ -273,7 +275,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       Filtration kernel $F^i(t,u,s)$
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Filter</strong> tab.
+      <strong>Filter Kernels</strong> tab.
     </p>
     <p>
       $F^i(t,u,s)$ maps from primitive coordinates $(s)$ to filtered coordinates
@@ -299,7 +301,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     </h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
       Mean $\bar{V}^i(t)$ and full kernel $\mathcal{V}^i(t,r)$ on the
-      <strong>Wedge</strong> tab.
+      <strong>Equilibrium</strong> tab.
     </p>
     <p>
       Player $i$'s optimality condition gives
@@ -324,7 +326,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Comparative statics</h3>
     <p style="font-style:italic; color:#555; margin-bottom:6px;">
-      <strong>Statics</strong> tab.
+      <strong>Comparative Statics</strong> tab.
     </p>
     <p>
       Sweeps $p_2$ with all else fixed. Dashed lines show pooled-information costs
@@ -453,6 +455,38 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
   </div>
 </div>
 
+<!-- Tab 2.5: Impulse Response -->
+<div id="tab-impulse" class="tab-panel">
+  <div style="display:flex; gap:24px; align-items:center; margin-bottom:15px; flex-wrap:wrap;">
+    <div>
+      <label style="font-weight:600; font-size:0.85em;">Shock source:</label>
+      <select id="impulse-channel" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
+        <option value="0">W&#x2070; (common noise)</option>
+        <option value="1">W&#xB9; (player 1 obs.)</option>
+        <option value="2">W&#xB2; (player 2 obs.)</option>
+      </select>
+    </div>
+    <div class="slider-group" style="min-width:250px; max-width:400px;">
+      <label style="font-weight:600; font-size:0.85em;">Shock time s</label>
+      <div class="slider-row">
+        <input type="range" id="impulse-s" min="0" max="39" step="1" value="0">
+        <span class="val" id="impulse-s-val">0.000</span>
+      </div>
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-impulse" class="plot"></div>
+    <div class="figure-caption">
+      Impulse response to a unit shock in the selected noise source at time s.
+      <strong>Physical state</strong>: how X(t,s) evolves after the shock.
+      <strong>Player 1 / Player 2</strong>: solid = resolved component
+      (what the player infers), dashed = unresolved X&#x0303;&#x2071;(t,s)
+      (residual uncertainty).
+      <strong>Controls</strong>: primitive control responses &#x1D4D3;&#xB9; and &#x1D4D3;&#xB2;.
+    </div>
+  </div>
+</div>
+
 <!-- Tab 3: Filter Kernels -->
 <div id="tab-fkernel" class="tab-panel">
   <div class="figure-block">
@@ -491,6 +525,39 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div class="figure-caption">
       Player 2's filtration kernel F&#xB2;(T,u,s): symmetric counterpart to F&#xB9;,
       with players 1&#x2194;2 swapped.
+    </div>
+  </div>
+</div>
+
+<!-- Tab 3.5: Rank Analysis -->
+<div id="tab-rank" class="tab-panel">
+  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
+    Singular value decomposition of each kernel matrix (per noise channel).
+    Rapid decay indicates low-rank structure &mdash; a kernel well-approximated
+    by a small number of separable modes $K(t,s) \approx \sum_{k=1}^r \sigma_k\, u_k(t)\, v_k(s)$.
+  </p>
+  <div class="figure-block">
+    <div id="plot-svd" class="plot"></div>
+    <div class="figure-caption">
+      Normalized singular values $\sigma_k / \sigma_1$ (log scale) for each kernel and noise channel.
+      Lines that drop sharply after a few indices indicate effective low-rank structure.
+      Solid = W&#x2070;, dashed = W&#xB9;, dotted = W&#xB2;.
+    </div>
+  </div>
+  <div class="figure-block">
+    <div id="plot-energy" class="plot"></div>
+    <div class="figure-caption">
+      Cumulative explained energy: fraction of total Frobenius norm squared captured by the
+      best rank-$k$ approximation.
+      $E(k) = \sum_{i=1}^{k} \sigma_i^2 \,/\, \sum_{i=1}^{N} \sigma_i^2$.
+      Values near 1 at small $k$ confirm that a low-rank approximation is accurate.
+    </div>
+  </div>
+  <div class="figure-block" style="max-width:900px; margin:0 auto;">
+    <div id="rank-table" style="font-family:monospace; font-size:0.85em; line-height:1.6;"></div>
+    <div class="figure-caption">
+      Effective rank: number of singular values needed to capture 99% and 99.9% of the
+      Frobenius norm squared energy.
     </div>
   </div>
 </div>
@@ -1028,6 +1095,265 @@ function plotWedgesSweep(divId, sweep) {
     }, plotCfg);
 }
 
+// --- impulse response ---
+function plotImpulse(divId, fullData, channel, sIdx) {
+    const t = fullData.t;
+    const n = t.length;
+    const tSlice = t.slice(sIdx);
+
+    function getCol(kd, ch, si) {
+        const col = [];
+        for (let ti = si; ti < n; ti++) col.push(kd['ch' + ch][ti][si]);
+        return col;
+    }
+
+    const X_col = getCol(fullData.X, channel, sIdx);
+    const Xt1_col = fullData.Xtilde1 ? getCol(fullData.Xtilde1, channel, sIdx) : X_col.map(() => 0);
+    const Xt2_col = fullData.Xtilde2 ? getCol(fullData.Xtilde2, channel, sIdx) : X_col.map(() => 0);
+    const calD1_col = getCol(fullData.calD1, channel, sIdx);
+    const calD2_col = getCol(fullData.calD2, channel, sIdx);
+
+    const resolved1 = X_col.map((x, i) => x - Xt1_col[i]);
+    const resolved2 = X_col.map((x, i) => x - Xt2_col[i]);
+
+    const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
+    const sTime = t[sIdx].toFixed(3);
+
+    const traces = [
+        {x: tSlice, y: X_col, name: 'X(t,s)', line: {width: 2.5, color: '#333'},
+         xaxis: 'x1', yaxis: 'y1', showlegend: false},
+
+        {x: tSlice, y: resolved1, name: 'Resolved', line: {width: 2, color: '#1f77b4'},
+         xaxis: 'x2', yaxis: 'y2', legendgroup: 'p1'},
+        {x: tSlice, y: Xt1_col, name: 'Unresolved \u0058\u0303\u00B9', line: {width: 2, color: '#1f77b4', dash: 'dash'},
+         xaxis: 'x2', yaxis: 'y2', legendgroup: 'p1'},
+
+        {x: tSlice, y: resolved2, name: 'Resolved', line: {width: 2, color: '#d62728'},
+         xaxis: 'x3', yaxis: 'y3', legendgroup: 'p2', showlegend: false},
+        {x: tSlice, y: Xt2_col, name: 'Unresolved \u0058\u0303\u00B2', line: {width: 2, color: '#d62728', dash: 'dash'},
+         xaxis: 'x3', yaxis: 'y3', legendgroup: 'p2'},
+
+        {x: tSlice, y: calD1_col, name: '\uD835\uDCD3\u00B9', line: {width: 2, color: '#1f77b4'},
+         xaxis: 'x4', yaxis: 'y4', showlegend: false},
+        {x: tSlice, y: calD2_col, name: '\uD835\uDCD3\u00B2', line: {width: 2, color: '#d62728'},
+         xaxis: 'x4', yaxis: 'y4', showlegend: false},
+    ];
+
+    const subtitles = [
+        'Physical state $X(t,s)$',
+        'Player 1: resolved / unresolved',
+        'Player 2: resolved / unresolved',
+        'Controls $\\mathcal{D}^1, \\mathcal{D}^2$',
+    ];
+    const annotations = subtitles.map((l, i) => ({
+        text: l, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 4, y: 1.08, showarrow: false, font: {size: 12},
+    }));
+    annotations.push({
+        text: `Impulse Response to ${chNames[channel]} shock at s = ${sTime}`,
+        xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.20, showarrow: false, font: {size: 14, color: '#333'},
+    });
+
+    const layout = {
+        height: 360, margin: {...margin, t: 70},
+        grid: {rows: 1, columns: 4, pattern: 'independent'},
+        annotations,
+        showlegend: true,
+        legend: {orientation: 'h', y: -0.15, x: 0.5, xanchor: 'center'},
+        shapes: [],
+    };
+    for (let i = 1; i <= 4; i++) {
+        layout['xaxis' + i] = {title: 't'};
+        layout['yaxis' + i] = {title: i === 1 ? 'value' : ''};
+        layout.shapes.push({
+            type: 'line', x0: t[sIdx], x1: t[sIdx], y0: 0, y1: 1,
+            yref: 'y' + i + ' domain', xref: 'x' + i,
+            line: {dash: 'dot', color: 'rgba(0,0,0,0.25)', width: 1},
+        });
+    }
+
+    Plotly.react(divId, traces, layout, plotCfg);
+}
+
+// --- SVD / rank analysis ---
+function computeSVD(matrix, n, maxRank) {
+    // Form M^T * M for power-iteration SVD
+    const MtM = [];
+    for (let i = 0; i < n; i++) {
+        MtM[i] = new Float64Array(n);
+        for (let j = 0; j <= i; j++) {
+            let sum = 0;
+            for (let k = 0; k < n; k++) sum += matrix[k][i] * matrix[k][j];
+            MtM[i][j] = sum;
+            MtM[j][i] = sum;
+        }
+    }
+
+    const sigmas = [];
+    const rank = Math.min(maxRank || n, n);
+
+    for (let r = 0; r < rank; r++) {
+        let v = new Float64Array(n);
+        // Deterministic initial vector for reproducibility
+        for (let i = 0; i < n; i++) v[i] = Math.sin((r + 1) * (i + 1) * 0.37);
+        let norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+        if (norm < 1e-15) break;
+        for (let i = 0; i < n; i++) v[i] /= norm;
+
+        for (let iter = 0; iter < 300; iter++) {
+            const w = new Float64Array(n);
+            for (let i = 0; i < n; i++) {
+                let sum = 0;
+                for (let j = 0; j < n; j++) sum += MtM[i][j] * v[j];
+                w[i] = sum;
+            }
+            norm = Math.sqrt(w.reduce((s, x) => s + x * x, 0));
+            if (norm < 1e-20) break;
+            for (let i = 0; i < n; i++) v[i] = w[i] / norm;
+        }
+
+        let eigenval = 0;
+        for (let i = 0; i < n; i++) {
+            let sum = 0;
+            for (let j = 0; j < n; j++) sum += MtM[i][j] * v[j];
+            eigenval += v[i] * sum;
+        }
+
+        if (eigenval < 1e-20) break;
+        sigmas.push(Math.sqrt(Math.max(0, eigenval)));
+
+        // Deflate
+        for (let i = 0; i < n; i++)
+            for (let j = 0; j < n; j++)
+                MtM[i][j] -= eigenval * v[i] * v[j];
+    }
+
+    return sigmas;
+}
+
+function plotRankAnalysis(svdDivId, energyDivId, tableDivId, fullData) {
+    const n = fullData.t.length;
+    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2'];
+    const kernelLabels = ['X', 'D\u00B9', 'D\u00B2', '\uD835\uDCD3\u00B9', '\uD835\uDCD3\u00B2',
+                          '\u0058\u0303\u00B9', '\u0058\u0303\u00B2'];
+    const colors = ['#333', '#1f77b4', '#d62728', '#1f77b4', '#d62728', '#1f77b4', '#d62728'];
+    const symbols = ['circle', 'circle', 'circle', 'square', 'square', 'diamond', 'diamond'];
+    const chDashes = ['solid', 'dash', 'dot'];
+    const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
+    const maxRank = Math.min(20, n);
+    const indices = Array.from({length: maxRank}, (_, i) => i + 1);
+
+    const svdTraces = [];
+    const energyTraces = [];
+    const tableRows = [];
+
+    for (let ki = 0; ki < kernelNames.length; ki++) {
+        const kernel = fullData[kernelNames[ki]];
+        if (!kernel) continue;
+
+        for (let ch = 0; ch < 3; ch++) {
+            const svs = computeSVD(kernel['ch' + ch], n, maxRank);
+            if (svs.length === 0 || svs[0] < 1e-15) continue;
+
+            const normalized = svs.map(s => s / svs[0]);
+            const totalEnergy = svs.reduce((s, v) => s + v * v, 0);
+            const cumEnergy = [];
+            let cumSum = 0;
+            for (const s of svs) { cumSum += s * s; cumEnergy.push(cumSum / totalEnergy); }
+
+            svdTraces.push({
+                x: indices.slice(0, normalized.length), y: normalized,
+                name: `${kernelLabels[ki]} ${chNames[ch]}`,
+                mode: 'lines+markers',
+                line: {width: 1.5, color: colors[ki], dash: chDashes[ch]},
+                marker: {size: 4, color: colors[ki], symbol: symbols[ki]},
+                xaxis: 'x' + (ch + 1), yaxis: 'y' + (ch + 1),
+                legendgroup: kernelNames[ki], showlegend: ch === 0,
+            });
+
+            energyTraces.push({
+                x: indices.slice(0, cumEnergy.length), y: cumEnergy,
+                name: `${kernelLabels[ki]} ${chNames[ch]}`,
+                mode: 'lines+markers',
+                line: {width: 1.5, color: colors[ki], dash: chDashes[ch]},
+                marker: {size: 4, color: colors[ki], symbol: symbols[ki]},
+                xaxis: 'x' + (ch + 1), yaxis: 'y' + (ch + 1),
+                legendgroup: kernelNames[ki], showlegend: ch === 0,
+            });
+
+            // Effective rank
+            let r99 = cumEnergy.findIndex(e => e >= 0.99) + 1;
+            let r999 = cumEnergy.findIndex(e => e >= 0.999) + 1;
+            if (r99 === 0) r99 = svs.length;
+            if (r999 === 0) r999 = svs.length;
+            tableRows.push({kernel: kernelLabels[ki], ch: chNames[ch], r99, r999,
+                            sv1: svs[0].toExponential(2)});
+        }
+    }
+
+    // SVD plot
+    const svdAnns = chNames.map((l, i) => ({
+        text: l + ' channel', xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    svdAnns.push({
+        text: 'Kernel Singular Values (normalized)', xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+    });
+    const svdLayout = {
+        height: 380, margin: {...margin, t: 65},
+        grid: {rows: 1, columns: 3, pattern: 'independent'},
+        annotations: svdAnns,
+    };
+    for (let i = 1; i <= 3; i++) {
+        svdLayout['xaxis' + i] = {title: 'Index k', dtick: 2};
+        svdLayout['yaxis' + i] = {title: i === 1 ? '\u03C3_k / \u03C3_1' : '', type: 'log'};
+    }
+    Plotly.react(svdDivId, svdTraces, svdLayout, plotCfg);
+
+    // Cumulative energy plot
+    const enAnns = chNames.map((l, i) => ({
+        text: l + ' channel', xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    enAnns.push({
+        text: 'Cumulative Explained Energy E(k)', xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+    });
+    const enLayout = {
+        height: 380, margin: {...margin, t: 65},
+        grid: {rows: 1, columns: 3, pattern: 'independent'},
+        annotations: enAnns,
+        shapes: [],
+    };
+    for (let i = 1; i <= 3; i++) {
+        enLayout['xaxis' + i] = {title: 'Rank k', dtick: 2};
+        enLayout['yaxis' + i] = {title: i === 1 ? 'E(k)' : '', range: [0, 1.05]};
+        enLayout.shapes.push({
+            type: 'line', x0: 0, x1: maxRank + 1, y0: 0.99, y1: 0.99,
+            xref: 'x' + i, yref: 'y' + i,
+            line: {dash: 'dot', color: 'rgba(0,0,0,0.3)', width: 1},
+        });
+    }
+    Plotly.react(energyDivId, energyTraces, enLayout, plotCfg);
+
+    // Table
+    let html = '<table style="border-collapse:collapse; width:100%;">';
+    html += '<tr style="border-bottom:2px solid #ccc;"><th style="text-align:left; padding:4px 12px;">Kernel</th>' +
+            '<th>Channel</th><th>\u03C3\u2081</th><th>Rank (99%)</th><th>Rank (99.9%)</th></tr>';
+    for (const r of tableRows) {
+        html += `<tr style="border-bottom:1px solid #eee;">` +
+                `<td style="padding:4px 12px; font-weight:600;">${r.kernel}</td>` +
+                `<td style="text-align:center;">${r.ch}</td>` +
+                `<td style="text-align:center;">${r.sv1}</td>` +
+                `<td style="text-align:center;">${r.r99}</td>` +
+                `<td style="text-align:center;">${r.r999}</td></tr>`;
+    }
+    html += '</table>';
+    document.getElementById(tableDivId).innerHTML = html;
+}
+
 // --- app logic ---
 let debounceTimer = null;
 let activeTab = 'tab-model';
@@ -1036,8 +1362,8 @@ let pendingUpdate = false;  // Re-run after current solve finishes
 
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
-let lightKey = '', fullKey = '', sweepKey = '', fKernelKey = '';
-const dirty = { 'tab-equilibrium': true, 'tab-wedge': true, 'tab-kernels': true, 'tab-fkernel': true, 'tab-statics': true, 'tab-diagnostics': true };
+let lastParamsKey = '';
+const dirty = { 'tab-equilibrium': true, 'tab-wedge': true, 'tab-kernels': true, 'tab-impulse': true, 'tab-fkernel': true, 'tab-rank': true, 'tab-statics': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
 let currentN = 40, currentT = 1.0;
@@ -1073,52 +1399,54 @@ function applyGrid(p) {
         currentN = p.N;
         currentT = p.T;
         N = p.N;
-        // Grid change invalidates all caches
-        lightKey = ''; fullKey = ''; sweepKey = ''; fKernelKey = '';
     }
 }
 
-// Ensure light solve result is fresh (~5KB: bar solution, costs, wedges, residuals)
-function ensureLight(p) {
+// Invalidate all cached data when any parameter changes.
+function invalidateIfChanged(p) {
     applyGrid(p);
     const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== lightKey) {
+    if (key !== lastParamsKey) {
+        lightData = null;
+        fullData = null;
+        sweepData = null;
+        fKernelData = null;
+        lastParamsKey = key;
+    }
+}
+
+function ensureLight(p) {
+    invalidateIfChanged(p);
+    if (!lightData) {
         const result = callLight(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        if (result) { lightData = result; lightKey = key; }
+        if (result) lightData = result;
     }
     return lightData;
 }
 
-// Ensure full solve result is fresh (~6MB: kernel2d data for Kernels tab)
 function ensureFull(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== fullKey) {
+    invalidateIfChanged(p);
+    if (!fullData) {
         const result = callFull(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        if (result) { fullData = result; fullKey = key; }
+        if (result) fullData = result;
     }
     return fullData;
 }
 
-// Ensure sweep result is fresh (sweep doesn't depend on p2)
 function ensureSweep(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== sweepKey) {
+    invalidateIfChanged(p);
+    if (!sweepData) {
         const result = callSweep(p.p1, p.b1, p.b2, p.r1, p.r2, SWEEP_P2);
-        if (result) { sweepData = result; sweepKey = key; }
+        if (result) sweepData = result;
     }
     return sweepData;
 }
 
-// Ensure F kernel result is fresh
-// Ensure F kernel result is fresh
 function ensureFKernel(p) {
-    applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
-    if (key !== fKernelKey) {
+    invalidateIfChanged(p);
+    if (!fKernelData) {
         const result = callFKernel(p.p1, p.p2, p.b1, p.b2, p.r1, p.r2);
-        if (result) { fKernelData = result; fKernelKey = key; }
+        if (result) fKernelData = result;
     }
     return fKernelData;
 }
@@ -1151,6 +1479,19 @@ function renderTab(tab, p) {
                 plotKernel('plot-calD2', data.t, data.calD2, 'Primitive Control $\\mathcal{D}^2(t,s)$');
                 break;
             }
+            case 'tab-impulse': {
+                const data = ensureFull(p);
+                if (!data) { ok = false; break; }
+                // Update slider max to match current N
+                const sSlider = document.getElementById('impulse-s');
+                sSlider.max = N - 1;
+                const sIdx = Math.min(parseInt(sSlider.value), N - 1);
+                sSlider.value = sIdx;
+                document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
+                const ch = parseInt(document.getElementById('impulse-channel').value);
+                plotImpulse('plot-impulse', data, ch, sIdx);
+                break;
+            }
             case 'tab-fkernel': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
@@ -1162,6 +1503,12 @@ function renderTab(tab, p) {
                 if (!fk) { ok = false; break; }
                 plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
                 plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$ — p\u2081=${p.p1}, p\u2082=${p.p2}`);
+                break;
+            }
+            case 'tab-rank': {
+                const data = ensureFull(p);
+                if (!data) { ok = false; break; }
+                plotRankAnalysis('plot-svd', 'plot-energy', 'rank-table', data);
                 break;
             }
             case 'tab-statics': {
@@ -1274,6 +1621,21 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     for (const id of ['sl-p1', 'sl-p2', 'sl-b1', 'sl-b2', 'sl-r1', 'sl-r2', 'sl-N', 'sl-T']) {
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
+
+    // Impulse response controls — re-render impulse tab without full re-solve
+    function onImpulseChange() {
+        if (activeTab !== 'tab-impulse') return;
+        const data = fullData;
+        if (!data) return;
+        const sSlider = document.getElementById('impulse-s');
+        const sIdx = Math.min(parseInt(sSlider.value), N - 1);
+        document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
+        const ch = parseInt(document.getElementById('impulse-channel').value);
+        plotImpulse('plot-impulse', data, ch, sIdx);
+    }
+    document.getElementById('impulse-s').addEventListener('input', onImpulseChange);
+    document.getElementById('impulse-channel').addEventListener('change', onImpulseChange);
+
 updateLabels();
     updateActive();
 });
