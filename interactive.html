@@ -1636,14 +1636,22 @@ function renderTab(tab, p) {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
                 document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
-                plotImpulsePhysical('plot-imp-state', null, data, ch, sIdx);
 
+                // Show all panels so Plotly can measure widths, then restore visibility
+                const panels = document.querySelectorAll('.imp-panel');
+                const activeBtn = document.querySelector('.imp-tab-btn.active');
+                const activeId = activeBtn ? activeBtn.dataset.imptab : 'imp-physical';
+                panels.forEach(p => p.style.display = 'block');
+
+                plotImpulsePhysical('plot-imp-state', null, data, ch, sIdx);
                 const light = ensureLight(p);
                 if (!light) { ok = false; break; }
-                // Use F kernel at T as fallback when A_store is not available
                 const fk = data.A_store1 ? null : ensureFKernel(p);
                 plotImpulsePlayerSlices('plot-imp-p1-slices', data, light, fk, 1, ch);
                 plotImpulsePlayerSlices('plot-imp-p2-slices', data, light, fk, 2, ch);
+
+                // Restore: hide non-active panels
+                panels.forEach(el => el.style.display = el.id === activeId ? 'block' : 'none');
                 break;
             }
             case 'tab-fkernel': {
@@ -1783,10 +1791,7 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         document.querySelectorAll('.imp-tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.imp-panel').forEach(p => p.style.display = 'none');
         e.target.classList.add('active');
-        const panel = document.getElementById(e.target.dataset.imptab);
-        panel.style.display = 'block';
-        // Plotly can't size correctly into display:none divs; resize after showing
-        panel.querySelectorAll('.plot').forEach(p => { if (p.data) Plotly.Plots.resize(p); });
+        document.getElementById(e.target.dataset.imptab).style.display = 'block';
     });
 
     // Impulse response controls — always do a full re-render
