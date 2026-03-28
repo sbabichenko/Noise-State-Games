@@ -1296,7 +1296,9 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
                 const col = [], uVals = [];
                 for (let u = 0; u <= ti; u++) {
                     uVals.push(t[u]);
-                    col.push(F[r][u][sIdx]);
+                    // Full impulse response = F^i + Pi^i delta(u,s)
+                    const piCorr = (u === sIdx && r === obsIdx && channel === obsIdx) ? 1 : 0;
+                    col.push(F[r][u][sIdx] + piCorr);
                 }
                 traces.push({
                     x: uVals, y: col,
@@ -1305,7 +1307,7 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
                     showlegend: inLegend && r === 0,
                     legendgroup: `t${ti}`,
                     xaxis: 'x' + (r + 1), yaxis: 'y' + (r + 1),
-                    hovertemplate: `t=${t[ti].toFixed(3)}<br>u=%{x:.3f}<br>F=%{y:.4g}`,
+                    hovertemplate: `t=${t[ti].toFixed(3)}<br>u=%{x:.3f}<br>F+\u03A0=%{y:.4g}`,
                 });
             }
         }
@@ -1317,7 +1319,8 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
             const key = `r${r}c${channel}`;
             for (let u = 0; u < n; u++) {
                 uVals.push(t[u]);
-                col.push(F[key][u][sIdx]);
+                const piCorr = (u === sIdx && r === obsIdx && channel === obsIdx) ? 1 : 0;
+                col.push(F[key][u][sIdx] + piCorr);
             }
             traces.push({
                 x: uVals, y: col,
@@ -1334,11 +1337,12 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
         x: (i + 0.5) / 3, y: 1.02, showarrow: false, font: {size: 12},
     }));
 
+    const sup = playerNum === 1 ? '\u00B9' : '\u00B2';
     const layout = {
         height: 320, margin: {t: 50, b: 45, l: 45, r: 10},
         grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.04},
         annotations,
-        title: {text: `Player ${playerNum} noise-state impulse response \u2014 ${chNames[channel]} shock at s = ${sTime}`,
+        title: {text: `Player ${playerNum} noise-state impulse response (F${sup}+\u03A0${sup}) \u2014 ${chNames[channel]} shock at s = ${sTime}`,
                 font: {size: 13}, y: 0.98},
         legend: {orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center',
                  font: {size: 11}, title: {text: 'evaluation time  ', font: {size: 11}, side: 'left'}},
