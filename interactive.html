@@ -500,10 +500,12 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div class="figure-block">
       <div id="plot-imp-p1-slices" class="plot"></div>
       <div class="figure-caption">
-        <strong>Impulse response of player 1's noise state.</strong>
+        <strong>Impulse response of player 1's noise state</strong> $(F^1 + \Pi^1)(t, u, s)$.
         Each curve is a different evaluation time $t$ (light&#x2192;dark = early&#x2192;late).
         The x-axis is filtered time $u$; the shock arrives at source time $s$ (set by the slider).
         The three panels show the loading on each noise-state component $W^r$.
+        The $W^1$ effect on the $W^1$ panel is exact ($\Pi^1$ directly observes $W^1$);
+        the other panels show density effects learned through filtering the state dynamics.
       </div>
     </div>
   </div>
@@ -511,8 +513,9 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
     <div class="figure-block">
       <div id="plot-imp-p2-slices" class="plot"></div>
       <div class="figure-caption">
-        <strong>Impulse response of player 2's noise state.</strong>
-        Same as player 1, with $\Pi^2$ selecting the $W^2$ observation channel.
+        <strong>Impulse response of player 2's noise state</strong> $(F^2 + \Pi^2)(t, u, s)$.
+        Same as player 1, with $\Pi^2$ selecting $W^2$.
+        The $W^2$ effect on the $W^2$ panel is exact; other panels are density effects.
       </div>
     </div>
   </div>
