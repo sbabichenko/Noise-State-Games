@@ -43,6 +43,12 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
                    max-width: 900px; margin: 4px auto 0; padding: 0 20px; }
 .plot { width: 100%; }
 #loading { text-align: center; padding: 40px; font-size: 1.2em; color: #999; }
+.imp-tab-btn { padding: 6px 16px; font-size: 0.88em; font-weight: 600; cursor: pointer;
+               background: none; border: none; border-bottom: 2px solid transparent;
+               color: #888; transition: color 0.15s; }
+.imp-tab-btn:hover { color: #555; }
+.imp-tab-btn.active { color: #333; border-bottom-color: #1f77b4; }
+.imp-panel { padding-top: 10px; }
 </style>
 </head>
 <body>
@@ -457,7 +463,7 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
 <!-- Tab 2.5: Impulse Response -->
 <div id="tab-impulse" class="tab-panel">
-  <div style="display:flex; gap:24px; align-items:center; margin-bottom:15px; flex-wrap:wrap;">
+  <div style="display:flex; gap:24px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
     <div>
       <label style="font-weight:600; font-size:0.85em;">Shock source:</label>
       <select id="impulse-channel" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
@@ -474,15 +480,43 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
       </div>
     </div>
   </div>
-  <div class="figure-block">
-    <div id="plot-impulse" class="plot"></div>
-    <div class="figure-caption">
-      Impulse response to a unit shock in the selected noise source at time s.
-      <strong>Physical state</strong>: how X(t,s) evolves after the shock.
-      <strong>Player 1 / Player 2</strong>: solid = resolved component
-      (what the player infers), dashed = unresolved X&#x0303;&#x2071;(t,s)
-      (residual uncertainty).
-      <strong>Controls</strong>: primitive control responses &#x1D4D3;&#xB9; and &#x1D4D3;&#xB2;.
+  <div class="tab-bar" style="margin-top:0; border-bottom-width:1px;">
+    <button class="imp-tab-btn active" data-imptab="imp-physical">Physical State</button>
+    <button class="imp-tab-btn" data-imptab="imp-player1">Player 1</button>
+    <button class="imp-tab-btn" data-imptab="imp-player2">Player 2</button>
+  </div>
+  <div id="imp-physical" class="imp-panel">
+    <div class="figure-block">
+      <div id="plot-imp-physical" class="plot"></div>
+      <div class="figure-caption">
+        Impulse response of the physical state and its resolved/unresolved decomposition
+        for each player, for a unit shock in the selected noise at time s.
+        <strong>Left</strong>: state X(t,s), resolved estimates X&minus;X&#x0303;&#xB9; and X&minus;X&#x0303;&#xB2;.
+        <strong>Center</strong>: unresolved components X&#x0303;&#xB9; and X&#x0303;&#xB2;.
+        <strong>Right</strong>: control responses &#x1D4D3;&#xB9; and &#x1D4D3;&#xB2;.
+      </div>
+    </div>
+  </div>
+  <div id="imp-player1" class="imp-panel" style="display:none;">
+    <div class="figure-block">
+      <div id="plot-imp-p1-slices" class="plot"></div>
+      <div class="figure-caption">
+        Player 1's noise state for the selected channel. Curves colored by evaluation time t
+        (purple = early, yellow = late). Each curve shows the kernel loading on past shocks
+        as a function of source time s.
+        <strong>Left</strong>: unresolved X&#x0303;&#xB9; &mdash; what player 1 has not yet learned.
+        <strong>Center</strong>: resolved X&minus;X&#x0303;&#xB9; &mdash; what player 1 has inferred.
+        <strong>Right</strong>: control kernel &#x1D4D3;&#xB9; &mdash; player 1's primitive control loading.
+      </div>
+    </div>
+  </div>
+  <div id="imp-player2" class="imp-panel" style="display:none;">
+    <div class="figure-block">
+      <div id="plot-imp-p2-slices" class="plot"></div>
+      <div class="figure-caption">
+        Player 2's noise state for the selected channel. Same layout as player 1,
+        with 1&#x2194;2 swapped.
+      </div>
     </div>
   </div>
 </div>
@@ -531,34 +565,35 @@ h1 { text-align: center; font-size: 1.5em; margin: 10px 0 5px; }
 
 <!-- Tab 3.5: Rank Analysis -->
 <div id="tab-rank" class="tab-panel">
-  <p class="figure-caption" style="margin-bottom:20px; font-style:italic;">
-    Singular value decomposition of each kernel matrix (per noise channel).
-    Rapid decay indicates low-rank structure &mdash; a kernel well-approximated
-    by a small number of separable modes $K(t,s) \approx \sum_{k=1}^r \sigma_k\, u_k(t)\, v_k(s)$.
-  </p>
+  <div style="display:flex; gap:24px; align-items:center; margin-bottom:15px; flex-wrap:wrap;">
+    <div>
+      <label style="font-weight:600; font-size:0.85em;">Kernel:</label>
+      <select id="rank-kernel-select" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
+        <option value="X">X (state)</option>
+        <option value="D1">D&#xB9; (player 1 feedback)</option>
+        <option value="D2">D&#xB2; (player 2 feedback)</option>
+        <option value="calD1">&#x1D4D3;&#xB9; (primitive control 1)</option>
+        <option value="calD2">&#x1D4D3;&#xB2; (primitive control 2)</option>
+        <option value="Xtilde1">X&#x0303;&#xB9; (P1 unresolved)</option>
+        <option value="Xtilde2">X&#x0303;&#xB2; (P2 unresolved)</option>
+      </select>
+    </div>
+    <p style="font-size:0.85em; color:#666; margin:0;">
+      Singular value decomposition of the selected kernel matrix per noise channel.
+      Rapid decay indicates low-rank structure amenable to finite-dimensional approximation.
+    </p>
+  </div>
   <div class="figure-block">
     <div id="plot-svd" class="plot"></div>
     <div class="figure-caption">
-      Normalized singular values $\sigma_k / \sigma_1$ (log scale) for each kernel and noise channel.
-      Lines that drop sharply after a few indices indicate effective low-rank structure.
-      Solid = W&#x2070;, dashed = W&#xB9;, dotted = W&#xB2;.
+      Left: normalized singular values $\sigma_k / \sigma_1$ (log scale).
+      Right: cumulative explained energy
+      $E(k) = \sum_{i=1}^{k} \sigma_i^2 / \|\cdot\|_F^2$.
+      The dashed line marks 99% energy.
     </div>
   </div>
-  <div class="figure-block">
-    <div id="plot-energy" class="plot"></div>
-    <div class="figure-caption">
-      Cumulative explained energy: fraction of total Frobenius norm squared captured by the
-      best rank-$k$ approximation.
-      $E(k) = \sum_{i=1}^{k} \sigma_i^2 \,/\, \sum_{i=1}^{N} \sigma_i^2$.
-      Values near 1 at small $k$ confirm that a low-rank approximation is accurate.
-    </div>
-  </div>
-  <div class="figure-block" style="max-width:900px; margin:0 auto;">
+  <div class="figure-block" style="max-width:700px; margin:0 auto;">
     <div id="rank-table" style="font-family:monospace; font-size:0.85em; line-height:1.6;"></div>
-    <div class="figure-caption">
-      Effective rank: number of singular values needed to capture 99% and 99.9% of the
-      Frobenius norm squared energy.
-    </div>
   </div>
 </div>
 
@@ -1096,7 +1131,27 @@ function plotWedgesSweep(divId, sweep) {
 }
 
 // --- impulse response ---
-function plotImpulse(divId, fullData, channel, sIdx) {
+let activeImpTab = 'imp-physical';
+
+function diffChannel(ch1, ch2, n) {
+    return ch1.map((row, ti) => row.map((val, si) => val - (ch2[ti] ? ch2[ti][si] : 0)));
+}
+
+function addSlices(traces, t, chData, xaxis, yaxis, color) {
+    const viridis = color ? null : makeViridis(N);
+    const nCurves = N <= 60 ? 15 : 10;
+    const step = Math.max(1, Math.floor(N / nCurves));
+    for (let ti = 0; ti < N; ti += step) {
+        traces.push({
+            x: t.slice(0, ti + 1), y: chData[ti].slice(0, ti + 1),
+            mode: 'lines', line: {color: color || viridis[ti], width: 1.5},
+            showlegend: false, xaxis, yaxis,
+            hovertemplate: `t=${t[ti].toFixed(3)}<br>s=%{x:.3f}<br>val=%{y:.4g}`,
+        });
+    }
+}
+
+function plotImpulsePhysical(divId, fullData, channel, sIdx) {
     const t = fullData.t;
     const n = t.length;
     const tSlice = t.slice(sIdx);
@@ -1117,62 +1172,101 @@ function plotImpulse(divId, fullData, channel, sIdx) {
     const resolved2 = X_col.map((x, i) => x - Xt2_col[i]);
 
     const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
-    const sTime = t[sIdx].toFixed(3);
 
     const traces = [
-        {x: tSlice, y: X_col, name: 'X(t,s)', line: {width: 2.5, color: '#333'},
-         xaxis: 'x1', yaxis: 'y1', showlegend: false},
-
-        {x: tSlice, y: resolved1, name: 'Resolved', line: {width: 2, color: '#1f77b4'},
-         xaxis: 'x2', yaxis: 'y2', legendgroup: 'p1'},
-        {x: tSlice, y: Xt1_col, name: 'Unresolved \u0058\u0303\u00B9', line: {width: 2, color: '#1f77b4', dash: 'dash'},
-         xaxis: 'x2', yaxis: 'y2', legendgroup: 'p1'},
-
-        {x: tSlice, y: resolved2, name: 'Resolved', line: {width: 2, color: '#d62728'},
-         xaxis: 'x3', yaxis: 'y3', legendgroup: 'p2', showlegend: false},
-        {x: tSlice, y: Xt2_col, name: 'Unresolved \u0058\u0303\u00B2', line: {width: 2, color: '#d62728', dash: 'dash'},
-         xaxis: 'x3', yaxis: 'y3', legendgroup: 'p2'},
-
-        {x: tSlice, y: calD1_col, name: '\uD835\uDCD3\u00B9', line: {width: 2, color: '#1f77b4'},
-         xaxis: 'x4', yaxis: 'y4', showlegend: false},
-        {x: tSlice, y: calD2_col, name: '\uD835\uDCD3\u00B2', line: {width: 2, color: '#d62728'},
-         xaxis: 'x4', yaxis: 'y4', showlegend: false},
+        // Panel 1: State + resolved
+        {x: tSlice, y: X_col, name: '$X(t,s)$', line: {width: 2.5, color: '#333'},
+         xaxis: 'x1', yaxis: 'y1'},
+        {x: tSlice, y: resolved1, name: '$X-\\tilde{X}^1$', line: {width: 2, color: '#1f77b4', dash: 'dash'},
+         xaxis: 'x1', yaxis: 'y1'},
+        {x: tSlice, y: resolved2, name: '$X-\\tilde{X}^2$', line: {width: 2, color: '#d62728', dash: 'dash'},
+         xaxis: 'x1', yaxis: 'y1'},
+        // Panel 2: Unresolved
+        {x: tSlice, y: Xt1_col, name: '$\\tilde{X}^1$', line: {width: 2, color: '#1f77b4'},
+         xaxis: 'x2', yaxis: 'y2'},
+        {x: tSlice, y: Xt2_col, name: '$\\tilde{X}^2$', line: {width: 2, color: '#d62728'},
+         xaxis: 'x2', yaxis: 'y2'},
+        // Panel 3: Controls
+        {x: tSlice, y: calD1_col, name: '$\\mathcal{D}^1$', line: {width: 2, color: '#1f77b4'},
+         xaxis: 'x3', yaxis: 'y3'},
+        {x: tSlice, y: calD2_col, name: '$\\mathcal{D}^2$', line: {width: 2, color: '#d62728'},
+         xaxis: 'x3', yaxis: 'y3'},
     ];
 
-    const subtitles = [
-        'Physical state $X(t,s)$',
-        'Player 1: resolved / unresolved',
-        'Player 2: resolved / unresolved',
-        'Controls $\\mathcal{D}^1, \\mathcal{D}^2$',
-    ];
+    const subtitles = ['State & resolved', 'Unresolved', 'Controls'];
     const annotations = subtitles.map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 4, y: 1.08, showarrow: false, font: {size: 12},
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
     }));
     annotations.push({
-        text: `Impulse Response to ${chNames[channel]} shock at s = ${sTime}`,
+        text: `${chNames[channel]} shock at s = ${t[sIdx].toFixed(3)}`,
         xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.20, showarrow: false, font: {size: 14, color: '#333'},
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
     });
 
     const layout = {
-        height: 360, margin: {...margin, t: 70},
-        grid: {rows: 1, columns: 4, pattern: 'independent'},
+        height: 340, margin: {...margin, t: 60},
+        grid: {rows: 1, columns: 3, pattern: 'independent'},
         annotations,
-        showlegend: true,
-        legend: {orientation: 'h', y: -0.15, x: 0.5, xanchor: 'center'},
+        legend: {orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center'},
         shapes: [],
     };
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 3; i++) {
         layout['xaxis' + i] = {title: 't'};
-        layout['yaxis' + i] = {title: i === 1 ? 'value' : ''};
+        layout['yaxis' + i] = {};
         layout.shapes.push({
             type: 'line', x0: t[sIdx], x1: t[sIdx], y0: 0, y1: 1,
             yref: 'y' + i + ' domain', xref: 'x' + i,
             line: {dash: 'dot', color: 'rgba(0,0,0,0.25)', width: 1},
         });
     }
+    Plotly.react(divId, traces, layout, plotCfg);
+}
 
+function plotImpulsePlayerSlices(divId, fullData, playerNum, channel) {
+    const t = fullData.t;
+    const xtKey = playerNum === 1 ? 'Xtilde1' : 'Xtilde2';
+    const calDKey = playerNum === 1 ? 'calD1' : 'calD2';
+    const xt = fullData[xtKey];
+    const calD = fullData[calDKey];
+    if (!xt) return;
+
+    const ch = 'ch' + channel;
+    const unresolvedCh = xt[ch];
+    const resolvedCh = diffChannel(fullData.X[ch], xt[ch], N);
+    const controlCh = calD[ch];
+
+    const traces = [];
+    addSlices(traces, t, unresolvedCh, 'x1', 'y1');
+    addSlices(traces, t, resolvedCh, 'x2', 'y2');
+    addSlices(traces, t, controlCh, 'x3', 'y3');
+
+    const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
+    const pLabel = playerNum === 1 ? '\u00B9' : '\u00B2';
+    const subtitles = [
+        `Unresolved $\\tilde{X}^${playerNum}$`,
+        `Resolved $X - \\tilde{X}^${playerNum}$`,
+        `Control $\\mathcal{D}^${playerNum}$`,
+    ];
+    const annotations = subtitles.map((l, i) => ({
+        text: l, xref: 'paper', yref: 'paper',
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+    }));
+    annotations.push({
+        text: `Player ${playerNum} Noise State \u2014 ${chNames[channel]} channel`,
+        xref: 'paper', yref: 'paper',
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+    });
+
+    const layout = {
+        height: 340, margin: {...margin, t: 60},
+        grid: {rows: 1, columns: 3, pattern: 'independent'},
+        annotations,
+    };
+    for (let i = 1; i <= 3; i++) {
+        layout['xaxis' + i] = {title: 's'};
+        layout['yaxis' + i] = {title: i === 1 ? 'value' : ''};
+    }
     Plotly.react(divId, traces, layout, plotCfg);
 }
 
@@ -1232,120 +1326,93 @@ function computeSVD(matrix, n, maxRank) {
     return sigmas;
 }
 
-function plotRankAnalysis(svdDivId, energyDivId, tableDivId, fullData) {
+function plotRankAnalysis(svdDivId, tableDivId, fullData, kernelName) {
     const n = fullData.t.length;
-    const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2', 'Xtilde1', 'Xtilde2'];
-    const kernelLabels = ['X', 'D\u00B9', 'D\u00B2', '\uD835\uDCD3\u00B9', '\uD835\uDCD3\u00B2',
-                          '\u0058\u0303\u00B9', '\u0058\u0303\u00B2'];
-    const colors = ['#333', '#1f77b4', '#d62728', '#1f77b4', '#d62728', '#1f77b4', '#d62728'];
-    const symbols = ['circle', 'circle', 'circle', 'square', 'square', 'diamond', 'diamond'];
-    const chDashes = ['solid', 'dash', 'dot'];
+    const kernel = fullData[kernelName];
+    if (!kernel) return;
+
+    const labelMap = {X:'X', D1:'D\u00B9', D2:'D\u00B2', calD1:'\uD835\uDCD3\u00B9',
+                      calD2:'\uD835\uDCD3\u00B2', Xtilde1:'\u0058\u0303\u00B9', Xtilde2:'\u0058\u0303\u00B2'};
+    const kLabel = labelMap[kernelName] || kernelName;
     const chNames = ['W\u2070', 'W\u00B9', 'W\u00B2'];
+    const chColors = ['#1f77b4', '#ff7f0e', '#2ca02c'];
     const maxRank = Math.min(20, n);
     const indices = Array.from({length: maxRank}, (_, i) => i + 1);
 
-    const svdTraces = [];
-    const energyTraces = [];
+    const traces = [];
     const tableRows = [];
 
-    for (let ki = 0; ki < kernelNames.length; ki++) {
-        const kernel = fullData[kernelNames[ki]];
-        if (!kernel) continue;
-
-        for (let ch = 0; ch < 3; ch++) {
-            const svs = computeSVD(kernel['ch' + ch], n, maxRank);
-            if (svs.length === 0 || svs[0] < 1e-15) continue;
-
-            const normalized = svs.map(s => s / svs[0]);
-            const totalEnergy = svs.reduce((s, v) => s + v * v, 0);
-            const cumEnergy = [];
-            let cumSum = 0;
-            for (const s of svs) { cumSum += s * s; cumEnergy.push(cumSum / totalEnergy); }
-
-            svdTraces.push({
-                x: indices.slice(0, normalized.length), y: normalized,
-                name: `${kernelLabels[ki]} ${chNames[ch]}`,
-                mode: 'lines+markers',
-                line: {width: 1.5, color: colors[ki], dash: chDashes[ch]},
-                marker: {size: 4, color: colors[ki], symbol: symbols[ki]},
-                xaxis: 'x' + (ch + 1), yaxis: 'y' + (ch + 1),
-                legendgroup: kernelNames[ki], showlegend: ch === 0,
-            });
-
-            energyTraces.push({
-                x: indices.slice(0, cumEnergy.length), y: cumEnergy,
-                name: `${kernelLabels[ki]} ${chNames[ch]}`,
-                mode: 'lines+markers',
-                line: {width: 1.5, color: colors[ki], dash: chDashes[ch]},
-                marker: {size: 4, color: colors[ki], symbol: symbols[ki]},
-                xaxis: 'x' + (ch + 1), yaxis: 'y' + (ch + 1),
-                legendgroup: kernelNames[ki], showlegend: ch === 0,
-            });
-
-            // Effective rank
-            let r99 = cumEnergy.findIndex(e => e >= 0.99) + 1;
-            let r999 = cumEnergy.findIndex(e => e >= 0.999) + 1;
-            if (r99 === 0) r99 = svs.length;
-            if (r999 === 0) r999 = svs.length;
-            tableRows.push({kernel: kernelLabels[ki], ch: chNames[ch], r99, r999,
-                            sv1: svs[0].toExponential(2)});
+    for (let ch = 0; ch < 3; ch++) {
+        const svs = computeSVD(kernel['ch' + ch], n, maxRank);
+        if (svs.length === 0 || svs[0] < 1e-15) {
+            tableRows.push({ch: chNames[ch], sv1: '0', r99: '-', r999: '-'});
+            continue;
         }
-    }
 
-    // SVD plot
-    const svdAnns = chNames.map((l, i) => ({
-        text: l + ' channel', xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
-    }));
-    svdAnns.push({
-        text: 'Kernel Singular Values (normalized)', xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
-    });
-    const svdLayout = {
-        height: 380, margin: {...margin, t: 65},
-        grid: {rows: 1, columns: 3, pattern: 'independent'},
-        annotations: svdAnns,
-    };
-    for (let i = 1; i <= 3; i++) {
-        svdLayout['xaxis' + i] = {title: 'Index k', dtick: 2};
-        svdLayout['yaxis' + i] = {title: i === 1 ? '\u03C3_k / \u03C3_1' : '', type: 'log'};
-    }
-    Plotly.react(svdDivId, svdTraces, svdLayout, plotCfg);
+        const normalized = svs.map(s => s / svs[0]);
+        const totalEnergy = svs.reduce((s, v) => s + v * v, 0);
+        const cumEnergy = [];
+        let cumSum = 0;
+        for (const s of svs) { cumSum += s * s; cumEnergy.push(cumSum / totalEnergy); }
 
-    // Cumulative energy plot
-    const enAnns = chNames.map((l, i) => ({
-        text: l + ' channel', xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
-    }));
-    enAnns.push({
-        text: 'Cumulative Explained Energy E(k)', xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
-    });
-    const enLayout = {
-        height: 380, margin: {...margin, t: 65},
-        grid: {rows: 1, columns: 3, pattern: 'independent'},
-        annotations: enAnns,
-        shapes: [],
-    };
-    for (let i = 1; i <= 3; i++) {
-        enLayout['xaxis' + i] = {title: 'Rank k', dtick: 2};
-        enLayout['yaxis' + i] = {title: i === 1 ? 'E(k)' : '', range: [0, 1.05]};
-        enLayout.shapes.push({
-            type: 'line', x0: 0, x1: maxRank + 1, y0: 0.99, y1: 0.99,
-            xref: 'x' + i, yref: 'y' + i,
-            line: {dash: 'dot', color: 'rgba(0,0,0,0.3)', width: 1},
+        // Left panel: singular values
+        traces.push({
+            x: indices.slice(0, normalized.length), y: normalized,
+            name: chNames[ch], mode: 'lines+markers',
+            line: {width: 2, color: chColors[ch]},
+            marker: {size: 5, color: chColors[ch]},
+            xaxis: 'x1', yaxis: 'y1',
         });
+
+        // Right panel: cumulative energy
+        traces.push({
+            x: indices.slice(0, cumEnergy.length), y: cumEnergy,
+            name: chNames[ch], mode: 'lines+markers',
+            line: {width: 2, color: chColors[ch]},
+            marker: {size: 5, color: chColors[ch]},
+            xaxis: 'x2', yaxis: 'y2', showlegend: false,
+        });
+
+        let r99 = cumEnergy.findIndex(e => e >= 0.99) + 1;
+        let r999 = cumEnergy.findIndex(e => e >= 0.999) + 1;
+        if (r99 === 0) r99 = svs.length;
+        if (r999 === 0) r999 = svs.length;
+        tableRows.push({ch: chNames[ch], sv1: svs[0].toExponential(2), r99, r999});
     }
-    Plotly.react(energyDivId, energyTraces, enLayout, plotCfg);
+
+    const annotations = [
+        {text: '$\\sigma_k / \\sigma_1$', xref: 'paper', yref: 'paper',
+         x: 0.22, y: 1.08, showarrow: false, font: {size: 13}},
+        {text: 'Cumulative energy $E(k)$', xref: 'paper', yref: 'paper',
+         x: 0.78, y: 1.08, showarrow: false, font: {size: 13}},
+        {text: `Rank Analysis \u2014 ${kLabel}`, xref: 'paper', yref: 'paper',
+         x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'}},
+    ];
+
+    const layout = {
+        height: 350, margin: {...margin, t: 65},
+        grid: {rows: 1, columns: 2, pattern: 'independent'},
+        annotations,
+        xaxis1: {title: 'Index k', dtick: 2},
+        yaxis1: {title: '\u03C3_k / \u03C3_1', type: 'log'},
+        xaxis2: {title: 'Rank k', dtick: 2},
+        yaxis2: {title: 'E(k)', range: [0, 1.05]},
+        shapes: [{
+            type: 'line', x0: 0, x1: maxRank + 1, y0: 0.99, y1: 0.99,
+            xref: 'x2', yref: 'y2',
+            line: {dash: 'dot', color: 'rgba(0,0,0,0.3)', width: 1},
+        }],
+    };
+    Plotly.react(svdDivId, traces, layout, plotCfg);
 
     // Table
     let html = '<table style="border-collapse:collapse; width:100%;">';
-    html += '<tr style="border-bottom:2px solid #ccc;"><th style="text-align:left; padding:4px 12px;">Kernel</th>' +
-            '<th>Channel</th><th>\u03C3\u2081</th><th>Rank (99%)</th><th>Rank (99.9%)</th></tr>';
+    html += '<tr style="border-bottom:2px solid #ccc;">' +
+            '<th style="text-align:left; padding:4px 12px;">Channel</th>' +
+            '<th>\u03C3\u2081</th><th>Rank (99%)</th><th>Rank (99.9%)</th></tr>';
     for (const r of tableRows) {
         html += `<tr style="border-bottom:1px solid #eee;">` +
-                `<td style="padding:4px 12px; font-weight:600;">${r.kernel}</td>` +
-                `<td style="text-align:center;">${r.ch}</td>` +
+                `<td style="padding:4px 12px; font-weight:600;">${r.ch}</td>` +
                 `<td style="text-align:center;">${r.sv1}</td>` +
                 `<td style="text-align:center;">${r.r99}</td>` +
                 `<td style="text-align:center;">${r.r999}</td></tr>`;
@@ -1482,14 +1549,19 @@ function renderTab(tab, p) {
             case 'tab-impulse': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                // Update slider max to match current N
                 const sSlider = document.getElementById('impulse-s');
                 sSlider.max = N - 1;
                 const sIdx = Math.min(parseInt(sSlider.value), N - 1);
                 sSlider.value = sIdx;
                 document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
                 const ch = parseInt(document.getElementById('impulse-channel').value);
-                plotImpulse('plot-impulse', data, ch, sIdx);
+                if (activeImpTab === 'imp-physical') {
+                    plotImpulsePhysical('plot-imp-physical', data, ch, sIdx);
+                } else if (activeImpTab === 'imp-player1') {
+                    plotImpulsePlayerSlices('plot-imp-p1-slices', data, 1, ch);
+                } else if (activeImpTab === 'imp-player2') {
+                    plotImpulsePlayerSlices('plot-imp-p2-slices', data, 2, ch);
+                }
                 break;
             }
             case 'tab-fkernel': {
@@ -1508,7 +1580,8 @@ function renderTab(tab, p) {
             case 'tab-rank': {
                 const data = ensureFull(p);
                 if (!data) { ok = false; break; }
-                plotRankAnalysis('plot-svd', 'plot-energy', 'rank-table', data);
+                const selKernel = document.getElementById('rank-kernel-select').value;
+                plotRankAnalysis('plot-svd', 'rank-table', data, selKernel);
                 break;
             }
             case 'tab-statics': {
@@ -1622,7 +1695,18 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
 
-    // Impulse response controls — re-render impulse tab without full re-solve
+    // Impulse subtab switching
+    document.addEventListener('click', function(e) {
+        if (!e.target.classList.contains('imp-tab-btn')) return;
+        document.querySelectorAll('.imp-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.imp-panel').forEach(p => p.style.display = 'none');
+        e.target.classList.add('active');
+        activeImpTab = e.target.dataset.imptab;
+        document.getElementById(activeImpTab).style.display = 'block';
+        onImpulseChange();
+    });
+
+    // Impulse response controls — re-render without full re-solve
     function onImpulseChange() {
         if (activeTab !== 'tab-impulse') return;
         const data = fullData;
@@ -1631,10 +1715,24 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         const sIdx = Math.min(parseInt(sSlider.value), N - 1);
         document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
         const ch = parseInt(document.getElementById('impulse-channel').value);
-        plotImpulse('plot-impulse', data, ch, sIdx);
+        if (activeImpTab === 'imp-physical') {
+            plotImpulsePhysical('plot-imp-physical', data, ch, sIdx);
+        } else if (activeImpTab === 'imp-player1') {
+            plotImpulsePlayerSlices('plot-imp-p1-slices', data, 1, ch);
+        } else if (activeImpTab === 'imp-player2') {
+            plotImpulsePlayerSlices('plot-imp-p2-slices', data, 2, ch);
+        }
     }
     document.getElementById('impulse-s').addEventListener('input', onImpulseChange);
     document.getElementById('impulse-channel').addEventListener('change', onImpulseChange);
+
+    // Rank kernel selector
+    document.getElementById('rank-kernel-select').addEventListener('change', function() {
+        if (activeTab !== 'tab-rank') return;
+        const data = fullData;
+        if (!data) return;
+        plotRankAnalysis('plot-svd', 'rank-table', data, this.value);
+    });
 
 updateLabels();
     updateActive();
