@@ -113,6 +113,14 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 /* Guide tab cross-links */
 .guide-link { color: #1f77b4; text-decoration: none; font-weight: 600; cursor: pointer; }
 .guide-link:hover { text-decoration: underline; }
+
+/* Allocation preset buttons */
+.alloc-preset { padding: 4px 14px; font-size: 0.78em; font-weight: 600;
+                cursor: pointer; background: #f5f6f8; color: #666;
+                border: 1px solid #d0d4da; border-radius: 5px;
+                transition: all 0.15s; }
+.alloc-preset:hover { background: #e8eaed; border-color: #b0b4ba; }
+.alloc-preset.active { background: #1f77b4; color: #fff; border-color: #1f77b4; }
 </style>
 </head>
 <body>
@@ -208,6 +216,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
   <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
   <button class="tab-btn" data-tab="tab-impulse">Impulse</button>
   <button class="tab-btn" data-tab="tab-statics">Statics</button>
+  <button class="tab-btn" data-tab="tab-allocation">Allocation</button>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
 
@@ -405,6 +414,22 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       (common filtration, no strategic friction). The gap reflects both the direct
       cost of having less information and the additional distortion from bilateral
       belief manipulation.
+    </p>
+
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">Precision allocation</h3>
+    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+      <a href="#" class="guide-link" data-target="tab-allocation">Allocation</a> tab.
+    </p>
+    <p>
+      Sweeps the precision split under a quadratic budget $p_1^2 + p_2^2 = \bar{P}$.
+      The paper's headline result (Section 2.5): under competition with asymmetric
+      effort costs, a planner should concentrate all precision on the efficient player.
+      The mechanism is <em>information starvation</em>: denying the inefficient player
+      signal access collapses their ability to exert mean control, which in turn
+      reduces the efficient player's incentive to manipulate, collapsing bilateral
+      waste. The certainty-equivalent benchmark (dotted lines in the controls panel)
+      is invariant to the precision split, directly visualizing separation failure
+      (Proposition 4.6).
     </p>
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Simulation</h3>
@@ -731,6 +756,51 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <div class="figure-caption">
       Information wedges $\bar{V}^1(t)$ and $\bar{V}^2(t)$ across the $p_2$ sweep.
     </div>
+  </div>
+</div>
+
+<!-- Tab: Allocation -->
+<div id="tab-allocation" class="tab-panel">
+  <div class="param-card" style="margin-bottom:14px;">
+    <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:2px 0;">
+      <div class="slider-group" style="min-width:250px; max-width:400px;">
+        <label>$\bar{P}$ (precision budget, $p_1^2+p_2^2 = \bar{P}$)</label>
+        <div class="slider-row">
+          <input type="range" id="sl-Pbar" min="5" max="80" step="1" value="20">
+          <span class="val" id="val-Pbar">20</span>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span style="font-size:0.82em; font-weight:600; color:#666;">Cost preset:</span>
+        <button class="alloc-preset" data-r1="0.05" data-r2="0.2">r&#x2081;=0.05, r&#x2082;=0.2</button>
+        <button class="alloc-preset" data-r1="0.08" data-r2="0.15">r&#x2081;=0.08, r&#x2082;=0.15</button>
+        <button class="alloc-preset" data-r1="0.1" data-r2="0.1">r&#x2081;=r&#x2082;=0.1</button>
+      </div>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+    <div class="figure-block">
+      <div id="plot-alloc-costs" class="plot"></div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-alloc-effort" class="plot"></div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-alloc-controls" class="plot"></div>
+    </div>
+    <div class="figure-block">
+      <div id="plot-alloc-wedges" class="plot"></div>
+    </div>
+  </div>
+  <div class="figure-caption">
+    Equilibrium quantities across the precision split with $p_1^2 + p_2^2 = \bar{P}$.
+    Top-left: individual costs (solid) vs full-information benchmark (dashed, independent of allocation).
+    Top-right: total effort-weighted control cost &mdash; the key diagnostic for information starvation.
+    Under asymmetric costs, concentrating precision on the efficient player (fraction $\to 1$) minimizes
+    total waste. Bottom-left: time-averaged mean controls (solid) vs certainty-equivalent benchmark
+    (dotted). The CE benchmark is invariant to precision, demonstrating separation failure
+    (Proposition 4.6): the equilibrium policy rule itself depends on the information structure
+    through the wedge. Bottom-right: peak information wedge magnitude.
   </div>
 </div>
 
@@ -1653,8 +1723,9 @@ let pendingUpdate = false;  // Re-run after current solve finishes
 
 // Cached solver results + dirty flags per tab
 let lightData = null, fullData = null, sweepData = null, fKernelData = null;
+let allocData = null, lastAllocKey = '';
 let lastParamsKey = '';
-const dirty = { 'tab-equilibrium': true, 'tab-simulation': true, 'tab-kernels': true, 'tab-impulse': true, 'tab-statics': true, 'tab-diagnostics': true };
+const dirty = { 'tab-equilibrium': true, 'tab-simulation': true, 'tab-kernels': true, 'tab-impulse': true, 'tab-statics': true, 'tab-allocation': true, 'tab-diagnostics': true };
 
 // Track current grid params to detect N/T changes
 let currentN = 40, currentT = 1.0;
@@ -1727,6 +1798,7 @@ function invalidateIfChanged(p) {
         fullData = null;
         sweepData = null;
         fKernelData = null;
+        allocData = null;
         lastParamsKey = key;
     }
 }
@@ -2005,6 +2077,134 @@ function plotSimFilterError(divId, t, paths, bands, showBands) {
     }, plotCfg);
 }
 
+// ========== Allocation tab: precision budget sweep ==========
+
+function computeAllocationSweep(p, Pbar) {
+    const fractions = [];
+    for (let i = 1; i <= 19; i++) fractions.push(i * 0.05);
+
+    const statusEl = document.getElementById('status');
+    if (statusEl) statusEl.textContent = 'Computing precision allocation sweep (19 equilibria)...';
+
+    // Full-info benchmark (constant across sweep)
+    const piResult = callLight(100, 100, p.b1, p.b2, p.r1, p.r2);
+    if (!piResult) return null;
+    const J1_pi = piResult.J1, J2_pi = piResult.J2;
+    const dt = p.T / (p.N - 1);
+    const avgD1pi = piResult.barD1_pi.reduce((s, d) => s + d * dt, 0) / p.T;
+    const avgD2pi = piResult.barD2_pi.reduce((s, d) => s + d * dt, 0) / p.T;
+    const effortPI = piResult.barD1_pi.reduce((s, d, i) =>
+        s + (p.r1 * d * d + p.r2 * piResult.barD2_pi[i] * piResult.barD2_pi[i]) * dt, 0);
+
+    const results = [];
+    for (const f of fractions) {
+        const p1 = Math.sqrt(f * Pbar);
+        const p2 = Math.sqrt((1 - f) * Pbar);
+        const result = callLight(p1, p2, p.b1, p.b2, p.r1, p.r2);
+        if (!result) continue;
+
+        const effortEq = result.barD1.reduce((s, d, i) =>
+            s + (p.r1 * d * d + p.r2 * result.barD2[i] * result.barD2[i]) * dt, 0);
+        const avgD1 = result.barD1.reduce((s, d) => s + d * dt, 0) / p.T;
+        const avgD2 = result.barD2.reduce((s, d) => s + d * dt, 0) / p.T;
+        const avgX = result.barX.reduce((s, x) => s + x * dt, 0) / p.T;
+        const peakV1 = Math.max(...result.V1.map(Math.abs));
+        const peakV2 = Math.max(...result.V2.map(Math.abs));
+
+        results.push({ f, p1, p2, J1: result.J1, J2: result.J2,
+                        effortEq, avgD1, avgD2, avgX, peakV1, peakV2 });
+    }
+
+    return { fractions: results.map(r => r.f), results, J1_pi, J2_pi,
+             avgD1pi, avgD2pi, effortPI, Pbar };
+}
+
+function plotAllocationCosts(divId, ad) {
+    const f = ad.fractions;
+    const traces = [
+        { x: f, y: ad.results.map(r => r.J1), name: '$J^1$ equilibrium',
+          mode: 'lines+markers', line: { width: 2, color: '#1f77b4' }, marker: { size: 5 } },
+        { x: f, y: ad.results.map(r => r.J2), name: '$J^2$ equilibrium',
+          mode: 'lines+markers', line: { width: 2, color: '#d62728' }, marker: { size: 5 } },
+        { x: [f[0], f[f.length-1]], y: [ad.J1_pi, ad.J1_pi], name: '$J^1$ full-info',
+          mode: 'lines', line: { width: 1, dash: 'dash', color: '#1f77b4' } },
+        { x: [f[0], f[f.length-1]], y: [ad.J2_pi, ad.J2_pi], name: '$J^2$ full-info',
+          mode: 'lines', line: { width: 1, dash: 'dash', color: '#d62728' } },
+    ];
+    Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(1),
+        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
+        yaxis: { ...styledAxes(1).yaxis, title: { text: 'Cost', font: { size: 11 } } },
+        title: { text: 'Individual equilibrium costs', font: { size: 13, color: '#555' }, y: 0.97 },
+        legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
+                  bgcolor: 'rgba(255,255,255,0.8)', bordercolor: '#e0e0e0', borderwidth: 1 },
+    }, plotCfg);
+}
+
+function plotAllocationEffort(divId, ad) {
+    const f = ad.fractions;
+    const traces = [
+        { x: f, y: ad.results.map(r => r.effortEq), name: 'Equilibrium',
+          mode: 'lines+markers', line: { width: 2, color: '#2d3436' }, marker: { size: 5 } },
+        { x: [f[0], f[f.length-1]], y: [ad.effortPI, ad.effortPI], name: 'Full-info',
+          mode: 'lines', line: { width: 1, dash: 'dash', color: '#999' } },
+    ];
+    Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(1),
+        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
+        yaxis: { ...styledAxes(1).yaxis, title: { text: '$\\int(r_1\\bar{D}_1^2 + r_2\\bar{D}_2^2)\\,dt$', font: { size: 11 } } },
+        title: { text: 'Total effort-weighted control cost', font: { size: 13, color: '#555' }, y: 0.97 },
+        legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
+                  bgcolor: 'rgba(255,255,255,0.8)', bordercolor: '#e0e0e0', borderwidth: 1 },
+    }, plotCfg);
+}
+
+function plotAllocationControls(divId, ad) {
+    const f = ad.fractions;
+    const traces = [
+        { x: f, y: ad.results.map(r => r.avgD1), name: '$\\bar{D}^1$ eq.',
+          mode: 'lines+markers', line: { width: 2, color: '#1f77b4' }, marker: { size: 4 } },
+        { x: f, y: ad.results.map(r => r.avgD2), name: '$\\bar{D}^2$ eq.',
+          mode: 'lines+markers', line: { width: 2, color: '#d62728' }, marker: { size: 4 } },
+        { x: f, y: ad.results.map(r => r.avgX), name: '$\\bar{X}$ eq.',
+          mode: 'lines+markers', line: { width: 2, color: '#333' }, marker: { size: 4 } },
+        { x: [f[0], f[f.length-1]], y: [ad.avgD1pi, ad.avgD1pi], name: '$\\bar{D}^1$ CE',
+          mode: 'lines', line: { width: 1, dash: 'dot', color: '#1f77b4' } },
+        { x: [f[0], f[f.length-1]], y: [ad.avgD2pi, ad.avgD2pi], name: '$\\bar{D}^2$ CE',
+          mode: 'lines', line: { width: 1, dash: 'dot', color: '#d62728' } },
+    ];
+    Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(1),
+        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
+        yaxis: { ...styledAxes(1).yaxis, title: { text: 'Mean control / state', font: { size: 11 } } },
+        title: { text: 'Time-averaged mean controls and state', font: { size: 13, color: '#555' }, y: 0.97 },
+        legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
+                  bgcolor: 'rgba(255,255,255,0.8)', bordercolor: '#e0e0e0', borderwidth: 1 },
+    }, plotCfg);
+}
+
+function plotAllocationWedges(divId, ad) {
+    const f = ad.fractions;
+    const traces = [
+        { x: f, y: ad.results.map(r => r.peakV1), name: '$\\max_t |\\bar{V}^1|$',
+          mode: 'lines+markers', line: { width: 2, color: '#1f77b4' }, marker: { size: 5 } },
+        { x: f, y: ad.results.map(r => r.peakV2), name: '$\\max_t |\\bar{V}^2|$',
+          mode: 'lines+markers', line: { width: 2, color: '#d62728' }, marker: { size: 5 } },
+    ];
+    Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(1),
+        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
+        yaxis: { ...styledAxes(1).yaxis, title: { text: '$\\max_t |\\bar{V}^i(t)|$', font: { size: 11 } } },
+        title: { text: 'Peak information wedge magnitude', font: { size: 13, color: '#555' }, y: 0.97 },
+        legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
+                  bgcolor: 'rgba(255,255,255,0.8)', bordercolor: '#e0e0e0', borderwidth: 1 },
+    }, plotCfg);
+}
+
 function ensureLight(p) {
     invalidateIfChanged(p);
     if (!lightData) {
@@ -2138,6 +2338,24 @@ function renderTab(tab, p) {
                 plotBarD1Sweep('plot-barD1-sweep', sweep);
                 plotBarD2Sweep('plot-barD2-sweep', sweep);
                 plotWedgesSweep('plot-wedges-sweep', sweep);
+                break;
+            }
+            case 'tab-allocation': {
+                const Pbar = parseFloat(document.getElementById('sl-Pbar').value);
+                const allocKey = `${p.r1},${p.r2},${p.b1},${p.b2},${p.T},${p.N},${Pbar}`;
+                if (allocKey !== lastAllocKey) {
+                    allocData = null;
+                    lastAllocKey = allocKey;
+                }
+                if (!allocData) {
+                    applyGrid(p);
+                    allocData = computeAllocationSweep(p, Pbar);
+                }
+                if (!allocData) { ok = false; break; }
+                plotAllocationCosts('plot-alloc-costs', allocData);
+                plotAllocationEffort('plot-alloc-effort', allocData);
+                plotAllocationControls('plot-alloc-controls', allocData);
+                plotAllocationWedges('plot-alloc-wedges', allocData);
                 break;
             }
             case 'tab-diagnostics': {
@@ -2320,6 +2538,23 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     });
     document.getElementById('sim-bands').addEventListener('change', onSimChange);
     document.getElementById('sim-seed').addEventListener('change', onSimChange);
+
+    // Allocation tab controls
+    document.getElementById('sl-Pbar').addEventListener('input', function() {
+        document.getElementById('val-Pbar').textContent = this.value;
+        dirty['tab-allocation'] = true;
+        allocData = null;
+        if (activeTab === 'tab-allocation') updateActive();
+    });
+    document.querySelectorAll('.alloc-preset').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.getElementById('sl-r1').value = this.dataset.r1;
+            document.getElementById('sl-r2').value = this.dataset.r2;
+            document.querySelectorAll('.alloc-preset').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            onSliderChange();
+        });
+    });
 
     // Rank kernel selector — re-render the rank subtab
     document.getElementById('rank-kernel-select').addEventListener('change', function() {
