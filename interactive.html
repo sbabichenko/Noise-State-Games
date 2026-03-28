@@ -1783,7 +1783,10 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         document.querySelectorAll('.imp-tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.imp-panel').forEach(p => p.style.display = 'none');
         e.target.classList.add('active');
-        document.getElementById(e.target.dataset.imptab).style.display = 'block';
+        const panel = document.getElementById(e.target.dataset.imptab);
+        panel.style.display = 'block';
+        // Plotly can't size correctly into display:none divs; resize after showing
+        panel.querySelectorAll('.plot').forEach(p => { if (p.data) Plotly.Plots.resize(p); });
     });
 
     // Impulse response controls — always do a full re-render
