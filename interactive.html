@@ -906,6 +906,24 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
 const plotCfg = {responsive: true, displayModeBar: false};
 const margin = {t: 40, b: 40, l: 55, r: 20};
 
+const baseLayout = {
+    font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', size: 12, color: '#444' },
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    hoverlabel: { font: { family: 'monospace', size: 11 } },
+};
+
+function styledAxes(n) {
+    const ax = {};
+    for (let i = 1; i <= n; i++) {
+        ax['xaxis' + (i > 1 ? i : '')] = { gridcolor: '#e8eaed', gridwidth: 1,
+            zeroline: false, linecolor: '#ccc', linewidth: 1, tickfont: { size: 11 } };
+        ax['yaxis' + (i > 1 ? i : '')] = { gridcolor: '#e8eaed', gridwidth: 1,
+            zeroline: false, linecolor: '#ccc', linewidth: 1, tickfont: { size: 11 } };
+    }
+    return ax;
+}
+
 function plotKernel(divId, t, kernelData, title) {
     const chLabels = ['$W^0$', '$W^1$', '$W^2$'];
     const traces = [];
@@ -925,33 +943,36 @@ function plotKernel(divId, t, kernelData, title) {
     }
     const annotations = chLabels.map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 12, color: '#777'},
     }));
     annotations.push({
         text: title, xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#555'},
     });
     const layout = {
+        ...baseLayout, ...styledAxes(3),
         height: 320, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 3, pattern: 'independent'},
         annotations,
     };
     for (let i = 1; i <= 3; i++) {
-        layout['xaxis' + i] = {title: 's'};
-        layout['yaxis' + i] = {title: i === 1 ? 'value' : ''};
+        layout['xaxis' + (i > 1 ? i : '')].title = {text: 's', font: {size: 11}};
+        layout['yaxis' + (i > 1 ? i : '')].title = i === 1 ? {text: 'value', font: {size: 11}} : '';
     }
     Plotly.react(divId, traces, layout, plotCfg);
 }
 
 function plotResidual(divId, data) {
     const iters = data.residuals.map((_, i) => i);
-    Plotly.react(divId, [{x: iters, y: data.residuals, mode: 'lines', line: {width: 2}}], {
+    Plotly.react(divId, [{x: iters, y: data.residuals, mode: 'lines', line: {width: 2, color: '#1f77b4'}}], {
+        ...baseLayout, ...styledAxes(1),
         height: 270, margin: {...margin, t: 50},
         annotations: [{
             text: `Picard Residual (${data.n_iters} iterations)`, xref: 'paper', yref: 'paper',
-            x: 0.5, y: 1.1, showarrow: false, font: {size: 14, color: '#333'},
+            x: 0.5, y: 1.1, showarrow: false, font: {size: 13, color: '#555'},
         }],
-        yaxis: {type: 'log', title: 'Relative residual'}, xaxis: {title: 'Iteration'},
+        yaxis: {...styledAxes(1).yaxis, type: 'log', title: 'Relative residual'},
+        xaxis: {...styledAxes(1).xaxis, title: 'Iteration'},
     }, plotCfg);
 }
 
@@ -963,12 +984,12 @@ function plotControls(divId, data, b1, b2) {
     const traces = [
         {x: t, y: data.barD1, name: '$\\bar{D}^1$', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
         {x: t, y: data.barD2, name: '$\\bar{D}^2$', line: {width: 2, color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD1_pi, name: '$\\bar{D}^1$ perfect', line: {width: 1.5, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barD2_pi, name: '$\\bar{D}^2$ perfect', line: {width: 1.5, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.barX, name: '$\\bar{X}$', line: {width: 2}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
-        {x: t, y: data.barX_pi, name: '$\\bar{X}$ perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
-        {x: t, y: effort, name: 'Effort', line: {width: 2}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
-        {x: t, y: effortPi, name: 'Effort perfect', line: {width: 1.5, dash: 'dot', color: 'gray'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
+        {x: t, y: data.barD1_pi, name: '$\\bar{D}^1$ perfect', line: {width: 1, dash: 'dot', color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barD2_pi, name: '$\\bar{D}^2$ perfect', line: {width: 1, dash: 'dot', color: '#d62728'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.barX, name: '$\\bar{X}$', line: {width: 2, color: '#333'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.barX_pi, name: '$\\bar{X}$ perfect', line: {width: 1, dash: 'dot', color: '#999'}, showlegend: false, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: effort, name: 'Effort', line: {width: 2, color: '#2d3436'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
+        {x: t, y: effortPi, name: 'Effort perfect', line: {width: 1, dash: 'dot', color: '#999'}, showlegend: false, xaxis: 'x3', yaxis: 'y3'},
     ];
     const tmax = t[t.length - 1];
     const subtitles = [
@@ -978,13 +999,14 @@ function plotControls(divId, data, b1, b2) {
     ];
     const annotations = subtitles.map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 13},
+        x: (i + 0.5) / 3, y: 1.08, showarrow: false, font: {size: 12, color: '#777'},
     }));
     annotations.push({
         text: 'Mean Controls & State (dotted = perfect info)', xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#555'},
     });
     const layout = {
+        ...baseLayout, ...styledAxes(3),
         height: 320, margin: {...margin, t: 60}, grid: {rows: 1, columns: 3, pattern: 'independent'},
         annotations,
         shapes: [
@@ -993,8 +1015,10 @@ function plotControls(divId, data, b1, b2) {
             {type: 'line', x0: t[0], x1: tmax, y0: b2, y1: b2,
              line: {dash: 'dash', color: '#d62728', width: 1}, xref: 'x2', yref: 'y2'},
         ],
+        legend: { x: 0.01, y: 0.99, xanchor: 'left', font: { size: 10 },
+                  bgcolor: 'rgba(255,255,255,0.8)', bordercolor: '#e0e0e0', borderwidth: 1 },
     };
-    for (let i = 1; i <= 3; i++) layout['xaxis' + i] = {title: 't'};
+    for (let i = 1; i <= 3; i++) layout['xaxis' + (i > 1 ? i : '')].title = {text: 't', font: {size: 11}};
     Plotly.react(divId, traces, layout, plotCfg);
 }
 
@@ -1005,21 +1029,23 @@ function plotWedges(divId, data) {
         '$\\bar{V}^1(t)$', '$\\bar{V}^2(t)$',
     ].map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 12, color: '#777'},
     }));
     annotations.push({
         text: 'Mean Information Wedges', xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#555'},
     });
     Plotly.react(divId, [
-        {x: t, y: data.V1, name: '$\\bar{V}^1$', line: {width: 2}, xaxis: 'x1', yaxis: 'y1'},
-        {x: t, y: data.V2, name: '$\\bar{V}^2$', line: {width: 2}, xaxis: 'x2', yaxis: 'y2'},
+        {x: t, y: data.V1, name: '$\\bar{V}^1$', line: {width: 2, color: '#1f77b4'}, xaxis: 'x1', yaxis: 'y1'},
+        {x: t, y: data.V2, name: '$\\bar{V}^2$', line: {width: 2, color: '#d62728'}, xaxis: 'x2', yaxis: 'y2'},
     ], {
+        ...baseLayout, ...styledAxes(2),
         height: 290, margin: {...margin, t: 60}, grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations,
-        xaxis1: {title: 't'}, xaxis2: {title: 't'},
-        shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x1', yref: 'y1'},
-                 {type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: 'gray', width: 1}, xref: 'x2', yref: 'y2'}],
+        xaxis: {...styledAxes(2).xaxis, title: {text: 't', font: {size: 11}}},
+        xaxis2: {...styledAxes(2).xaxis2, title: {text: 't', font: {size: 11}}},
+        shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: '#ccc', width: 1}, xref: 'x1', yref: 'y1'},
+                 {type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: '#ccc', width: 1}, xref: 'x2', yref: 'y2'}],
     }, plotCfg);
 }
 
@@ -1047,6 +1073,7 @@ function plotFKernel(divId, t, fData, title) {
         return [y1 - rowH, y1];
     }
     const layout = {
+        ...baseLayout,
         height: 800, margin: {t: 55, b: 40, l: 50, r: 20},
         annotations: [],
     };
@@ -1067,6 +1094,8 @@ function plotFKernel(divId, t, fData, title) {
                 showticklabels: true,
                 tickfont: {size: 9},
                 anchor: yRef,
+                gridcolor: '#e8eaed', gridwidth: 1, zeroline: false,
+                linecolor: '#ccc', linewidth: 1,
             };
             layout[yAxisKey] = {
                 domain: yd,
@@ -1074,6 +1103,8 @@ function plotFKernel(divId, t, fData, title) {
                 showticklabels: true,
                 tickfont: {size: 9},
                 anchor: xRef,
+                gridcolor: '#e8eaed', gridwidth: 1, zeroline: false,
+                linecolor: '#ccc', linewidth: 1,
             };
             for (let ui = 0; ui < N; ui += step) {
                 traces.push({
@@ -1089,13 +1120,13 @@ function plotFKernel(divId, t, fData, title) {
                 xref: 'paper', yref: 'paper',
                 x: (xd[0] + xd[1]) / 2,
                 y: yd[1] + 0.03,
-                showarrow: false, font: {size: 12},
+                showarrow: false, font: {size: 12, color: '#777'},
             });
         }
     }
     annotations.push({
         text: title, xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.02, showarrow: false, font: {size: 14, color: '#333'},
+        x: 0.5, y: 1.02, showarrow: false, font: {size: 13, color: '#555'},
     });
     layout.annotations = annotations;
     Plotly.react(divId, traces, layout, plotCfg);
@@ -1116,19 +1147,22 @@ function plotCosts(divId, sweep) {
     ];
     const costAnnotations = ['$J^1(p_2)$', '$J^2(p_2)$'].map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 12, color: '#777'},
     }));
     costAnnotations.push({
         text: `Costs: p\u2081=${sweep.p1.toFixed(1)}, b\u2081=${sweep.b1.toFixed(1)}, b\u2082=${sweep.b2.toFixed(1)} (solid=private, dashed=pooled)`,
         xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#333'},
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#555'},
     });
     Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(2),
         height: 350, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations: costAnnotations,
-        xaxis1: {title: '$p_2$'}, xaxis2: {title: '$p_2$'},
-        yaxis1: {title: 'Cost'}, yaxis2: {title: 'Cost'},
+        xaxis: {...styledAxes(2).xaxis, title: '$p_2$'},
+        xaxis2: {...styledAxes(2).xaxis2, title: '$p_2$'},
+        yaxis: {...styledAxes(2).yaxis, title: 'Cost'},
+        yaxis2: {...styledAxes(2).yaxis2, title: 'Cost'},
     }, plotCfg);
 }
 
@@ -1144,13 +1178,15 @@ function plotBarD1Sweep(divId, sweep) {
     traces.push({x: t, y: sweep.barD1_pi, name: 'Perfect info',
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(1),
         height: 350, margin: {...margin, t: 50},
         annotations: [{
             text: `$\\bar{D}^1(t)$ — p\u2081=${sweep.p1.toFixed(1)} fixed`,
             xref: 'paper', yref: 'paper',
-            x: 0.5, y: 1.1, showarrow: false, font: {size: 14, color: '#333'},
+            x: 0.5, y: 1.1, showarrow: false, font: {size: 13, color: '#555'},
         }],
-        xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^1(t)$'},
+        xaxis: {...styledAxes(1).xaxis, title: '$t$'},
+        yaxis: {...styledAxes(1).yaxis, title: '$\\bar{D}^1(t)$'},
     }, plotCfg);
 }
 
@@ -1166,13 +1202,15 @@ function plotBarD2Sweep(divId, sweep) {
     traces.push({x: t, y: sweep.barD2_pi, name: 'Perfect info',
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(1),
         height: 350, margin: {...margin, t: 50},
         annotations: [{
             text: `$\\bar{D}^2(t)$ — p\u2081=${sweep.p1.toFixed(1)} fixed`,
             xref: 'paper', yref: 'paper',
-            x: 0.5, y: 1.1, showarrow: false, font: {size: 14, color: '#333'},
+            x: 0.5, y: 1.1, showarrow: false, font: {size: 13, color: '#555'},
         }],
-        xaxis: {title: '$t$'}, yaxis: {title: '$\\bar{D}^2(t)$'},
+        xaxis: {...styledAxes(1).xaxis, title: '$t$'},
+        yaxis: {...styledAxes(1).yaxis, title: '$\\bar{D}^2(t)$'},
     }, plotCfg);
 }
 
@@ -1192,18 +1230,20 @@ function plotWedgesSweep(divId, sweep) {
     }
     const sweepAnnotations = ['$\\bar{V}^1(t)$', '$\\bar{V}^2(t)$'].map((l, i) => ({
         text: l, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 13},
+        x: (i + 0.5) / 2, y: 1.08, showarrow: false, font: {size: 12, color: '#777'},
     }));
     sweepAnnotations.push({
         text: `Sweep Mean Information Wedges — p\u2081=${sweep.p1.toFixed(1)} fixed`,
         xref: 'paper', yref: 'paper',
-        x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'},
+        x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#555'},
     });
     Plotly.react(divId, traces, {
+        ...baseLayout, ...styledAxes(2),
         height: 330, margin: {...margin, t: 60},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations: sweepAnnotations,
-        xaxis1: {title: '$t$'}, xaxis2: {title: '$t$'},
+        xaxis: {...styledAxes(2).xaxis, title: '$t$'},
+        xaxis2: {...styledAxes(2).xaxis2, title: '$t$'},
     }, plotCfg);
 }
 
@@ -1250,23 +1290,29 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
          line: {width: 2, color: '#d62728'}, xaxis: 'x3', yaxis: 'y3', showlegend: false},
     ];
 
-    Plotly.react(stateDiv, traces, {
+    const impPhysLayout = {
+        ...baseLayout, ...styledAxes(3),
         height: 300, margin: {t: 60, b: 45, l: 50, r: 20},
         grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.06},
-        xaxis1: {title: 't'}, yaxis1: {title: 'state'},
-        xaxis2: {title: 't'}, yaxis2: {title: 'control'},
-        xaxis3: {title: 't'}, yaxis3: {title: 'unresolved'},
         shapes: [{...vline, xref:'x1'}, {...vline, xref:'x2'}, {...vline, xref:'x3'}],
-        legend: {orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center'},
+        legend: {orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center',
+                 font: {size: 10}, bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1},
         annotations: [
             {text: `State + resolved \u2014 ${chNames[channel]} shock at s=${sTime}`,
-             xref:'paper', yref:'paper', x:1/6, y:1.08, showarrow:false, font:{size:12}},
+             xref:'paper', yref:'paper', x:1/6, y:1.08, showarrow:false, font:{size: 12, color: '#777'}},
             {text: 'Primitive controls', xref:'paper', yref:'paper',
-             x:0.5, y:1.08, showarrow:false, font:{size:12}},
+             x:0.5, y:1.08, showarrow:false, font:{size: 12, color: '#777'}},
             {text: 'Unresolved state', xref:'paper', yref:'paper',
-             x:5/6, y:1.08, showarrow:false, font:{size:12}},
+             x:5/6, y:1.08, showarrow:false, font:{size: 12, color: '#777'}},
         ],
-    }, plotCfg);
+    };
+    impPhysLayout.xaxis.title = {text: 't', font: {size: 11}};
+    impPhysLayout.yaxis.title = {text: 'state', font: {size: 11}};
+    impPhysLayout.xaxis2.title = {text: 't', font: {size: 11}};
+    impPhysLayout.yaxis2.title = {text: 'control', font: {size: 11}};
+    impPhysLayout.xaxis3.title = {text: 't', font: {size: 11}};
+    impPhysLayout.yaxis3.title = {text: 'unresolved', font: {size: 11}};
+    Plotly.react(stateDiv, traces, impPhysLayout, plotCfg);
 }
 
 // Compute F^i(t, u, source)[target][source] for all u at a given t_idx,
@@ -1411,22 +1457,24 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
     const sTime = t[sIdx].toFixed(3);
     const annotations = chNames.map((ch, i) => ({
         text: `Effect on ${ch}`, xref: 'paper', yref: 'paper',
-        x: (i + 0.5) / 3, y: 1.02, showarrow: false, font: {size: 12},
+        x: (i + 0.5) / 3, y: 1.02, showarrow: false, font: {size: 12, color: '#777'},
     }));
 
     const sup = playerNum === 1 ? '\u00B9' : '\u00B2';
     const layout = {
+        ...baseLayout, ...styledAxes(3),
         height: 320, margin: {t: 50, b: 45, l: 45, r: 10},
         grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.04},
         annotations,
         title: {text: `Player ${playerNum} noise-state impulse response (F${sup}+\u03A0${sup}) \u2014 ${chNames[channel]} shock at s = ${sTime}`,
-                font: {size: 13}, y: 0.98},
+                font: {size: 13, color: '#555'}, y: 0.98},
         legend: {orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center',
-                 font: {size: 11}, title: {text: 'evaluation time  ', font: {size: 11}, side: 'left'}},
+                 font: {size: 10}, title: {text: 'evaluation time  ', font: {size: 10}, side: 'left'},
+                 bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1},
     };
     for (let i = 1; i <= 3; i++) {
-        layout['xaxis' + i] = {title: 'u'};
-        layout['yaxis' + i] = {title: i === 1 ? 'loading' : ''};
+        layout['xaxis' + (i > 1 ? i : '')].title = {text: 'u', font: {size: 11}};
+        layout['yaxis' + (i > 1 ? i : '')].title = i === 1 ? {text: 'loading', font: {size: 11}} : '';
     }
     Plotly.react(divId, traces, layout, plotCfg);
 }
@@ -1543,21 +1591,22 @@ function plotRankAnalysis(svdDivId, tableDivId, fullData, kernelName) {
 
     const annotations = [
         {text: '$\\sigma_k / \\sigma_1$', xref: 'paper', yref: 'paper',
-         x: 0.22, y: 1.08, showarrow: false, font: {size: 13}},
+         x: 0.22, y: 1.08, showarrow: false, font: {size: 12, color: '#777'}},
         {text: 'Cumulative energy $E(k)$', xref: 'paper', yref: 'paper',
-         x: 0.78, y: 1.08, showarrow: false, font: {size: 13}},
+         x: 0.78, y: 1.08, showarrow: false, font: {size: 12, color: '#777'}},
         {text: `Rank Analysis \u2014 ${kLabel}`, xref: 'paper', yref: 'paper',
-         x: 0.5, y: 1.18, showarrow: false, font: {size: 14, color: '#333'}},
+         x: 0.5, y: 1.18, showarrow: false, font: {size: 13, color: '#555'}},
     ];
 
     const layout = {
+        ...baseLayout, ...styledAxes(2),
         height: 350, margin: {...margin, t: 65},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations,
-        xaxis1: {title: 'Index k', dtick: 2},
-        yaxis1: {title: '\u03C3_k / \u03C3_1', type: 'log'},
-        xaxis2: {title: 'Rank k', dtick: 2},
-        yaxis2: {title: 'E(k)', range: [0, 1.05]},
+        xaxis: {...styledAxes(2).xaxis, title: 'Index k', dtick: 2},
+        yaxis: {...styledAxes(2).yaxis, title: '\u03C3_k / \u03C3_1', type: 'log'},
+        xaxis2: {...styledAxes(2).xaxis2, title: 'Rank k', dtick: 2},
+        yaxis2: {...styledAxes(2).yaxis2, title: 'E(k)', range: [0, 1.05]},
         shapes: [{
             type: 'line', x0: 0, x1: maxRank + 1, y0: 0.99, y1: 0.99,
             xref: 'x2', yref: 'y2',
@@ -1811,12 +1860,15 @@ function plotSimState(divId, t, paths, bands, lightData, showBands) {
     }
 
     Plotly.react(divId, traces, {
-        title: { text: 'State and Player Estimates', y: 0.98 },
-        xaxis: { title: 't' }, yaxis: { title: '' },
+        ...baseLayout, ...styledAxes(1),
+        title: { text: 'State and Player Estimates', y: 0.98, font: {size: 13, color: '#555'} },
+        xaxis: { ...styledAxes(1).xaxis, title: {text: 't', font: {size: 11}} },
+        yaxis: { ...styledAxes(1).yaxis, title: '' },
         margin: { t: 40, b: 40, l: 50, r: 20 },
-        legend: { orientation: 'h', y: -0.15 },
+        legend: { orientation: 'h', y: -0.15, font: {size: 10},
+                  bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1 },
         height: 380
-    }, { responsive: true });
+    }, plotCfg);
 }
 
 function plotSimControls(divId, t, paths, bands, lightData, showBands) {
@@ -1855,12 +1907,15 @@ function plotSimControls(divId, t, paths, bands, lightData, showBands) {
     }
 
     Plotly.react(divId, traces, {
-        title: { text: 'Realized Controls (Primitive)', y: 0.98 },
-        xaxis: { title: 't' }, yaxis: { title: '' },
+        ...baseLayout, ...styledAxes(1),
+        title: { text: 'Realized Controls (Primitive)', y: 0.98, font: {size: 13, color: '#555'} },
+        xaxis: { ...styledAxes(1).xaxis, title: {text: 't', font: {size: 11}} },
+        yaxis: { ...styledAxes(1).yaxis, title: '' },
         margin: { t: 40, b: 40, l: 50, r: 20 },
-        legend: { orientation: 'h', y: -0.15 },
+        legend: { orientation: 'h', y: -0.15, font: {size: 10},
+                  bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1 },
         height: 380
-    }, { responsive: true });
+    }, plotCfg);
 }
 
 function plotSimFilterError(divId, t, paths, bands, showBands) {
@@ -1900,12 +1955,15 @@ function plotSimFilterError(divId, t, paths, bands, showBands) {
     }
 
     Plotly.react(divId, traces, {
-        title: { text: 'Filter Errors', y: 0.98 },
-        xaxis: { title: 't' }, yaxis: { title: '' },
+        ...baseLayout, ...styledAxes(1),
+        title: { text: 'Filter Errors', y: 0.98, font: {size: 13, color: '#555'} },
+        xaxis: { ...styledAxes(1).xaxis, title: {text: 't', font: {size: 11}} },
+        yaxis: { ...styledAxes(1).yaxis, title: '' },
         margin: { t: 40, b: 40, l: 50, r: 20 },
-        legend: { orientation: 'h', y: -0.15 },
+        legend: { orientation: 'h', y: -0.15, font: {size: 10},
+                  bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1 },
         height: 380
-    }, { responsive: true });
+    }, plotCfg);
 }
 
 function ensureLight(p) {
