@@ -1692,26 +1692,28 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         e.target.classList.add('active');
         activeImpTab = e.target.dataset.imptab;
         document.getElementById(activeImpTab).style.display = 'block';
-        onImpulseChange();
+        // Force re-render through the full renderTab path (needed to ensure F kernel is computed)
+        dirty['tab-impulse'] = true;
+        updateActive();
     });
 
     // Impulse response controls — re-render without full re-solve
+    // Only handles the physical-state subtab (slider/channel change with cached data).
+    // Player subtabs require F kernel, so switching to them goes through updateActive above.
     function onImpulseChange() {
         if (activeTab !== 'tab-impulse') return;
-        const ch = parseInt(document.getElementById('impulse-channel').value);
         if (activeImpTab === 'imp-physical') {
             const data = fullData;
             if (!data) return;
+            const ch = parseInt(document.getElementById('impulse-channel').value);
             const sSlider = document.getElementById('impulse-s');
             const sIdx = Math.min(parseInt(sSlider.value), N - 1);
             document.getElementById('impulse-s-val').textContent = data.t[sIdx].toFixed(3);
             plotImpulsePhysical('plot-imp-physical', data, ch, sIdx);
         } else {
-            const fk = fKernelData;
-            if (!fk) return;
-            const pNum = activeImpTab === 'imp-player1' ? 1 : 2;
-            const plotId = pNum === 1 ? 'plot-imp-p1-slices' : 'plot-imp-p2-slices';
-            plotImpulsePlayerSlices(plotId, fk, pNum, ch);
+            // For player subtabs, go through the full render path to ensure F kernel
+            dirty['tab-impulse'] = true;
+            updateActive();
         }
     }
     document.getElementById('impulse-s').addEventListener('input', onImpulseChange);
