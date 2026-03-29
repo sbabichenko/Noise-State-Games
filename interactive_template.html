@@ -1866,7 +1866,7 @@ function simulatePaths(data, lightData, nPaths, seed) {
             let cd1 = lightData.barD1[j];
             let cd2 = lightData.barD2[j];
 
-            for (let k = 0; k <= j; k++) {
+            for (let k = 0; k < j; k++) {
                 for (let ch = 0; ch < 3; ch++) {
                     const w = dW[ch][k];
                     xj += data.X['ch' + ch][j][k] * w;
@@ -1907,7 +1907,7 @@ function computeBands(data, lightData) {
 
     for (let j = 0; j < n; j++) {
         let vx = 0, vh1 = 0, vh2 = 0, vd1 = 0, vd2 = 0, ve1 = 0, ve2 = 0;
-        for (let k = 0; k <= j; k++) {
+        for (let k = 0; k < j; k++) {
             for (let ch = 0; ch < 3; ch++) {
                 const xk = data.X['ch' + ch][j][k];
                 vx += xk * xk * dt;
