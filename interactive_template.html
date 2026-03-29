@@ -1805,7 +1805,8 @@ function invalidateIfChanged(p) {
     applyGrid(p);
     const ceOn = document.getElementById('cb-ce-mode').checked;
     const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},ce=${ceOn}`;
-    if (key !== lastParamsKey) {
+    // Also invalidate if previous solve failed (lightData is null with matching key)
+    if (key !== lastParamsKey || !lightData) {
         lightData = null;
         fullData = null;
         sweepData = null;

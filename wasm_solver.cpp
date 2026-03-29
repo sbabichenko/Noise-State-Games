@@ -101,8 +101,17 @@ static bool cache_matches(double p1, double p2, double b1, double b2, double r1,
 static void ensure_solve(double p1, double p2, double b1, double b2, double r1, double r2) {
     if (cache_matches(p1, p2, b1, b2, r1, r2)) return;
 
+    // Invalidate cache FIRST — if anything below fails, we won't serve stale data
+    g_cache.valid = false;
+    g_cache.f_valid = false;
+
+    // Save and set globals (restored on failure)
+    const double saved_b1 = g_b1, saved_b2 = g_b2;
+    const double saved_r1 = g_r1, saved_r2 = g_r2;
     g_b1 = b1; g_b2 = b2;
     g_r1 = r1; g_r2 = r2;
+
+    try {
 
     // Solve equilibrium (standard or CE mode)
     if (g_use_ce)
@@ -151,7 +160,15 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     g_cache.n = g_n; g_cache.T = g_T;
     g_cache.ce_mode = g_use_ce;
     g_cache.valid = true;
-    g_cache.f_valid = false;
+    // f_valid already false from top of function
+
+    } catch (...) {
+        // Solver failed — restore globals, leave cache invalid
+        g_b1 = saved_b1; g_b2 = saved_b2;
+        g_r1 = saved_r1; g_r2 = saved_r2;
+        g_cache.valid = false;
+        g_cache.f_valid = false;
+    }
 }
 
 // Compute F kernel slices if not cached. Requires ensure_solve() first.
