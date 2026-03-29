@@ -2476,28 +2476,33 @@ function updateActive() {
     solving = true;
 
     const statusEl = document.getElementById('status');
-    statusEl.textContent = 'Computing...';
+    const p = getParams();
+    const ceOn = document.getElementById('cb-ce-mode').checked;
+    const hint = p.N >= 100 ? ` (N=${p.N}, may take a few seconds...)` : '';
+    statusEl.textContent = 'Computing...' + hint;
+    statusEl.style.color = '';
 
-    // Yield to browser to show "Computing..." before blocking on WASM
+    // Yield to browser to show status before blocking on WASM
     setTimeout(() => {
-        // Read params here (not before yield) so we always solve with latest slider values
+        // Re-read params after yield — slider may have moved
         const p = getParams();
         try {
             const t0 = performance.now();
-
-            // Only render the active tab (solver calls are cached, so this is cheap if params unchanged)
             renderTab(activeTab, p);
-
             const totalMs = performance.now() - t0;
 
-            // Update status line with light-solve info (cheap — cached)
+            // If a pending update arrived while we were solving, skip the
+            // status update — we're about to re-solve with newer params anyway
+            if (pendingUpdate) return;
+
             const data = ensureLight(p);
             if (data) {
                 const warn = data.converged === false ? ' | NOT CONVERGED' : '';
+                const ceTag = data.ce_mode ? ' | CE' : '';
                 statusEl.textContent =
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-                    `${totalMs.toFixed(0)}ms${warn}`;
+                    `${totalMs.toFixed(0)}ms${ceTag}${warn}`;
                 statusEl.style.color = data.converged === false ? '#d62728' : '';
             } else {
                 statusEl.textContent = `Solver failed for N=${p.N}, T=${p.T}`;
