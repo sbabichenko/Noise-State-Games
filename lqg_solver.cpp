@@ -81,26 +81,20 @@ static void compute_filter_kernels(
         for (int z = 0; z < j; ++z)
             coeff_a[z] = g * X[j][z](obs_index);
 
-        // Per-s: accumulate Q_corr, gamma_a, and Xhat_const in one pass over k
-        std::array<Vec3, N_MAX> correction, Xhat_const;
+        // Per-s: accumulate correction in one pass over k
+        std::array<Vec3, N_MAX> correction;
         for (int s = 0; s < j; ++s) {
             Vec3 q_upper = Vec3::Zero();
             Vec3 ga_acc = Vec3::Zero();
-            Vec3 xi_acc = Vec3::Zero();
 
             for (int k = s + 1; k < j; ++k) {
                 Vec3 Xtks = Xtilde[k][s];
                 q_upper += c_k[k] * Xtks;
                 ga_acc += coeff_a[k] * Xtks;
-                xi_acc += partial_c_k[k] * A_store[k][s];
             }
 
             Vec3 gamma_a_s = g_dt * ga_acc;
             correction[s] = dt2_prec * (c_k[s] * Xtilde[s][s] + q_upper) + gamma_a_s;
-
-            Vec3 xhat = Pi * X[j][s] + gamma_a_s + g_dt * xi_acc;
-            xhat += g_dt * g * partial_c_k[s] * e_i;
-            Xhat_const[s] = xhat;
         }
 
         // Xtilde = (I-Pi)*X - correction
@@ -108,26 +102,18 @@ static void compute_filter_kernels(
             Xtilde[j][s] = I_minus_Pi * X[j][s] - correction[s];
         Xtilde[j][j] = I_minus_Pi * X[j][j];
 
-        // Rank-1 filter iteration for A_store[j]
-        double sigma = 0.0;
+        // --- Closed-form Kalman gain (replaces iterative relaxation) ---
+        double sigma_minus = 0.0;
         for (int u = 0; u < j; ++u)
-            sigma += g_dt * Xtilde[j][u].dot(X[j][u]);
+            sigma_minus += g_dt * Xtilde[j][u].squaredNorm();
 
-        double alpha = relax * g_dt * prec;
-        double beta = 1.0 - relax;
+        double scale = 1.0 / (1.0 + g_dt * prec * sigma_minus);
+        for (int s = 0; s <= j; ++s)
+            Xtilde[j][s] *= scale;
 
-        std::array<Vec3, N_MAX> A;
+        double dt_prec = g_dt * prec;
         for (int s = 0; s < j; ++s)
-            A[s].setZero();
-
-        for (int iter = 0; iter < filter_iters; ++iter)
-            for (int s = 0; s < j; ++s) {
-                Vec3 diff = X[j][s] - Xhat_const[s] - sigma * A[s];
-                A[s] = alpha * diff + beta * A[s];
-            }
-
-        for (int s = 0; s < j; ++s)
-            A_store[j][s] = A[s];
+            A_store[j][s] = dt_prec * Xtilde[j][s];
     }
 }
 
@@ -755,4 +741,119 @@ std::unique_ptr<FSlice> compute_F_slice_at(const Kernel2D& Xtilde, const Kernel2
 std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
                                               double obs_gain, int obs_index) {
     return compute_F_slice_at(Xtilde, A_store, obs_gain, obs_index, g_n - 1);
+}
+
+// --- Exact discrete conditional expectation ---
+
+DiscreteProjection discrete_conditional_expectation(
+    const Kernel2D& X, int obs_idx, double obs_gain, int t_idx) {
+
+    int n = t_idx + 1;
+    int dim = 3 * n;
+    int n_obs = t_idx;  // observations at j = 1, ..., t_idx
+    double g = obs_gain;
+
+    // 1. Build measurement matrix H: n_obs × dim
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(n_obs, dim);
+    for (int j = 1; j <= t_idx; ++j) {
+        int row = j - 1;
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                H(row, 3*z + k) = g * g_dt * X[j][z](k);
+        H(row, 3*j + obs_idx) += 1.0;
+    }
+
+    // 2. M = H^T (H H^T)^{-1} H  (projection onto row space of H)
+    Eigen::MatrixXd HHt = H * H.transpose();  // n_obs × n_obs
+    Eigen::MatrixXd M = H.transpose() * HHt.ldlt().solve(H);
+
+    // 3. Symmetrize
+    M = 0.5 * (M + M.transpose());
+
+    // 4. Extract Xtilde: Xt_j(z) = [(I - M) vec_X_j](z)
+    Kernel2D Xt_out;
+    Eigen::MatrixXd Xmat = Eigen::MatrixXd::Zero(dim, n);
+    for (int j = 0; j <= t_idx; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xmat.block<3,1>(3*z, j) = X[j][z];
+
+    Eigen::MatrixXd Xt_mat = Xmat - M * Xmat;
+
+    for (int j = 0; j <= t_idx; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xt_out[j][z] = Xt_mat.block<3,1>(3*z, j);
+
+    // 5. Diagnostics
+    double idem = (M * M - M).norm() / std::max(1e-15, M.norm());
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(M);
+    int rank = 0;
+    for (int i = 0; i < dim; ++i)
+        if (es.eigenvalues()(i) > 0.5) rank++;
+
+    return {std::move(M), std::move(Xt_out), rank, idem};
+}
+
+IncrementalProjection build_projections_incremental(
+    const Kernel2D& X, int obs_idx, double obs_gain) {
+
+    int n = g_n;
+    int dim = 3 * n;
+    double g = obs_gain;
+
+    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(dim, dim);
+
+    for (int j = 1; j < n; ++j) {
+        // Build h_j: measurement vector for observation j
+        Eigen::VectorXd h = Eigen::VectorXd::Zero(dim);
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                h(3*z + k) = g * g_dt * X[j][z](k);
+        h(3*j + obs_idx) += 1.0;
+
+        // Innovation: v = (I - M) h
+        Eigen::VectorXd v = h - M * h;
+
+        // Rank-1 update: M += v v^T / (v^T v)
+        double vtv = v.squaredNorm();
+        if (vtv > 1e-30)
+            M.noalias() += (v * v.transpose()) / vtv;
+    }
+
+    // Symmetrize
+    M = 0.5 * (M + M.transpose());
+
+    // Extract Xtilde at terminal time
+    Kernel2D Xt_out;
+    Eigen::MatrixXd Xmat = Eigen::MatrixXd::Zero(dim, n);
+    for (int j = 0; j < n; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xmat.block<3,1>(3*z, j) = X[j][z];
+
+    Eigen::MatrixXd Xt_mat = Xmat - M * Xmat;
+
+    for (int j = 0; j < n; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xt_out[j][z] = Xt_mat.block<3,1>(3*z, j);
+
+    double idem = (M * M - M).norm() / std::max(1e-15, M.norm());
+
+    return {std::move(M), std::move(Xt_out), idem};
+}
+
+ProjectionPair exact_discrete_CE(const EquilibriumResult& eq) {
+    // Reconstruct X from converged primitive control kernels
+    Kernel2D X;
+    state_kernel_from_calD(eq.calD1, eq.calD2, X);
+
+    int t_idx = g_n - 1;
+    DiscreteProjection p1, p2;
+    #pragma omp parallel sections
+    {
+        #pragma omp section
+        p1 = discrete_conditional_expectation(X, eq.env.obs_idx1, eq.env.obs_gain1, t_idx);
+        #pragma omp section
+        p2 = discrete_conditional_expectation(X, eq.env.obs_idx2, eq.env.obs_gain2, t_idx);
+    }
+    return {std::move(p1), std::move(p2)};
 }

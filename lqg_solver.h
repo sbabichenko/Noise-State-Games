@@ -261,6 +261,36 @@ std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kerne
 std::unique_ptr<FSlice> compute_F_slice_at(const Kernel2D& Xtilde, const Kernel2D& A_store,
                                             double obs_gain, int obs_index, int t_idx);
 
+// ---------- exact discrete conditional expectation (post-processing) ----------
+
+struct DiscreteProjection {
+    Eigen::MatrixXd M;       // 3n x 3n projection matrix, n = t_idx + 1
+    Kernel2D Xtilde;         // extracted Xtilde(j,z) for j = 0..t_idx
+    int rank;                // rank of M (should equal t_idx)
+    double idem_residual;    // ||M^2 - M|| / ||M||
+};
+
+// Build exact discrete CE projection M = H^T (H H^T)^{-1} H at a given time index.
+DiscreteProjection discrete_conditional_expectation(
+    const Kernel2D& X, int obs_idx, double obs_gain, int t_idx);
+
+// Incremental version: builds M via rank-1 updates at each observation step.
+struct IncrementalProjection {
+    Eigen::MatrixXd M;       // terminal projection (3*g_n x 3*g_n)
+    Kernel2D Xtilde;         // extracted from terminal M
+    double idem_residual;
+};
+
+IncrementalProjection build_projections_incremental(
+    const Kernel2D& X, int obs_idx, double obs_gain);
+
+// Convenience: exact discrete CE for both players at terminal time.
+struct ProjectionPair {
+    DiscreteProjection player1, player2;
+};
+
+ProjectionPair exact_discrete_CE(const EquilibriumResult& eq);
+
 // ---------- utility ----------
 inline std::array<double, N_MAX> make_constant_prec(double val) {
     std::array<double, N_MAX> a;
