@@ -819,6 +819,9 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
   <div id="diag-summary" style="max-width:700px; margin:20px auto; padding:14px 20px;
        background:#fff; border:1px solid #e0e3e8; border-radius:8px; font-size:0.9em;
        line-height:1.7; color:#555;"></div>
+  <div id="diag-projection" style="max-width:700px; margin:20px auto; padding:14px 20px;
+       background:#fff; border:1px solid #e0e3e8; border-radius:8px; font-size:0.9em;
+       line-height:1.7; color:#555;"></div>
 </div>
 
 </div>
@@ -2377,6 +2380,72 @@ function renderTab(tab, p) {
                         `Status: ${convergedStr}<br>` +
                         `Grid: N=${p.N}, T=${p.T}<br>` +
                         `Equilibrium costs: J\u00B9 = ${data.J1.toFixed(6)}, J\u00B2 = ${data.J2.toFixed(6)}`;
+                }
+                // Projection check: (F^i + Pi^i)^2 = F^i + Pi^i
+                const projEl = document.getElementById('diag-projection');
+                if (projEl) {
+                    const fk = ensureFKernel(p);
+                    if (fk) {
+                        const n = fk.t.length;
+                        const dt = p.T / (n - 1);
+                        const light = ensureLight(p);
+                        const obsIdx1 = light && light.obs_idx1 != null ? light.obs_idx1 : 1;
+                        const obsIdx2 = light && light.obs_idx2 != null ? light.obs_idx2 : 2;
+                        function checkProjection(F, obsIdx, label) {
+                            // Build M = F + Pi as 3N x 3N matrix (row = r*N+u, col = c*N+s)
+                            // M[r][u][c][s] = F["r{r}c{c}"][u][s] + delta(r,obsIdx)*delta(c,obsIdx)*delta(u,s)
+                            // Check (M*M - M) Frobenius norm via kernel composition:
+                            // (M^2)[r][u][c][s] = sum_{r'} sum_v M[r][u][r'][v] * M[r'][v][c][s] * dt
+                            let errSq = 0, normSq = 0;
+                            for (let r = 0; r < 3; r++) {
+                                for (let c = 0; c < 3; c++) {
+                                    const Frc = F[`r${r}c${c}`];
+                                    for (let u = 0; u < n; u++) {
+                                        for (let s = 0; s < n; s++) {
+                                            // M[r][u][c][s]
+                                            const Mucs = Frc[u][s] + ((r === obsIdx && c === obsIdx && u === s) ? 1 : 0);
+                                            normSq += Mucs * Mucs;
+                                            // (M^2)[r][u][c][s] = sum_{r',v} M[r][u][r'][v] * M[r'][v][c][s] * dt
+                                            let m2 = 0;
+                                            for (let rp = 0; rp < 3; rp++) {
+                                                const Frp = F[`r${r}c${rp}`];
+                                                const Frpc = F[`r${rp}c${c}`];
+                                                for (let v = 0; v < n; v++) {
+                                                    const Muv = Frp[u][v] + ((r === obsIdx && rp === obsIdx && u === v) ? 1 : 0);
+                                                    const Mvs = Frpc[v][s] + ((rp === obsIdx && c === obsIdx && v === s) ? 1 : 0);
+                                                    m2 += Muv * Mvs * dt;
+                                                }
+                                            }
+                                            const diff = m2 - Mucs;
+                                            errSq += diff * diff;
+                                        }
+                                    }
+                                }
+                            }
+                            const relErr = Math.sqrt(errSq) / Math.sqrt(normSq);
+                            return relErr;
+                        }
+                        const err1 = checkProjection(fk.F1, obsIdx1, 'F\u00B9+\u03A0\u00B9');
+                        const err2 = checkProjection(fk.F2, obsIdx2, 'F\u00B2+\u03A0\u00B2');
+                        const passColor = e => e < 1e-3 ? '#2d9e2d' : (e < 1e-1 ? '#e67e22' : '#d62728');
+                        const passLabel = e => e < 1e-3 ? 'PASS' : (e < 1e-1 ? 'MARGINAL' : 'FAIL');
+                        projEl.innerHTML =
+                            `<strong>Filtration projection check</strong> &mdash; ` +
+                            `$(F^i + \\Pi^i)^2 = F^i + \\Pi^i$ at $t = T$<br>` +
+                            `Player 1: $\\|(F^1+\\Pi^1)^2 - (F^1+\\Pi^1)\\|_F / \\|F^1+\\Pi^1\\|_F$ = ${err1.toExponential(2)} ` +
+                            `<span style="color:${passColor(err1)}; font-weight:600;">${passLabel(err1)}</span><br>` +
+                            `Player 2: $\\|(F^2+\\Pi^2)^2 - (F^2+\\Pi^2)\\|_F / \\|F^2+\\Pi^2\\|_F$ = ${err2.toExponential(2)} ` +
+                            `<span style="color:${passColor(err2)}; font-weight:600;">${passLabel(err2)}</span><br>` +
+                            `<span style="font-size:0.88em; color:#888;">` +
+                            `The filtration kernel $F^i(T,u,s) + \\Pi^i \\delta(u{=}s)$ should be an orthogonal ` +
+                            `projection (idempotent) in $L^2([0,T]; \\mathbb{R}^3)$, representing the conditional ` +
+                            `expectation operator in noise-state coordinates.</span>`;
+                        if (typeof MathJax !== 'undefined' && MathJax.Hub) {
+                            MathJax.Hub.Queue(['Typeset', MathJax.Hub, projEl]);
+                        }
+                    } else {
+                        projEl.innerHTML = '<em style="color:#999;">Filtration projection check requires F-kernel computation (click Kernels tab first or wait).</em>';
+                    }
                 }
                 break;
             }
