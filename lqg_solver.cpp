@@ -783,13 +783,15 @@ DiscreteProjection discrete_conditional_expectation(
         for (int z = 0; z <= j; ++z)
             Xt_out[j][z] = Xt_mat.block<3,1>(3*z, j);
 
-    // 5. Diagnostics
-    double idem = (M * M - M).norm() / std::max(1e-15, M.norm());
+    // 5. Diagnostics (O(dim^2), avoids O(dim^3) M*M product)
+    //    For a projection: trace(M) = rank, ||M||_F^2 = trace(M^T M) = trace(M).
+    //    So |trace(M) - ||M||_F^2| / ||M||_F measures idempotency cheaply.
+    double trM = M.trace();
+    double normF2 = M.squaredNorm();
+    double idem = std::abs(trM - normF2) / std::max(1e-15, std::sqrt(normF2));
 
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(M);
-    int rank = 0;
-    for (int i = 0; i < dim; ++i)
-        if (es.eigenvalues()(i) > 0.5) rank++;
+    //    Rank from trace (nearest integer, should equal n_obs for full-rank H).
+    int rank = static_cast<int>(std::round(trM));
 
     return {std::move(M), std::move(Xt_out), rank, idem};
 }
