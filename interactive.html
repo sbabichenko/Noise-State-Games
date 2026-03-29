@@ -906,6 +906,7 @@ function callLight(p1, p2, b1, b2, r1, r2) {
         return JSON.parse(json);
     } catch (e) {
         console.error('callLight failed:', e);
+        document.getElementById('status').textContent = 'Solver error: ' + e.message;
         return null;
     }
 }
@@ -920,6 +921,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const block = n * n;
         const numKernels = (typeof wasmFullKernelCount === 'function') ? wasmFullKernelCount() : 5;
         const total = numKernels * 3 * block;
+        // Re-read HEAPF64 after WASM call in case memory grew
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
     const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
@@ -951,6 +953,7 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
     try {
         const n = p2Arr.length;
         const buf = wasmMalloc(n * 8);
+        // Re-read HEAPF64 after malloc (memory may have grown)
         const view = new Float64Array(Module.HEAPF64.buffer, buf, n);
         for (let i = 0; i < n; i++) view[i] = p2Arr[i];
         const ptr = solveSweep(p1, b1, b2, r1, r2, buf, n);
@@ -1802,7 +1805,8 @@ function applyGrid(p) {
 // Invalidate all cached data when any parameter changes.
 function invalidateIfChanged(p) {
     applyGrid(p);
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
+    const ceOn = document.getElementById('cb-ce-mode').checked;
+    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},ce=${ceOn}`;
     if (key !== lastParamsKey) {
         lightData = null;
         fullData = null;
@@ -2530,7 +2534,7 @@ function onSliderChange() {
         pendingUpdate = true;
     }
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(updateActive, 150);
+    debounceTimer = setTimeout(updateActive, 250);
 }
 
 function onTabSwitch(tab) {
