@@ -2471,6 +2471,17 @@ function renderTab(tab, p) {
     }
 }
 
+function resetSolverState() {
+    // Nuclear reset: wipe all caches, re-init WASM grid and CE mode
+    lightData = null; fullData = null; sweepData = null; fKernelData = null;
+    allocData = null; lastParamsKey = '';
+    for (const k in dirty) dirty[k] = true;
+    const p = getParams();
+    wasmSetGrid(p.N, p.T);
+    currentN = p.N; currentT = p.T; N = p.N;
+    wasmSetCeMode(document.getElementById('cb-ce-mode').checked ? 1 : 0);
+}
+
 function updateActive() {
     // Prevent concurrent solver calls — queue for after current finishes
     if (solving) { pendingUpdate = true; return; }
@@ -2478,7 +2489,6 @@ function updateActive() {
 
     const statusEl = document.getElementById('status');
     const p = getParams();
-    const ceOn = document.getElementById('cb-ce-mode').checked;
     const hint = p.N >= 100 ? ` (N=${p.N}, may take a few seconds...)` : '';
     statusEl.textContent = 'Computing...' + hint;
     statusEl.style.color = '';
@@ -2492,8 +2502,6 @@ function updateActive() {
             renderTab(activeTab, p);
             const totalMs = performance.now() - t0;
 
-            // If a pending update arrived while we were solving, skip the
-            // status update — we're about to re-solve with newer params anyway
             if (pendingUpdate) return;
 
             const data = ensureLight(p);
@@ -2506,12 +2514,15 @@ function updateActive() {
                     `${totalMs.toFixed(0)}ms${ceTag}${warn}`;
                 statusEl.style.color = data.converged === false ? '#d62728' : '';
             } else {
-                statusEl.textContent = `Solver failed for N=${p.N}, T=${p.T}`;
-                statusEl.style.color = '#d62728';
+                statusEl.textContent = `Solver returned no data — retrying on next change`;
+                statusEl.style.color = '#e67e22';
+                resetSolverState();
             }
         } catch (e) {
             console.error('updateActive failed:', e);
-            statusEl.textContent = `Error: ${e.message}`;
+            statusEl.textContent = `Error: ${e.message} — state reset, try again`;
+            statusEl.style.color = '#d62728';
+            resetSolverState();
         } finally {
             solving = false;
             // If slider moved while we were solving, re-run with latest values
