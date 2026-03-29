@@ -81,26 +81,20 @@ static void compute_filter_kernels(
         for (int z = 0; z < j; ++z)
             coeff_a[z] = g * X[j][z](obs_index);
 
-        // Per-s: accumulate Q_corr, gamma_a, and Xhat_const in one pass over k
-        std::array<Vec3, N_MAX> correction, Xhat_const;
+        // Per-s: accumulate correction in one pass over k
+        std::array<Vec3, N_MAX> correction;
         for (int s = 0; s < j; ++s) {
             Vec3 q_upper = Vec3::Zero();
             Vec3 ga_acc = Vec3::Zero();
-            Vec3 xi_acc = Vec3::Zero();
 
             for (int k = s + 1; k < j; ++k) {
                 Vec3 Xtks = Xtilde[k][s];
                 q_upper += c_k[k] * Xtks;
                 ga_acc += coeff_a[k] * Xtks;
-                xi_acc += partial_c_k[k] * A_store[k][s];
             }
 
             Vec3 gamma_a_s = g_dt * ga_acc;
             correction[s] = dt2_prec * (c_k[s] * Xtilde[s][s] + q_upper) + gamma_a_s;
-
-            Vec3 xhat = Pi * X[j][s] + gamma_a_s + g_dt * xi_acc;
-            xhat += g_dt * g * partial_c_k[s] * e_i;
-            Xhat_const[s] = xhat;
         }
 
         // Xtilde = (I-Pi)*X - correction
@@ -108,26 +102,18 @@ static void compute_filter_kernels(
             Xtilde[j][s] = I_minus_Pi * X[j][s] - correction[s];
         Xtilde[j][j] = I_minus_Pi * X[j][j];
 
-        // Rank-1 filter iteration for A_store[j]
-        double sigma = 0.0;
+        // --- Closed-form Kalman gain (replaces iterative relaxation) ---
+        double sigma_minus = 0.0;
         for (int u = 0; u < j; ++u)
-            sigma += g_dt * Xtilde[j][u].dot(X[j][u]);
+            sigma_minus += g_dt * Xtilde[j][u].squaredNorm();
 
-        double alpha = relax * g_dt * prec;
-        double beta = 1.0 - relax;
+        double scale = 1.0 / (1.0 + g_dt * prec * sigma_minus);
+        for (int s = 0; s <= j; ++s)
+            Xtilde[j][s] *= scale;
 
-        std::array<Vec3, N_MAX> A;
+        double dt_prec = g_dt * prec;
         for (int s = 0; s < j; ++s)
-            A[s].setZero();
-
-        for (int iter = 0; iter < filter_iters; ++iter)
-            for (int s = 0; s < j; ++s) {
-                Vec3 diff = X[j][s] - Xhat_const[s] - sigma * A[s];
-                A[s] = alpha * diff + beta * A[s];
-            }
-
-        for (int s = 0; s < j; ++s)
-            A_store[j][s] = A[s];
+            A_store[j][s] = dt_prec * Xtilde[j][s];
     }
 }
 
@@ -184,6 +170,161 @@ void primitive_control_kernel(
         // s = j: only border_lt contributes
         calD[j][j] = Pi * D[j][j] + DT_g * partial_d_k[j] * e_i;
     }
+}
+
+// --- CE-based filter: incremental rank-1 projection ---
+//
+// Builds M_j incrementally for j = 0..n-1 via rank-1 updates.
+// At each j, extracts Xtilde[j] = (I - M_j) X[j] and calD[j] = M_j D[j].
+
+// Thread-local buffers for compute_ce_filter_and_calD.
+// Avoids repeated heap allocation of the V matrix (~600KB at N=160)
+// and scratch vectors across Picard iterations.
+struct CEFilterBufs {
+    int dim_alloc = 0;
+    Eigen::MatrixXd V;
+    Eigen::VectorXd h, v, Xvec, Dvec, coeff;
+    void ensure(int dim, int n_obs) {
+        if (dim_alloc == dim) return;
+        dim_alloc = dim;
+        V.resize(dim, n_obs);
+        h.resize(dim); v.resize(dim); Xvec.resize(dim); Dvec.resize(dim);
+        coeff.resize(n_obs);
+    }
+};
+static thread_local CEFilterBufs s_ce_bufs;
+
+static void compute_ce_filter_and_calD(
+    const Kernel2D& X, const Kernel2D& D,
+    int obs_idx, double obs_gain,
+    Kernel2D& Xtilde, Kernel2D& calD) {
+
+    int n = g_n;
+    int dim = 3 * n;
+    int n_obs = n - 1;
+    double g = obs_gain;
+
+    // Thin orthonormal basis: M_j = V_j V_j^T where V_j has j columns.
+    // Mat-vec M*x = V*(V^T*x) costs O(active*j) instead of O(dim*j).
+    //
+    // Key: at step j, all vectors (h, Xvec, Dvec) and all V columns are
+    // zero below row 3(j+1). So mat-vecs are restricted to the top
+    // "active" = 3(j+1) rows, cutting average cost by ~2x.
+    s_ce_bufs.ensure(dim, n_obs);
+    auto& V = s_ce_bufs.V;
+    auto& h = s_ce_bufs.h;
+    auto& v = s_ce_bufs.v;
+    auto& Xvec = s_ce_bufs.Xvec;
+    auto& Dvec = s_ce_bufs.Dvec;
+    auto& coeff = s_ce_bufs.coeff;
+
+    V.setZero();
+    int rank = 0;
+    h.setZero();
+    v.setZero();
+    Xvec.setZero();
+    Dvec.setZero();
+
+    // j = 0: no observations yet, M_0 = 0
+    Xtilde[0][0] = X[0][0];
+    calD[0][0].setZero();
+
+    for (int j = 1; j < n; ++j) {
+        int active = 3 * (j + 1);  // nonzero rows at step j
+        auto Vact = V.topRows(active).leftCols(rank);
+
+        // Build h_j (only active entries)
+        h.head(active).setZero();
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                h(3*z + k) = g * g_dt * X[j][z](k);
+        h(3*j + obs_idx) += 1.0;
+
+        // Innovation: v = (I - V V^T) h, restricted to active rows
+        v.head(active) = h.head(active);
+        if (rank > 0) {
+            auto c = coeff.head(rank);
+            c.noalias() = Vact.transpose() * h.head(active);
+            v.head(active).noalias() -= Vact * c;
+        }
+        double vnorm = v.head(active).norm();
+        if (vnorm > 1e-15) {
+            V.col(rank).head(active) = v.head(active) / vnorm;
+            rank++;
+        }
+
+        // Refresh Vact after potential rank increase
+        auto Vr = V.topRows(active).leftCols(rank);
+        auto c = coeff.head(rank);
+
+        // Xtilde[j] = (I - V V^T) X_vec_j
+        for (int z = 0; z <= j; ++z)
+            Xvec.segment<3>(3*z) = X[j][z];
+        if (rank > 0) {
+            c.noalias() = Vr.transpose() * Xvec.head(active);
+            Xvec.head(active).noalias() -= Vr * c;
+        }
+        for (int z = 0; z <= j; ++z)
+            Xtilde[j][z] = Xvec.segment<3>(3*z);
+
+        // calD[j] = V V^T D_vec_j
+        for (int z = 0; z <= j; ++z)
+            Dvec.segment<3>(3*z) = D[j][z];
+        if (rank > 0) {
+            c.noalias() = Vr.transpose() * Dvec.head(active);
+            Dvec.head(active).noalias() = Vr * c;
+        } else {
+            Dvec.head(active).setZero();
+        }
+        for (int z = 0; z <= j; ++z)
+            calD[j][z] = Dvec.segment<3>(3*z);
+    }
+}
+
+// Forward environment using discrete CE projection.
+// Replaces compute_filter_kernels + primitive_control_kernel with
+// the exact discrete conditional expectation at each time step.
+
+static void forward_environment_ce(
+    const Kernel2D& D1, const Kernel2D& D2,
+    double obs_gain1, double obs_gain2,
+    int inner_iters,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2,
+    EnvironmentResult& env) {
+
+    // Initial calD from Pi*D (same seed as standard forward_environment)
+    // Temporaries declared once outside the inner loop to avoid
+    // repeated Kernel2D construction (~300KB each at N=160).
+    Kernel2D calD1, calD2, X, calD1_new, calD2_new, X_new;
+    for (int j = 0; j < g_n; ++j)
+        for (int s = 0; s <= j; ++s) {
+            calD1[j][s] = Pi_1 * D1[j][s];
+            calD2[j][s] = Pi_2 * D2[j][s];
+        }
+
+    state_kernel_from_calD(calD1, calD2, X);
+
+    for (int it = 0; it < inner_iters; ++it) {
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            compute_ce_filter_and_calD(X, D1, obs_idx_1, obs_gain1,
+                                        env.Xtilde1, calD1_new);
+            #pragma omp section
+            compute_ce_filter_and_calD(X, D2, obs_idx_2, obs_gain2,
+                                        env.Xtilde2, calD2_new);
+        }
+
+        state_kernel_from_calD(calD1_new, calD2_new, X_new);
+        for (int t = 0; t < g_n; ++t)
+            for (int s = 0; s <= t; ++s)
+                X[t][s] = 0.6 * X_new[t][s] + 0.4 * X[t][s];
+    }
+
+    env.X = X;
+    env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
+    env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
 }
 
 // --- forward_environment ---
@@ -664,6 +805,154 @@ EquilibriumResult solve_equilibrium_warm(
                                   verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
 }
 
+// --- solve_equilibrium_ce: Picard iteration with discrete CE projection ---
+
+EquilibriumResult solve_equilibrium_ce(
+    double p1_val, double p2_val, bool verbose,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2) {
+
+    Kernel2D D1, D2;
+    D1.setZero();
+    D2.setZero();
+
+    std::vector<double> residuals;
+    auto prec1 = make_constant_prec(p1_val * p1_val);
+    auto prec2 = make_constant_prec(p2_val * p2_val);
+    EnvironmentResult env;
+
+    // Anderson acceleration state (same as standard solver)
+    constexpr int AA_M = 5;
+    constexpr int AA_STORE = AA_M + 1;
+    constexpr double AA_REG = 1e-12;
+    constexpr double AA_BETA = 0.6;
+    const int TRI = g_n * (g_n + 1) / 2;
+
+    struct AAEntry { Kernel2D f1, f2, g1, g2; };
+    std::vector<AAEntry> hist(AA_STORE);
+    int stored = 0;
+
+    // Hx buffers hoisted out of loop (avoids 309KB alloc per iteration at N=160)
+    Kernel2D Hx1, Hx2;
+
+    for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
+        // Forward pass using discrete CE
+        forward_environment_ce(D1, D2, p1_val, p2_val, FORWARD_INNER_ITERS,
+                               Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
+
+        // Backward pass (uses Xtilde, same as standard solver)
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            backward_kernels(env.X, env.Xtilde2, D2, prec2, 0.0, Hx1);
+            #pragma omp section
+            backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2);
+        }
+
+        // Residual and Anderson acceleration (identical to standard solver)
+        const double neg_inv_r1 = -(1.0 / g_r1);
+        const double neg_inv_r2 = -(1.0 / g_r2);
+        auto& cur = hist[stored % AA_STORE];
+        double norm_f = 0.0, norm_g = 0.0;
+        for (int i = 0; i < TRI; ++i) {
+            cur.g1.data[i] = neg_inv_r1 * Hx1.data[i];
+            cur.g2.data[i] = neg_inv_r2 * Hx2.data[i];
+            cur.f1.data[i] = cur.g1.data[i] - D1.data[i];
+            cur.f2.data[i] = cur.g2.data[i] - D2.data[i];
+            norm_f += cur.f1.data[i].squaredNorm() + cur.f2.data[i].squaredNorm();
+            norm_g += cur.g1.data[i].squaredNorm() + cur.g2.data[i].squaredNorm();
+        }
+
+        double err = std::sqrt(norm_f) / std::max(1.0, std::sqrt(norm_g));
+        residuals.push_back(err);
+        if (!std::isfinite(err)) break;
+
+        if (verbose && (it <= 5 || it % 50 == 0))
+            std::cout << "  [CE] it=" << it << "  resid=" << err << std::endl;
+        if (err < PICARD_TOL) {
+            if (verbose)
+                std::cout << "  [CE] Converged at iteration " << it << std::endl;
+            break;
+        }
+
+        int m = std::min(stored, AA_M);
+        if (m >= 1) {
+            Eigen::VectorXd Ffi(m);
+            for (int i = 0; i < m; ++i) {
+                int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
+                Ffi(i) = kernel_dot(cur.f1, cur.f2, hist[idx].f1, hist[idx].f2);
+            }
+            Eigen::MatrixXd H(m, m);
+            Eigen::VectorXd rhs(m);
+            for (int i = 0; i < m; ++i) {
+                rhs(i) = norm_f - Ffi(i);
+                for (int j = 0; j <= i; ++j) {
+                    int ii = (stored - 1 - i + AA_STORE) % AA_STORE;
+                    int jj = (stored - 1 - j + AA_STORE) % AA_STORE;
+                    double fifj = kernel_dot(hist[ii].f1, hist[ii].f2, hist[jj].f1, hist[jj].f2);
+                    H(i, j) = H(j, i) = norm_f - Ffi(i) - Ffi(j) + fifj;
+                }
+            }
+            for (int i = 0; i < m; ++i)
+                H(i, i) += AA_REG * (1.0 + H(i, i));
+
+            Eigen::VectorXd gamma = H.ldlt().solve(rhs);
+
+            std::array<const Vec3*, AA_M> g1p, g2p;
+            std::array<double, AA_M> gam;
+            for (int i = 0; i < m; ++i) {
+                int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
+                g1p[i] = hist[idx].g1.data.data();
+                g2p[i] = hist[idx].g2.data.data();
+                gam[i] = gamma(i);
+            }
+            const Vec3* cg1 = cur.g1.data.data();
+            const Vec3* cg2 = cur.g2.data.data();
+            for (int i = 0; i < TRI; ++i) {
+                Vec3 d1_aa = cg1[i], d2_aa = cg2[i];
+                for (int k = 0; k < m; ++k) {
+                    d1_aa -= gam[k] * (cg1[i] - g1p[k][i]);
+                    d2_aa -= gam[k] * (cg2[i] - g2p[k][i]);
+                }
+                D1.data[i] = (1.0 - AA_BETA) * D1.data[i] + AA_BETA * d1_aa;
+                D2.data[i] = (1.0 - AA_BETA) * D2.data[i] + AA_BETA * d2_aa;
+            }
+        } else {
+            for (int i = 0; i < TRI; ++i) {
+                D1.data[i] += PICARD_RELAX * cur.f1.data[i];
+                D2.data[i] += PICARD_RELAX * cur.f2.data[i];
+            }
+        }
+        stored++;
+    }
+
+    // After convergence: populate A_store (for F materialization / API compat)
+    // and compute final calD via CE projection, all in parallel.
+    // Reuse Hx1/Hx2 as scratch for the throwaway Xtilde from compute_filter_kernels.
+    Kernel2D calD1, calD2;
+    #pragma omp parallel sections
+    {
+        #pragma omp section
+        {
+            compute_filter_kernels(env.X, Pi_1, obs_idx_1, p1_val,
+                                   FILTER_INNER_ITERS, FILTER_RELAX,
+                                   Hx1, env.A_store1);
+            compute_ce_filter_and_calD(env.X, D1, obs_idx_1, p1_val,
+                                        env.Xtilde1, calD1);
+        }
+        #pragma omp section
+        {
+            compute_filter_kernels(env.X, Pi_2, obs_idx_2, p2_val,
+                                   FILTER_INNER_ITERS, FILTER_RELAX,
+                                   Hx2, env.A_store2);
+            compute_ce_filter_and_calD(env.X, D2, obs_idx_2, p2_val,
+                                        env.Xtilde2, calD2);
+        }
+    }
+
+    return {D1, D2, std::move(env), std::move(calD1), std::move(calD2), residuals};
+}
+
 // --- compute_costs_general ---
 
 CostPair compute_costs_general(const EnvironmentResult& env,
@@ -755,4 +1044,189 @@ std::unique_ptr<FSlice> compute_F_slice_at(const Kernel2D& Xtilde, const Kernel2
 std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kernel2D& A_store,
                                               double obs_gain, int obs_index) {
     return compute_F_slice_at(Xtilde, A_store, obs_gain, obs_index, g_n - 1);
+}
+
+// --- Exact discrete conditional expectation ---
+
+DiscreteProjection discrete_conditional_expectation(
+    const Kernel2D& X, int obs_idx, double obs_gain, int t_idx) {
+
+    int n = t_idx + 1;
+    int dim = 3 * n;
+    int n_obs = t_idx;  // observations at j = 1, ..., t_idx
+    double g = obs_gain;
+
+    // 1. Build measurement matrix H: n_obs × dim
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(n_obs, dim);
+    for (int j = 1; j <= t_idx; ++j) {
+        int row = j - 1;
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                H(row, 3*z + k) = g * g_dt * X[j][z](k);
+        H(row, 3*j + obs_idx) += 1.0;
+    }
+
+    // 2. Factorize HH^T (n_obs × n_obs, much smaller than dim × dim)
+    Eigen::MatrixXd HHt = H * H.transpose();
+    auto ldlt = HHt.ldlt();
+
+    // 3. Extract Xtilde without forming the full dim × dim M matrix.
+    //    (I - M) Xmat = Xmat - H^T (HH^T)^{-1} (H Xmat)
+    //    Peak memory: H (n_obs × dim) + HXmat (n_obs × n) instead of M (dim × dim).
+    Kernel2D Xt_out;
+    Eigen::MatrixXd Xmat = Eigen::MatrixXd::Zero(dim, n);
+    for (int j = 0; j <= t_idx; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xmat.block<3,1>(3*z, j) = X[j][z];
+
+    Eigen::MatrixXd HXmat = H * Xmat;              // n_obs × n
+    Eigen::MatrixXd solved = ldlt.solve(HXmat);     // n_obs × n
+    Eigen::MatrixXd Xt_mat = Xmat - H.transpose() * solved;  // dim × n
+
+    for (int j = 0; j <= t_idx; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xt_out[j][z] = Xt_mat.block<3,1>(3*z, j);
+
+    // 4. Diagnostics from the LDLT factorization.
+    //    Rank = number of positive pivots.
+    //    Idempotency: compute trace(M) = trace(H^T (HH^T)^{-1} H)
+    //    = trace((HH^T)^{-1} HH^T) = trace(I_{n_obs}) = n_obs for full rank.
+    //    Check via ||H (HH^T)^{-1} H^T H - H||_F / ||H||_F.
+    int rank = 0;
+    for (int i = 0; i < n_obs; ++i)
+        if (ldlt.vectorD()(i) > 1e-12) rank++;
+
+    // Cheap idempotency check: ||(HH^T)^{-1}(HH^T) - I||_F
+    Eigen::MatrixXd I_check = ldlt.solve(HHt);
+    double idem = (I_check - Eigen::MatrixXd::Identity(n_obs, n_obs)).norm()
+                  / std::max(1e-15, std::sqrt(static_cast<double>(n_obs)));
+
+    return {Eigen::MatrixXd(), std::move(Xt_out), rank, idem};
+}
+
+IncrementalProjection build_projections_incremental(
+    const Kernel2D& X, int obs_idx, double obs_gain) {
+
+    int n = g_n;
+    int dim = 3 * n;
+    int n_obs = n - 1;
+    double g = obs_gain;
+
+    // Thin V basis instead of dense M (saves dim×dim = 1.8MB at N=160)
+    Eigen::MatrixXd V = Eigen::MatrixXd::Zero(dim, n_obs);
+    int rank = 0;
+    Eigen::VectorXd h(dim), v(dim), coeff(n_obs);
+    h.setZero();
+    v.setZero();
+
+    for (int j = 1; j < n; ++j) {
+        int active = 3 * (j + 1);
+        h.head(active).setZero();
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                h(3*z + k) = g * g_dt * X[j][z](k);
+        h(3*j + obs_idx) += 1.0;
+
+        v.head(active) = h.head(active);
+        if (rank > 0) {
+            auto Vact = V.topRows(active).leftCols(rank);
+            auto c = coeff.head(rank);
+            c.noalias() = Vact.transpose() * h.head(active);
+            v.head(active).noalias() -= Vact * c;
+        }
+        double vnorm = v.head(active).norm();
+        if (vnorm > 1e-15) {
+            V.col(rank).head(active) = v.head(active) / vnorm;
+            rank++;
+        }
+    }
+
+    // Extract Xtilde using V: (I - VV^T) Xmat
+    Kernel2D Xt_out;
+    Eigen::MatrixXd Xmat = Eigen::MatrixXd::Zero(dim, n);
+    for (int j = 0; j < n; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xmat.block<3,1>(3*z, j) = X[j][z];
+
+    // VtX = V^T * Xmat (rank × n), then Xt = Xmat - V * VtX
+    Eigen::MatrixXd VtX = V.leftCols(rank).transpose() * Xmat;
+    Eigen::MatrixXd Xt_mat = Xmat - V.leftCols(rank) * VtX;
+
+    for (int j = 0; j < n; ++j)
+        for (int z = 0; z <= j; ++z)
+            Xt_out[j][z] = Xt_mat.block<3,1>(3*z, j);
+
+    // Idempotency: VV^T is exact projection by construction, check V^T V = I
+    Eigen::MatrixXd VtV = V.leftCols(rank).transpose() * V.leftCols(rank);
+    double idem = (VtV - Eigen::MatrixXd::Identity(rank, rank)).norm()
+                  / std::max(1e-15, std::sqrt(static_cast<double>(rank)));
+
+    return {Eigen::MatrixXd(), std::move(Xt_out), idem};
+}
+
+std::unique_ptr<FSlice> compute_ce_F_slice_at_T(
+    const Kernel2D& X, int obs_idx, double obs_gain, const Mat3& Pi) {
+
+    int n = g_n;
+    int dim = 3 * n;
+    int n_obs = n - 1;
+    double g = obs_gain;
+
+    // Build thin V basis incrementally
+    Eigen::MatrixXd V = Eigen::MatrixXd::Zero(dim, n_obs);
+    int rank = 0;
+    Eigen::VectorXd h(dim), v(dim), coeff(n_obs);
+    h.setZero();
+    v.setZero();
+
+    for (int j = 1; j < n; ++j) {
+        int active = 3 * (j + 1);
+        h.head(active).setZero();
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                h(3*z + k) = g * g_dt * X[j][z](k);
+        h(3*j + obs_idx) += 1.0;
+
+        v.head(active) = h.head(active);
+        if (rank > 0) {
+            auto Vact = V.topRows(active).leftCols(rank);
+            auto c = coeff.head(rank);
+            c.noalias() = Vact.transpose() * h.head(active);
+            v.head(active).noalias() -= Vact * c;
+        }
+        double vnorm = v.head(active).norm();
+        if (vnorm > 1e-15) {
+            V.col(rank).head(active) = v.head(active) / vnorm;
+            rank++;
+        }
+    }
+
+    // Extract F: F(u,s) = [VV^T(3u:3u+3, 3s:3s+3) - Pi*delta(u,s)] / dt
+    auto F = std::make_unique<FSlice>();
+    double inv_dt = 1.0 / g_dt;
+    auto Vr = V.leftCols(rank);
+    for (int u = 0; u < n; ++u) {
+        auto Vu = Vr.middleRows(3*u, 3);
+        for (int s = 0; s < n; ++s) {
+            auto Vs = Vr.middleRows(3*s, 3);
+            Mat3 Mus = Vu * Vs.transpose();
+            if (u == s) Mus -= Pi;
+            (*F)(u, s) = Mus * inv_dt;
+        }
+    }
+
+    return F;
+}
+
+ProjectionPair exact_discrete_CE(const EquilibriumResult& eq) {
+    int t_idx = g_n - 1;
+    DiscreteProjection p1, p2;
+    #pragma omp parallel sections
+    {
+        #pragma omp section
+        p1 = discrete_conditional_expectation(eq.env.X, eq.env.obs_idx1, eq.env.obs_gain1, t_idx);
+        #pragma omp section
+        p2 = discrete_conditional_expectation(eq.env.X, eq.env.obs_idx2, eq.env.obs_gain2, t_idx);
+    }
+    return {std::move(p1), std::move(p2)};
 }
