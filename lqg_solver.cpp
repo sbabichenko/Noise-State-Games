@@ -177,6 +177,23 @@ void primitive_control_kernel(
 // Builds M_j incrementally for j = 0..n-1 via rank-1 updates.
 // At each j, extracts Xtilde[j] = (I - M_j) X[j] and calD[j] = M_j D[j].
 
+// Thread-local buffers for compute_ce_filter_and_calD.
+// Avoids repeated heap allocation of the V matrix (~600KB at N=160)
+// and scratch vectors across Picard iterations.
+struct CEFilterBufs {
+    int dim_alloc = 0;
+    Eigen::MatrixXd V;
+    Eigen::VectorXd h, v, Xvec, Dvec, coeff;
+    void ensure(int dim, int n_obs) {
+        if (dim_alloc == dim) return;
+        dim_alloc = dim;
+        V.resize(dim, n_obs);
+        h.resize(dim); v.resize(dim); Xvec.resize(dim); Dvec.resize(dim);
+        coeff.resize(n_obs);
+    }
+};
+static thread_local CEFilterBufs s_ce_bufs;
+
 static void compute_ce_filter_and_calD(
     const Kernel2D& X, const Kernel2D& D,
     int obs_idx, double obs_gain,
@@ -193,11 +210,16 @@ static void compute_ce_filter_and_calD(
     // Key: at step j, all vectors (h, Xvec, Dvec) and all V columns are
     // zero below row 3(j+1). So mat-vecs are restricted to the top
     // "active" = 3(j+1) rows, cutting average cost by ~2x.
-    Eigen::MatrixXd V = Eigen::MatrixXd::Zero(dim, n_obs);
-    int rank = 0;
+    s_ce_bufs.ensure(dim, n_obs);
+    auto& V = s_ce_bufs.V;
+    auto& h = s_ce_bufs.h;
+    auto& v = s_ce_bufs.v;
+    auto& Xvec = s_ce_bufs.Xvec;
+    auto& Dvec = s_ce_bufs.Dvec;
+    auto& coeff = s_ce_bufs.coeff;
 
-    // Reusable scratch vectors
-    Eigen::VectorXd h(dim), v(dim), Xvec(dim), Dvec(dim), coeff(n_obs);
+    V.setZero();
+    int rank = 0;
     h.setZero();
     v.setZero();
     Xvec.setZero();
@@ -272,17 +294,17 @@ static void forward_environment_ce(
     EnvironmentResult& env) {
 
     // Initial calD from Pi*D (same seed as standard forward_environment)
-    Kernel2D calD1, calD2;
+    // Temporaries declared once outside the inner loop to avoid
+    // repeated Kernel2D construction (~300KB each at N=160).
+    Kernel2D calD1, calD2, X, calD1_new, calD2_new, X_new;
     for (int j = 0; j < g_n; ++j)
         for (int s = 0; s <= j; ++s) {
             calD1[j][s] = Pi_1 * D1[j][s];
             calD2[j][s] = Pi_2 * D2[j][s];
         }
 
-    Kernel2D X;
     state_kernel_from_calD(calD1, calD2, X);
 
-    Kernel2D calD1_new, calD2_new, X_new;
     for (int it = 0; it < inner_iters; ++it) {
         #pragma omp parallel sections
         {
@@ -1042,37 +1064,42 @@ DiscreteProjection discrete_conditional_expectation(
         H(row, 3*j + obs_idx) += 1.0;
     }
 
-    // 2. M = H^T (H H^T)^{-1} H  (projection onto row space of H)
-    Eigen::MatrixXd HHt = H * H.transpose();  // n_obs × n_obs
-    Eigen::MatrixXd M = H.transpose() * HHt.ldlt().solve(H);
+    // 2. Factorize HH^T (n_obs × n_obs, much smaller than dim × dim)
+    Eigen::MatrixXd HHt = H * H.transpose();
+    auto ldlt = HHt.ldlt();
 
-    // 3. Symmetrize
-    M = 0.5 * (M + M.transpose());
-
-    // 4. Extract Xtilde: Xt_j(z) = [(I - M) vec_X_j](z)
+    // 3. Extract Xtilde without forming the full dim × dim M matrix.
+    //    (I - M) Xmat = Xmat - H^T (HH^T)^{-1} (H Xmat)
+    //    Peak memory: H (n_obs × dim) + HXmat (n_obs × n) instead of M (dim × dim).
     Kernel2D Xt_out;
     Eigen::MatrixXd Xmat = Eigen::MatrixXd::Zero(dim, n);
     for (int j = 0; j <= t_idx; ++j)
         for (int z = 0; z <= j; ++z)
             Xmat.block<3,1>(3*z, j) = X[j][z];
 
-    Eigen::MatrixXd Xt_mat = Xmat - M * Xmat;
+    Eigen::MatrixXd HXmat = H * Xmat;              // n_obs × n
+    Eigen::MatrixXd solved = ldlt.solve(HXmat);     // n_obs × n
+    Eigen::MatrixXd Xt_mat = Xmat - H.transpose() * solved;  // dim × n
 
     for (int j = 0; j <= t_idx; ++j)
         for (int z = 0; z <= j; ++z)
             Xt_out[j][z] = Xt_mat.block<3,1>(3*z, j);
 
-    // 5. Diagnostics (O(dim^2), avoids O(dim^3) M*M product)
-    //    For a projection: trace(M) = rank, ||M||_F^2 = trace(M^T M) = trace(M).
-    //    So |trace(M) - ||M||_F^2| / ||M||_F measures idempotency cheaply.
-    double trM = M.trace();
-    double normF2 = M.squaredNorm();
-    double idem = std::abs(trM - normF2) / std::max(1e-15, std::sqrt(normF2));
+    // 4. Diagnostics from the LDLT factorization.
+    //    Rank = number of positive pivots.
+    //    Idempotency: compute trace(M) = trace(H^T (HH^T)^{-1} H)
+    //    = trace((HH^T)^{-1} HH^T) = trace(I_{n_obs}) = n_obs for full rank.
+    //    Check via ||H (HH^T)^{-1} H^T H - H||_F / ||H||_F.
+    int rank = 0;
+    for (int i = 0; i < n_obs; ++i)
+        if (ldlt.vectorD()(i) > 1e-12) rank++;
 
-    //    Rank from trace (nearest integer, should equal n_obs for full-rank H).
-    int rank = static_cast<int>(std::round(trM));
+    // Cheap idempotency check: ||(HH^T)^{-1}(HH^T) - I||_F
+    Eigen::MatrixXd I_check = ldlt.solve(HHt);
+    double idem = (I_check - Eigen::MatrixXd::Identity(n_obs, n_obs)).norm()
+                  / std::max(1e-15, std::sqrt(static_cast<double>(n_obs)));
 
-    return {std::move(M), std::move(Xt_out), rank, idem};
+    return {Eigen::MatrixXd(), std::move(Xt_out), rank, idem};
 }
 
 IncrementalProjection build_projections_incremental(
@@ -1080,46 +1107,59 @@ IncrementalProjection build_projections_incremental(
 
     int n = g_n;
     int dim = 3 * n;
+    int n_obs = n - 1;
     double g = obs_gain;
 
-    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(dim, dim);
+    // Thin V basis instead of dense M (saves dim×dim = 1.8MB at N=160)
+    Eigen::MatrixXd V = Eigen::MatrixXd::Zero(dim, n_obs);
+    int rank = 0;
+    Eigen::VectorXd h(dim), v(dim), coeff(n_obs);
+    h.setZero();
+    v.setZero();
 
     for (int j = 1; j < n; ++j) {
-        // Build h_j: measurement vector for observation j
-        Eigen::VectorXd h = Eigen::VectorXd::Zero(dim);
+        int active = 3 * (j + 1);
+        h.head(active).setZero();
         for (int z = 0; z <= j; ++z)
             for (int k = 0; k < 3; ++k)
                 h(3*z + k) = g * g_dt * X[j][z](k);
         h(3*j + obs_idx) += 1.0;
 
-        // Innovation: v = (I - M) h
-        Eigen::VectorXd v = h - M * h;
-
-        // Rank-1 update: M += v v^T / (v^T v)
-        double vtv = v.squaredNorm();
-        if (vtv > 1e-30)
-            M.noalias() += (v * v.transpose()) / vtv;
+        v.head(active) = h.head(active);
+        if (rank > 0) {
+            auto Vact = V.topRows(active).leftCols(rank);
+            auto c = coeff.head(rank);
+            c.noalias() = Vact.transpose() * h.head(active);
+            v.head(active).noalias() -= Vact * c;
+        }
+        double vnorm = v.head(active).norm();
+        if (vnorm > 1e-15) {
+            V.col(rank).head(active) = v.head(active) / vnorm;
+            rank++;
+        }
     }
 
-    // Symmetrize
-    M = 0.5 * (M + M.transpose());
-
-    // Extract Xtilde at terminal time
+    // Extract Xtilde using V: (I - VV^T) Xmat
     Kernel2D Xt_out;
     Eigen::MatrixXd Xmat = Eigen::MatrixXd::Zero(dim, n);
     for (int j = 0; j < n; ++j)
         for (int z = 0; z <= j; ++z)
             Xmat.block<3,1>(3*z, j) = X[j][z];
 
-    Eigen::MatrixXd Xt_mat = Xmat - M * Xmat;
+    // VtX = V^T * Xmat (rank × n), then Xt = Xmat - V * VtX
+    Eigen::MatrixXd VtX = V.leftCols(rank).transpose() * Xmat;
+    Eigen::MatrixXd Xt_mat = Xmat - V.leftCols(rank) * VtX;
 
     for (int j = 0; j < n; ++j)
         for (int z = 0; z <= j; ++z)
             Xt_out[j][z] = Xt_mat.block<3,1>(3*z, j);
 
-    double idem = (M * M - M).norm() / std::max(1e-15, M.norm());
+    // Idempotency: VV^T is exact projection by construction, check V^T V = I
+    Eigen::MatrixXd VtV = V.leftCols(rank).transpose() * V.leftCols(rank);
+    double idem = (VtV - Eigen::MatrixXd::Identity(rank, rank)).norm()
+                  / std::max(1e-15, std::sqrt(static_cast<double>(rank)));
 
-    return {std::move(M), std::move(Xt_out), idem};
+    return {Eigen::MatrixXd(), std::move(Xt_out), idem};
 }
 
 ProjectionPair exact_discrete_CE(const EquilibriumResult& eq) {
