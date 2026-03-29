@@ -184,43 +184,64 @@ static void compute_ce_filter_and_calD(
 
     int n = g_n;
     int dim = 3 * n;
+    int n_obs = n - 1;
     double g = obs_gain;
 
-    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(dim, dim);
+    // Thin orthonormal basis: M_j = V_j V_j^T where V_j has j columns.
+    // Mat-vec M*x = V*(V^T*x) costs O(dim*j) instead of O(dim^2).
+    Eigen::MatrixXd V(dim, n_obs);
+    int rank = 0;
+
+    // Reusable scratch vectors (avoid per-step allocation)
+    Eigen::VectorXd h(dim), v(dim), Xvec(dim), Dvec(dim), coeff;
 
     // j = 0: no observations yet, M_0 = 0
     Xtilde[0][0] = X[0][0];
     calD[0][0].setZero();
 
     for (int j = 1; j < n; ++j) {
-        // Add observation j: h_j
-        Eigen::VectorXd h = Eigen::VectorXd::Zero(dim);
+        // Build h_j
+        h.setZero();
         for (int z = 0; z <= j; ++z)
             for (int k = 0; k < 3; ++k)
                 h(3*z + k) = g * g_dt * X[j][z](k);
         h(3*j + obs_idx) += 1.0;
 
-        // Innovation: v = (I - M) h, rank-1 update
-        Eigen::VectorXd v = h - M * h;
-        double vtv = v.squaredNorm();
-        if (vtv > 1e-30)
-            M.noalias() += (v * v.transpose()) / vtv;
+        // Innovation: v = (I - V V^T) h
+        v = h;
+        if (rank > 0) {
+            coeff.noalias() = V.leftCols(rank).transpose() * h;
+            v.noalias() -= V.leftCols(rank) * coeff;
+        }
+        double vnorm = v.norm();
+        if (vnorm > 1e-15) {
+            V.col(rank) = v / vnorm;
+            rank++;
+        }
 
-        // Xtilde[j] = (I - M_j) X_vec_j
-        Eigen::VectorXd Xvec = Eigen::VectorXd::Zero(dim);
+        // Xtilde[j] = (I - V V^T) X_vec_j
+        Xvec.setZero();
         for (int z = 0; z <= j; ++z)
             Xvec.segment<3>(3*z) = X[j][z];
-        Eigen::VectorXd Xt = Xvec - M * Xvec;
+        if (rank > 0) {
+            coeff.noalias() = V.leftCols(rank).transpose() * Xvec;
+            Xvec.noalias() -= V.leftCols(rank) * coeff;
+        }
         for (int z = 0; z <= j; ++z)
-            Xtilde[j][z] = Xt.segment<3>(3*z);
+            Xtilde[j][z] = Xvec.segment<3>(3*z);
 
-        // calD[j] = M_j D_vec_j
-        Eigen::VectorXd Dvec = Eigen::VectorXd::Zero(dim);
+        // calD[j] = V V^T D_vec_j
+        Dvec.setZero();
         for (int z = 0; z <= j; ++z)
             Dvec.segment<3>(3*z) = D[j][z];
-        Eigen::VectorXd cD = M * Dvec;
+        if (rank > 0) {
+            coeff.noalias() = V.leftCols(rank).transpose() * Dvec;
+            Dvec.noalias() = V.leftCols(rank) * coeff;
+        } else {
+            Dvec.setZero();
+        }
         for (int z = 0; z <= j; ++z)
-            calD[j][z] = cD.segment<3>(3*z);
+            calD[j][z] = Dvec.segment<3>(3*z);
     }
 }
 
