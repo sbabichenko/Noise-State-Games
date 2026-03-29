@@ -203,7 +203,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
   </div>
   <div class="slider-group">
     <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-      <input type="checkbox" id="cb-ce-mode" style="width:16px; height:16px;">
+      <input type="checkbox" id="cb-ce-mode" checked style="width:16px; height:16px;">
       Exact discrete CE
       <span style="font-size:0.82em; color:#888;">(uses discrete conditional expectation in Picard loop and for F kernel)</span>
     </label>
@@ -2551,8 +2551,10 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmFree = mod._free;
     try { wasmFullKernelCount = mod.cwrap('full_kernel_count', 'number', []); } catch(e) {}
 
-    // Set initial grid
+    // Set initial grid and CE mode
     wasmSetGrid(40, 1.0);
+    wasmSetCeMode = mod.cwrap('wasm_set_ce_mode', null, ['number']);
+    wasmSetCeMode(1);  // CE mode on by default
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -2561,8 +2563,7 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
 
-    // CE mode toggle
-    wasmSetCeMode = mod.cwrap('wasm_set_ce_mode', null, ['number']);
+    // CE mode toggle (wasmSetCeMode already initialized above)
     document.getElementById('cb-ce-mode').addEventListener('change', function() {
         wasmSetCeMode(this.checked ? 1 : 0);
         onSliderChange();
