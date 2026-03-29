@@ -832,13 +832,15 @@ EquilibriumResult solve_equilibrium_ce(
     std::vector<AAEntry> hist(AA_STORE);
     int stored = 0;
 
+    // Hx buffers hoisted out of loop (avoids 309KB alloc per iteration at N=160)
+    Kernel2D Hx1, Hx2;
+
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
         // Forward pass using discrete CE
         forward_environment_ce(D1, D2, p1_val, p2_val, FORWARD_INNER_ITERS,
                                Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
         // Backward pass (uses Xtilde, same as standard solver)
-        Kernel2D Hx1, Hx2;
         #pragma omp parallel sections
         {
             #pragma omp section
@@ -924,28 +926,28 @@ EquilibriumResult solve_equilibrium_ce(
         stored++;
     }
 
-    // After convergence: run standard filter once to populate A_store
-    // (needed for F materialization and API compatibility)
-    {
-        Kernel2D xt_tmp1, xt_tmp2;
-        compute_filter_kernels(env.X, Pi_1, obs_idx_1, p1_val,
-                               FILTER_INNER_ITERS, FILTER_RELAX,
-                               xt_tmp1, env.A_store1);
-        compute_filter_kernels(env.X, Pi_2, obs_idx_2, p2_val,
-                               FILTER_INNER_ITERS, FILTER_RELAX,
-                               xt_tmp2, env.A_store2);
-    }
-
-    // Compute calD using CE projection on converged X and D
+    // After convergence: populate A_store (for F materialization / API compat)
+    // and compute final calD via CE projection, all in parallel.
+    // Reuse Hx1/Hx2 as scratch for the throwaway Xtilde from compute_filter_kernels.
     Kernel2D calD1, calD2;
     #pragma omp parallel sections
     {
         #pragma omp section
-        compute_ce_filter_and_calD(env.X, D1, obs_idx_1, p1_val,
-                                    env.Xtilde1, calD1);
+        {
+            compute_filter_kernels(env.X, Pi_1, obs_idx_1, p1_val,
+                                   FILTER_INNER_ITERS, FILTER_RELAX,
+                                   Hx1, env.A_store1);
+            compute_ce_filter_and_calD(env.X, D1, obs_idx_1, p1_val,
+                                        env.Xtilde1, calD1);
+        }
         #pragma omp section
-        compute_ce_filter_and_calD(env.X, D2, obs_idx_2, p2_val,
-                                    env.Xtilde2, calD2);
+        {
+            compute_filter_kernels(env.X, Pi_2, obs_idx_2, p2_val,
+                                   FILTER_INNER_ITERS, FILTER_RELAX,
+                                   Hx2, env.A_store2);
+            compute_ce_filter_and_calD(env.X, D2, obs_idx_2, p2_val,
+                                        env.Xtilde2, calD2);
+        }
     }
 
     return {D1, D2, std::move(env), std::move(calD1), std::move(calD2), residuals};
@@ -1163,18 +1165,14 @@ IncrementalProjection build_projections_incremental(
 }
 
 ProjectionPair exact_discrete_CE(const EquilibriumResult& eq) {
-    // Reconstruct X from converged primitive control kernels
-    Kernel2D X;
-    state_kernel_from_calD(eq.calD1, eq.calD2, X);
-
     int t_idx = g_n - 1;
     DiscreteProjection p1, p2;
     #pragma omp parallel sections
     {
         #pragma omp section
-        p1 = discrete_conditional_expectation(X, eq.env.obs_idx1, eq.env.obs_gain1, t_idx);
+        p1 = discrete_conditional_expectation(eq.env.X, eq.env.obs_idx1, eq.env.obs_gain1, t_idx);
         #pragma omp section
-        p2 = discrete_conditional_expectation(X, eq.env.obs_idx2, eq.env.obs_gain2, t_idx);
+        p2 = discrete_conditional_expectation(eq.env.X, eq.env.obs_idx2, eq.env.obs_gain2, t_idx);
     }
     return {std::move(p1), std::move(p2)};
 }
