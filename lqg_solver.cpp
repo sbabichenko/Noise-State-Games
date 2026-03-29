@@ -188,57 +188,71 @@ static void compute_ce_filter_and_calD(
     double g = obs_gain;
 
     // Thin orthonormal basis: M_j = V_j V_j^T where V_j has j columns.
-    // Mat-vec M*x = V*(V^T*x) costs O(dim*j) instead of O(dim^2).
-    Eigen::MatrixXd V(dim, n_obs);
+    // Mat-vec M*x = V*(V^T*x) costs O(active*j) instead of O(dim*j).
+    //
+    // Key: at step j, all vectors (h, Xvec, Dvec) and all V columns are
+    // zero below row 3(j+1). So mat-vecs are restricted to the top
+    // "active" = 3(j+1) rows, cutting average cost by ~2x.
+    Eigen::MatrixXd V = Eigen::MatrixXd::Zero(dim, n_obs);
     int rank = 0;
 
-    // Reusable scratch vectors (avoid per-step allocation)
-    Eigen::VectorXd h(dim), v(dim), Xvec(dim), Dvec(dim), coeff;
+    // Reusable scratch vectors
+    Eigen::VectorXd h(dim), v(dim), Xvec(dim), Dvec(dim), coeff(n_obs);
+    h.setZero();
+    v.setZero();
+    Xvec.setZero();
+    Dvec.setZero();
 
     // j = 0: no observations yet, M_0 = 0
     Xtilde[0][0] = X[0][0];
     calD[0][0].setZero();
 
     for (int j = 1; j < n; ++j) {
-        // Build h_j
-        h.setZero();
+        int active = 3 * (j + 1);  // nonzero rows at step j
+        auto Vact = V.topRows(active).leftCols(rank);
+
+        // Build h_j (only active entries)
+        h.head(active).setZero();
         for (int z = 0; z <= j; ++z)
             for (int k = 0; k < 3; ++k)
                 h(3*z + k) = g * g_dt * X[j][z](k);
         h(3*j + obs_idx) += 1.0;
 
-        // Innovation: v = (I - V V^T) h
-        v = h;
+        // Innovation: v = (I - V V^T) h, restricted to active rows
+        v.head(active) = h.head(active);
         if (rank > 0) {
-            coeff.noalias() = V.leftCols(rank).transpose() * h;
-            v.noalias() -= V.leftCols(rank) * coeff;
+            auto c = coeff.head(rank);
+            c.noalias() = Vact.transpose() * h.head(active);
+            v.head(active).noalias() -= Vact * c;
         }
-        double vnorm = v.norm();
+        double vnorm = v.head(active).norm();
         if (vnorm > 1e-15) {
-            V.col(rank) = v / vnorm;
+            V.col(rank).head(active) = v.head(active) / vnorm;
             rank++;
         }
 
+        // Refresh Vact after potential rank increase
+        auto Vr = V.topRows(active).leftCols(rank);
+        auto c = coeff.head(rank);
+
         // Xtilde[j] = (I - V V^T) X_vec_j
-        Xvec.setZero();
         for (int z = 0; z <= j; ++z)
             Xvec.segment<3>(3*z) = X[j][z];
         if (rank > 0) {
-            coeff.noalias() = V.leftCols(rank).transpose() * Xvec;
-            Xvec.noalias() -= V.leftCols(rank) * coeff;
+            c.noalias() = Vr.transpose() * Xvec.head(active);
+            Xvec.head(active).noalias() -= Vr * c;
         }
         for (int z = 0; z <= j; ++z)
             Xtilde[j][z] = Xvec.segment<3>(3*z);
 
         // calD[j] = V V^T D_vec_j
-        Dvec.setZero();
         for (int z = 0; z <= j; ++z)
             Dvec.segment<3>(3*z) = D[j][z];
         if (rank > 0) {
-            coeff.noalias() = V.leftCols(rank).transpose() * Dvec;
-            Dvec.noalias() = V.leftCols(rank) * coeff;
+            c.noalias() = Vr.transpose() * Dvec.head(active);
+            Dvec.head(active).noalias() = Vr * c;
         } else {
-            Dvec.setZero();
+            Dvec.head(active).setZero();
         }
         for (int z = 0; z <= j; ++z)
             calD[j][z] = Dvec.segment<3>(3*z);
