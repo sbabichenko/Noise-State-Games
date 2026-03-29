@@ -297,6 +297,11 @@ struct ProjectionPair {
 
 ProjectionPair exact_discrete_CE(const EquilibriumResult& eq);
 
+// Compute F kernel from the exact discrete CE projection at terminal time.
+// F_ce(u,s) = [M(u,s) - Pi*delta(u,s)] / dt  where M = VV^T is the CE projection.
+std::unique_ptr<FSlice> compute_ce_F_slice_at_T(
+    const Kernel2D& X, int obs_idx, double obs_gain, const Mat3& Pi);
+
 // ---------- utility ----------
 inline std::array<double, N_MAX> make_constant_prec(double val) {
     std::array<double, N_MAX> a;

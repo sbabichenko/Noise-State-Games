@@ -1164,6 +1164,60 @@ IncrementalProjection build_projections_incremental(
     return {Eigen::MatrixXd(), std::move(Xt_out), idem};
 }
 
+std::unique_ptr<FSlice> compute_ce_F_slice_at_T(
+    const Kernel2D& X, int obs_idx, double obs_gain, const Mat3& Pi) {
+
+    int n = g_n;
+    int dim = 3 * n;
+    int n_obs = n - 1;
+    double g = obs_gain;
+
+    // Build thin V basis incrementally
+    Eigen::MatrixXd V = Eigen::MatrixXd::Zero(dim, n_obs);
+    int rank = 0;
+    Eigen::VectorXd h(dim), v(dim), coeff(n_obs);
+    h.setZero();
+    v.setZero();
+
+    for (int j = 1; j < n; ++j) {
+        int active = 3 * (j + 1);
+        h.head(active).setZero();
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                h(3*z + k) = g * g_dt * X[j][z](k);
+        h(3*j + obs_idx) += 1.0;
+
+        v.head(active) = h.head(active);
+        if (rank > 0) {
+            auto Vact = V.topRows(active).leftCols(rank);
+            auto c = coeff.head(rank);
+            c.noalias() = Vact.transpose() * h.head(active);
+            v.head(active).noalias() -= Vact * c;
+        }
+        double vnorm = v.head(active).norm();
+        if (vnorm > 1e-15) {
+            V.col(rank).head(active) = v.head(active) / vnorm;
+            rank++;
+        }
+    }
+
+    // Extract F: F(u,s) = [VV^T(3u:3u+3, 3s:3s+3) - Pi*delta(u,s)] / dt
+    auto F = std::make_unique<FSlice>();
+    double inv_dt = 1.0 / g_dt;
+    auto Vr = V.leftCols(rank);
+    for (int u = 0; u < n; ++u) {
+        auto Vu = Vr.middleRows(3*u, 3);
+        for (int s = 0; s < n; ++s) {
+            auto Vs = Vr.middleRows(3*s, 3);
+            Mat3 Mus = Vu * Vs.transpose();
+            if (u == s) Mus -= Pi;
+            (*F)(u, s) = Mus * inv_dt;
+        }
+    }
+
+    return F;
+}
+
 ProjectionPair exact_discrete_CE(const EquilibriumResult& eq) {
     int t_idx = g_n - 1;
     DiscreteProjection p1, p2;

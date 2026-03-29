@@ -201,6 +201,13 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       <span class="val" id="val-T">1.00</span>
     </div>
   </div>
+  <div class="slider-group">
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+      <input type="checkbox" id="cb-ce-mode" style="width:16px; height:16px;">
+      Exact discrete CE
+      <span style="font-size:0.82em; color:#888;">(uses discrete conditional expectation in Picard loop and for F kernel)</span>
+    </label>
+  </div>
 </div>
 </div>
 </div>
@@ -857,7 +864,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree, wasmFullKernelCount;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmSetCeMode, wasmMalloc, wasmFree, wasmFullKernelCount;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -2370,9 +2377,13 @@ function renderTab(tab, p) {
                     const convergedStr = data.converged === false
                         ? '<span style="color:#d62728; font-weight:600;">NOT CONVERGED</span>'
                         : '<span style="color:#2d9e2d; font-weight:600;">Converged</span>';
+                    const ceStr = data.ce_mode
+                        ? '<span style="color:#1f77b4; font-weight:600;">Exact discrete CE</span>'
+                        : 'Volterra kernel (standard)';
                     summaryEl.innerHTML =
                         `<strong>Solver summary</strong><br>` +
                         `Method: Anderson-accelerated Picard iteration on the best-response map D \u2192 G(D)<br>` +
+                        `Filter: ${ceStr}<br>` +
                         `Iterations: ${data.n_iters}<br>` +
                         `Final relative residual: ${finalResid}<br>` +
                         `Status: ${convergedStr}<br>` +
@@ -2424,17 +2435,19 @@ function renderTab(tab, p) {
                         const err2 = checkProjection(fk.F2, obsIdx2, 'F\u00B2+\u03A0\u00B2');
                         const passColor = e => e < 1e-3 ? '#2d9e2d' : (e < 1e-1 ? '#e67e22' : '#d62728');
                         const passLabel = e => e < 1e-3 ? 'PASS' : (e < 1e-1 ? 'MARGINAL' : 'FAIL');
+                        const ceMode = light && light.ce_mode;
+                        const projTitle = ceMode ? 'Exact discrete CE projection' : 'Filtration projection check';
+                        const projDesc = ceMode
+                            ? 'The exact discrete conditional expectation $M^i = H^T(HH^T)^{-1}H$ is an orthogonal projection by construction. The F kernel is extracted as $F^i = (M^i - \\Pi^i\\delta) / \\Delta t$.'
+                            : 'The filtration kernel $F^i(T,u,s) + \\Pi^i \\delta(u{=}s)$ should be an orthogonal projection (idempotent) in $L^2([0,T]; \\mathbb{R}^3)$, representing the conditional expectation operator in noise-state coordinates.';
                         projEl.innerHTML =
-                            `<strong>Filtration projection check</strong> &mdash; ` +
+                            `<strong>${projTitle}</strong> &mdash; ` +
                             `$(F^i + \\Pi^i)^2 = F^i + \\Pi^i$ at $t = T$<br>` +
                             `Player 1: $\\|(F^1+\\Pi^1)^2 - (F^1+\\Pi^1)\\|_F / \\|F^1+\\Pi^1\\|_F$ = ${err1.toExponential(2)} ` +
                             `<span style="color:${passColor(err1)}; font-weight:600;">${passLabel(err1)}</span><br>` +
                             `Player 2: $\\|(F^2+\\Pi^2)^2 - (F^2+\\Pi^2)\\|_F / \\|F^2+\\Pi^2\\|_F$ = ${err2.toExponential(2)} ` +
                             `<span style="color:${passColor(err2)}; font-weight:600;">${passLabel(err2)}</span><br>` +
-                            `<span style="font-size:0.88em; color:#888;">` +
-                            `The filtration kernel $F^i(T,u,s) + \\Pi^i \\delta(u{=}s)$ should be an orthogonal ` +
-                            `projection (idempotent) in $L^2([0,T]; \\mathbb{R}^3)$, representing the conditional ` +
-                            `expectation operator in noise-state coordinates.</span>`;
+                            `<span style="font-size:0.88em; color:#888;">${projDesc}</span>`;
                         if (typeof MathJax !== 'undefined' && MathJax.Hub) {
                             MathJax.Hub.Queue(['Typeset', MathJax.Hub, projEl]);
                         }
@@ -2547,6 +2560,13 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     for (const id of ['sl-p1', 'sl-p2', 'sl-b1', 'sl-b2', 'sl-r1', 'sl-r2', 'sl-N', 'sl-T']) {
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
+
+    // CE mode toggle
+    wasmSetCeMode = mod.cwrap('wasm_set_ce_mode', null, ['number']);
+    document.getElementById('cb-ce-mode').addEventListener('change', function() {
+        wasmSetCeMode(this.checked ? 1 : 0);
+        onSliderChange();
+    });
 
     // Generic subtab switching (works for both impulse and kernel subtabs)
     document.addEventListener('click', function(e) {
