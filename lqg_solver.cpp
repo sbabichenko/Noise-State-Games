@@ -172,6 +172,104 @@ void primitive_control_kernel(
     }
 }
 
+// --- CE-based filter: incremental rank-1 projection ---
+//
+// Builds M_j incrementally for j = 0..n-1 via rank-1 updates.
+// At each j, extracts Xtilde[j] = (I - M_j) X[j] and calD[j] = M_j D[j].
+
+static void compute_ce_filter_and_calD(
+    const Kernel2D& X, const Kernel2D& D,
+    int obs_idx, double obs_gain,
+    Kernel2D& Xtilde, Kernel2D& calD) {
+
+    int n = g_n;
+    int dim = 3 * n;
+    double g = obs_gain;
+
+    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(dim, dim);
+
+    // j = 0: no observations yet, M_0 = 0
+    Xtilde[0][0] = X[0][0];
+    calD[0][0].setZero();
+
+    for (int j = 1; j < n; ++j) {
+        // Add observation j: h_j
+        Eigen::VectorXd h = Eigen::VectorXd::Zero(dim);
+        for (int z = 0; z <= j; ++z)
+            for (int k = 0; k < 3; ++k)
+                h(3*z + k) = g * g_dt * X[j][z](k);
+        h(3*j + obs_idx) += 1.0;
+
+        // Innovation: v = (I - M) h, rank-1 update
+        Eigen::VectorXd v = h - M * h;
+        double vtv = v.squaredNorm();
+        if (vtv > 1e-30)
+            M.noalias() += (v * v.transpose()) / vtv;
+
+        // Xtilde[j] = (I - M_j) X_vec_j
+        Eigen::VectorXd Xvec = Eigen::VectorXd::Zero(dim);
+        for (int z = 0; z <= j; ++z)
+            Xvec.segment<3>(3*z) = X[j][z];
+        Eigen::VectorXd Xt = Xvec - M * Xvec;
+        for (int z = 0; z <= j; ++z)
+            Xtilde[j][z] = Xt.segment<3>(3*z);
+
+        // calD[j] = M_j D_vec_j
+        Eigen::VectorXd Dvec = Eigen::VectorXd::Zero(dim);
+        for (int z = 0; z <= j; ++z)
+            Dvec.segment<3>(3*z) = D[j][z];
+        Eigen::VectorXd cD = M * Dvec;
+        for (int z = 0; z <= j; ++z)
+            calD[j][z] = cD.segment<3>(3*z);
+    }
+}
+
+// Forward environment using discrete CE projection.
+// Replaces compute_filter_kernels + primitive_control_kernel with
+// the exact discrete conditional expectation at each time step.
+
+static void forward_environment_ce(
+    const Kernel2D& D1, const Kernel2D& D2,
+    double obs_gain1, double obs_gain2,
+    int inner_iters,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2,
+    EnvironmentResult& env) {
+
+    // Initial calD from Pi*D (same seed as standard forward_environment)
+    Kernel2D calD1, calD2;
+    for (int j = 0; j < g_n; ++j)
+        for (int s = 0; s <= j; ++s) {
+            calD1[j][s] = Pi_1 * D1[j][s];
+            calD2[j][s] = Pi_2 * D2[j][s];
+        }
+
+    Kernel2D X;
+    state_kernel_from_calD(calD1, calD2, X);
+
+    Kernel2D calD1_new, calD2_new, X_new;
+    for (int it = 0; it < inner_iters; ++it) {
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            compute_ce_filter_and_calD(X, D1, obs_idx_1, obs_gain1,
+                                        env.Xtilde1, calD1_new);
+            #pragma omp section
+            compute_ce_filter_and_calD(X, D2, obs_idx_2, obs_gain2,
+                                        env.Xtilde2, calD2_new);
+        }
+
+        state_kernel_from_calD(calD1_new, calD2_new, X_new);
+        for (int t = 0; t < g_n; ++t)
+            for (int s = 0; s <= t; ++s)
+                X[t][s] = 0.6 * X_new[t][s] + 0.4 * X[t][s];
+    }
+
+    env.X = X;
+    env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
+    env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
+}
+
 // --- forward_environment ---
 
 void forward_environment(
@@ -648,6 +746,152 @@ EquilibriumResult solve_equilibrium_warm(
     Kernel2D D1(D1_init), D2(D2_init);
     return solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
                                   verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+}
+
+// --- solve_equilibrium_ce: Picard iteration with discrete CE projection ---
+
+EquilibriumResult solve_equilibrium_ce(
+    double p1_val, double p2_val, bool verbose,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2) {
+
+    Kernel2D D1, D2;
+    D1.setZero();
+    D2.setZero();
+
+    std::vector<double> residuals;
+    auto prec1 = make_constant_prec(p1_val * p1_val);
+    auto prec2 = make_constant_prec(p2_val * p2_val);
+    EnvironmentResult env;
+
+    // Anderson acceleration state (same as standard solver)
+    constexpr int AA_M = 5;
+    constexpr int AA_STORE = AA_M + 1;
+    constexpr double AA_REG = 1e-12;
+    constexpr double AA_BETA = 0.6;
+    const int TRI = g_n * (g_n + 1) / 2;
+
+    struct AAEntry { Kernel2D f1, f2, g1, g2; };
+    std::vector<AAEntry> hist(AA_STORE);
+    int stored = 0;
+
+    for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
+        // Forward pass using discrete CE
+        forward_environment_ce(D1, D2, p1_val, p2_val, FORWARD_INNER_ITERS,
+                               Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
+
+        // Backward pass (uses Xtilde, same as standard solver)
+        Kernel2D Hx1, Hx2;
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            backward_kernels(env.X, env.Xtilde2, D2, prec2, 0.0, Hx1);
+            #pragma omp section
+            backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2);
+        }
+
+        // Residual and Anderson acceleration (identical to standard solver)
+        const double neg_inv_r1 = -(1.0 / g_r1);
+        const double neg_inv_r2 = -(1.0 / g_r2);
+        auto& cur = hist[stored % AA_STORE];
+        double norm_f = 0.0, norm_g = 0.0;
+        for (int i = 0; i < TRI; ++i) {
+            cur.g1.data[i] = neg_inv_r1 * Hx1.data[i];
+            cur.g2.data[i] = neg_inv_r2 * Hx2.data[i];
+            cur.f1.data[i] = cur.g1.data[i] - D1.data[i];
+            cur.f2.data[i] = cur.g2.data[i] - D2.data[i];
+            norm_f += cur.f1.data[i].squaredNorm() + cur.f2.data[i].squaredNorm();
+            norm_g += cur.g1.data[i].squaredNorm() + cur.g2.data[i].squaredNorm();
+        }
+
+        double err = std::sqrt(norm_f) / std::max(1.0, std::sqrt(norm_g));
+        residuals.push_back(err);
+        if (!std::isfinite(err)) break;
+
+        if (verbose && (it <= 5 || it % 50 == 0))
+            std::cout << "  [CE] it=" << it << "  resid=" << err << std::endl;
+        if (err < PICARD_TOL) {
+            if (verbose)
+                std::cout << "  [CE] Converged at iteration " << it << std::endl;
+            break;
+        }
+
+        int m = std::min(stored, AA_M);
+        if (m >= 1) {
+            Eigen::VectorXd Ffi(m);
+            for (int i = 0; i < m; ++i) {
+                int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
+                Ffi(i) = kernel_dot(cur.f1, cur.f2, hist[idx].f1, hist[idx].f2);
+            }
+            Eigen::MatrixXd H(m, m);
+            Eigen::VectorXd rhs(m);
+            for (int i = 0; i < m; ++i) {
+                rhs(i) = norm_f - Ffi(i);
+                for (int j = 0; j <= i; ++j) {
+                    int ii = (stored - 1 - i + AA_STORE) % AA_STORE;
+                    int jj = (stored - 1 - j + AA_STORE) % AA_STORE;
+                    double fifj = kernel_dot(hist[ii].f1, hist[ii].f2, hist[jj].f1, hist[jj].f2);
+                    H(i, j) = H(j, i) = norm_f - Ffi(i) - Ffi(j) + fifj;
+                }
+            }
+            for (int i = 0; i < m; ++i)
+                H(i, i) += AA_REG * (1.0 + H(i, i));
+
+            Eigen::VectorXd gamma = H.ldlt().solve(rhs);
+
+            std::array<const Vec3*, AA_M> g1p, g2p;
+            std::array<double, AA_M> gam;
+            for (int i = 0; i < m; ++i) {
+                int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
+                g1p[i] = hist[idx].g1.data.data();
+                g2p[i] = hist[idx].g2.data.data();
+                gam[i] = gamma(i);
+            }
+            const Vec3* cg1 = cur.g1.data.data();
+            const Vec3* cg2 = cur.g2.data.data();
+            for (int i = 0; i < TRI; ++i) {
+                Vec3 d1_aa = cg1[i], d2_aa = cg2[i];
+                for (int k = 0; k < m; ++k) {
+                    d1_aa -= gam[k] * (cg1[i] - g1p[k][i]);
+                    d2_aa -= gam[k] * (cg2[i] - g2p[k][i]);
+                }
+                D1.data[i] = (1.0 - AA_BETA) * D1.data[i] + AA_BETA * d1_aa;
+                D2.data[i] = (1.0 - AA_BETA) * D2.data[i] + AA_BETA * d2_aa;
+            }
+        } else {
+            for (int i = 0; i < TRI; ++i) {
+                D1.data[i] += PICARD_RELAX * cur.f1.data[i];
+                D2.data[i] += PICARD_RELAX * cur.f2.data[i];
+            }
+        }
+        stored++;
+    }
+
+    // After convergence: run standard filter once to populate A_store
+    // (needed for F materialization and API compatibility)
+    {
+        Kernel2D xt_tmp1, xt_tmp2;
+        compute_filter_kernels(env.X, Pi_1, obs_idx_1, p1_val,
+                               FILTER_INNER_ITERS, FILTER_RELAX,
+                               xt_tmp1, env.A_store1);
+        compute_filter_kernels(env.X, Pi_2, obs_idx_2, p2_val,
+                               FILTER_INNER_ITERS, FILTER_RELAX,
+                               xt_tmp2, env.A_store2);
+    }
+
+    // Compute calD using CE projection on converged X and D
+    Kernel2D calD1, calD2;
+    #pragma omp parallel sections
+    {
+        #pragma omp section
+        compute_ce_filter_and_calD(env.X, D1, obs_idx_1, p1_val,
+                                    env.Xtilde1, calD1);
+        #pragma omp section
+        compute_ce_filter_and_calD(env.X, D2, obs_idx_2, p2_val,
+                                    env.Xtilde2, calD2);
+    }
+
+    return {D1, D2, std::move(env), std::move(calD1), std::move(calD2), residuals};
 }
 
 // --- compute_costs_general ---

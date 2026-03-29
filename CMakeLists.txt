@@ -48,3 +48,13 @@ target_compile_options(test_exact_ce PRIVATE -O3 -march=native -Wall -Wextra)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(test_exact_ce PRIVATE OpenMP::OpenMP_CXX)
 endif()
+
+add_executable(test_ce_picard
+    test_ce_picard.cpp
+    lqg_solver.cpp
+)
+target_link_libraries(test_ce_picard PRIVATE Eigen3::Eigen)
+target_compile_options(test_ce_picard PRIVATE -O3 -march=native -Wall -Wextra)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(test_ce_picard PRIVATE OpenMP::OpenMP_CXX)
+endif()

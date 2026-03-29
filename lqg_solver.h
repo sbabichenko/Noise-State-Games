@@ -218,6 +218,12 @@ EquilibriumResult solve_equilibrium(
     const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
     const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
 
+// CE-based version: uses discrete conditional expectation in the Picard loop
+EquilibriumResult solve_equilibrium_ce(
+    double p1_val, double p2_val, bool verbose = true,
+    const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
+    const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
+
 // Warm-started version: uses D1_init, D2_init as initial guesses
 EquilibriumResult solve_equilibrium_warm(
     double p1_val, double p2_val,
