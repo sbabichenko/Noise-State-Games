@@ -28,9 +28,10 @@ C++ solver code). Sliders control all game parameters in real time:
 source /path/to/emsdk/emsdk_env.sh
 em++ -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","UTF8ToString"]' \
      -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME=SolverModule \
+     -s SINGLE_FILE_BINARY_ENCODE=0 \
      -I/path/to/eigen3 \
      wasm_solver.cpp lqg_solver.cpp -o solver.js
-python3 build_html.py   # inlines solver.js into interactive_template.html
+python3 build_html.py   # copies interactive_template.html -> interactive.html (solver.js stays external)
 ```
 
 ## Figure generation (native C++)
