@@ -1,8 +1,11 @@
 // CLI tool for the interactive Dash app.
 //
 // Modes:
-//   solve_interactive single <p1> <p2> <b1> <b2>
-//     → JSON with kernels, bar solution, wedges, costs for one (p1, p2)
+//   solve_interactive single <p1> <p2> <b1> <b2> <r1> <r2>
+//     → JSON with full kernels, bar solution, wedges, costs for one (p1, p2)
+//
+//   solve_interactive single_light <p1> <p2> <b1> <b2> <r1> <r2>
+//     → JSON with lightweight summary only (no full kernels)
 //
 //   solve_interactive sweep <p1> <b1> <b2> <p2_0> <p2_1> ... <p2_n>
 //     → JSON array: for each p2, private and pooled costs + barD1 curves
@@ -136,6 +139,72 @@ static int run_single(int argc, char* argv[]) {
     return 0;
 }
 
+static int run_single_light(int argc, char* argv[]) {
+    if (argc < 8) {
+        fprintf(stderr, "Usage: %s single_light <p1> <p2> <b1> <b2> <r1> <r2>\n", argv[0]);
+        return 1;
+    }
+    double p1 = atof(argv[2]), p2 = atof(argv[3]);
+    double b1 = atof(argv[4]), b2 = atof(argv[5]);
+    double r1 = atof(argv[6]), r2 = atof(argv[7]);
+    SolverContext run_ctx = SolverContext::capture_current();
+    run_ctx.b1 = b1;
+    run_ctx.b2 = b2;
+    run_ctx.r1 = r1;
+    run_ctx.r2 = r2;
+    ScopedSolverContext guard(run_ctx);
+
+    auto eq = solve_equilibrium(p1, p2, false);
+    auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
+                                      p1*p1, p2*p2, 2000, 0.08, 1e-10);
+    auto costs = compute_costs_general(eq.env, eq.calD1, eq.calD2, bar, r1, r2, b1, b2);
+
+    auto prec1_arr = make_constant_prec(p1 * p1);
+    auto prec2_arr = make_constant_prec(p2 * p2);
+    auto bba1 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde2, eq.D2,
+                                       bar.barX, b1, prec2_arr, 0.0);
+    auto bba2 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde1, eq.D1,
+                                       bar.barX, b2, prec1_arr, 0.0);
+    std::array<double, N_MAX> V1_arr, V2_arr;
+    for (int j = 0; j < g_n; ++j) {
+        double V1 = 0.0, V2 = 0.0;
+        for (int z = 0; z <= j; ++z) {
+            V1 += eq.env.Xtilde2[j][z].dot(bba1.barHk[j][z]);
+            V2 += eq.env.Xtilde1[j][z].dot(bba2.barHk[j][z]);
+        }
+        V1_arr[j] = V1 * p2 * p2 * g_dt;
+        V2_arr[j] = V2 * p1 * p1 * g_dt;
+    }
+
+    std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
+    compute_perfect_info(b1, b2, barD1_pi, barD2_pi, barX_pi);
+
+    const auto& tg = t_grid();
+    bool converged = !eq.residuals.empty() && std::isfinite(eq.residuals.back()) &&
+                     eq.residuals.back() < PICARD_TOL;
+
+    printf("{");
+    print_array("t", tg.data(), g_n);
+    printf(",\"residuals\":[");
+    for (size_t i = 0; i < eq.residuals.size(); ++i)
+        printf("%s%.12g", i ? "," : "", eq.residuals[i]);
+    printf("],\"n_iters\":%zu", eq.residuals.size());
+    printf(","); print_array("barD1", bar.barD1.data(), g_n);
+    printf(","); print_array("barD2", bar.barD2.data(), g_n);
+    printf(","); print_array("barX", bar.barX.data(), g_n);
+    printf(",\"bar_residual\":%.12g", bar.bar_residual);
+    printf(","); print_array("V1", V1_arr.data(), g_n);
+    printf(","); print_array("V2", V2_arr.data(), g_n);
+    printf(","); print_array("barD1_pi", barD1_pi.data(), g_n);
+    printf(","); print_array("barD2_pi", barD2_pi.data(), g_n);
+    printf(","); print_array("barX_pi", barX_pi.data(), g_n);
+    printf(",\"J1\":%.12g,\"J2\":%.12g", costs.J1, costs.J2);
+    printf(",\"converged\":%s", converged ? "true" : "false");
+    printf(",\"p1\":%.12g,\"p2\":%.12g,\"b1\":%.12g,\"b2\":%.12g", p1, p2, b1, b2);
+    printf("}\n");
+    return 0;
+}
+
 static int run_sweep(int argc, char* argv[]) {
     if (argc < 8) {
         fprintf(stderr, "Usage: %s sweep <p1> <b1> <b2> <r1> <r2> <p2_0> [p2_1 ...]\n", argv[0]);
@@ -232,20 +301,27 @@ int main(int argc, char* argv[]) {
     init_ctx.apply();
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <single|sweep> ...\n", argv[0]);
+        fprintf(stderr, "Usage: %s <single|single_light|sweep> ...\n", argv[0]);
         return 1;
     }
     if (strcmp(argv[1], "sweep") == 0)
         return run_sweep(argc, argv);
     if (strcmp(argv[1], "single") == 0)
         return run_single(argc, argv);
+    if (strcmp(argv[1], "single_light") == 0)
+        return run_single_light(argc, argv);
 
     // Legacy: positional args without subcommand
     if (argc >= 5) {
-        // Shift args to match single mode
-        char* new_argv[] = {argv[0], (char*)"single", argv[1], argv[2], argv[3], argv[4]};
-        return run_single(6, new_argv);
+        // Shift args to match single mode, with default control costs.
+        char rho_buf1[32], rho_buf2[32];
+        std::snprintf(rho_buf1, sizeof(rho_buf1), "%.12g", RHO);
+        std::snprintf(rho_buf2, sizeof(rho_buf2), "%.12g", RHO);
+        char* new_argv[] = {
+            argv[0], (char*)"single", argv[1], argv[2], argv[3], argv[4], rho_buf1, rho_buf2
+        };
+        return run_single(8, new_argv);
     }
-    fprintf(stderr, "Usage: %s <single|sweep> ...\n", argv[0]);
+    fprintf(stderr, "Usage: %s <single|single_light|sweep> ...\n", argv[0]);
     return 1;
 }
