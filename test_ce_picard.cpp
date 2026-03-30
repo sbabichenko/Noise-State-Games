@@ -20,9 +20,15 @@ int main() {
             {60, 3.0, 3.0},
             {80, 3.0, 3.0}}) {
 
-        set_grid(N, 1.0);
-        g_b1 = B1_DEFAULT; g_b2 = B2_DEFAULT;
-        g_r1 = RHO; g_r2 = RHO; g_sigma = 1.0;
+        SolverContext run_ctx = SolverContext::capture_current();
+        run_ctx.n = N;
+        run_ctx.T = 1.0;
+        run_ctx.b1 = B1_DEFAULT;
+        run_ctx.b2 = B2_DEFAULT;
+        run_ctx.r1 = RHO;
+        run_ctx.r2 = RHO;
+        run_ctx.sigma = 1.0;
+        ScopedSolverContext guard(run_ctx);
 
         // Standard solver
         auto t0 = Clock::now();

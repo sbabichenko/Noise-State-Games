@@ -15,9 +15,15 @@
 // --- Test 1: D=0 (free dynamics), exact CE properties ---
 static bool test_zero_D(int N, double gain) {
     std::printf("--- D=0, N=%d, gain=%.1f ---\n", N, gain);
-    set_grid(N, 1.0);
-    g_b1 = B1_DEFAULT; g_b2 = B2_DEFAULT;
-    g_r1 = RHO; g_r2 = RHO; g_sigma = 1.0;
+    SolverContext run_ctx = SolverContext::capture_current();
+    run_ctx.n = N;
+    run_ctx.T = 1.0;
+    run_ctx.b1 = B1_DEFAULT;
+    run_ctx.b2 = B2_DEFAULT;
+    run_ctx.r1 = RHO;
+    run_ctx.r2 = RHO;
+    run_ctx.sigma = 1.0;
+    ScopedSolverContext guard(run_ctx);
 
     // With D=0, X[t][s] = sigma * e_0 for all t >= s
     Kernel2D calD1, calD2;
@@ -75,9 +81,15 @@ static bool test_zero_D(int N, double gain) {
 // --- Test 2: With equilibrium D, compare exact CE to solver ---
 static bool test_equilibrium(int N, double gain1, double gain2) {
     std::printf("--- Equilibrium, N=%d, gain=(%.1f, %.1f) ---\n", N, gain1, gain2);
-    set_grid(N, 1.0);
-    g_b1 = B1_DEFAULT; g_b2 = B2_DEFAULT;
-    g_r1 = RHO; g_r2 = RHO; g_sigma = 1.0;
+    SolverContext run_ctx = SolverContext::capture_current();
+    run_ctx.n = N;
+    run_ctx.T = 1.0;
+    run_ctx.b1 = B1_DEFAULT;
+    run_ctx.b2 = B2_DEFAULT;
+    run_ctx.r1 = RHO;
+    run_ctx.r2 = RHO;
+    run_ctx.sigma = 1.0;
+    ScopedSolverContext guard(run_ctx);
 
     auto eq = solve_equilibrium(gain1, gain2, false);
     auto pair = exact_discrete_CE(eq);
@@ -141,9 +153,15 @@ static void test_convergence(double gain) {
     std::printf("  %4s  %8s  %12s  %12s\n", "N", "dt", "||gap|| p1", "||gap|| p2");
 
     for (int N : {8, 16, 32, 64}) {
-        set_grid(N, 1.0);
-        g_b1 = B1_DEFAULT; g_b2 = B2_DEFAULT;
-        g_r1 = RHO; g_r2 = RHO; g_sigma = 1.0;
+        SolverContext run_ctx = SolverContext::capture_current();
+        run_ctx.n = N;
+        run_ctx.T = 1.0;
+        run_ctx.b1 = B1_DEFAULT;
+        run_ctx.b2 = B2_DEFAULT;
+        run_ctx.r1 = RHO;
+        run_ctx.r2 = RHO;
+        run_ctx.sigma = 1.0;
+        ScopedSolverContext guard(run_ctx);
 
         auto eq = solve_equilibrium(gain, gain, false);
         auto pair = exact_discrete_CE(eq);
