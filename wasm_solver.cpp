@@ -105,11 +105,12 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     g_cache.valid = false;
     g_cache.f_valid = false;
 
-    // Save and set globals (restored on failure)
-    const double saved_b1 = g_b1, saved_b2 = g_b2;
-    const double saved_r1 = g_r1, saved_r2 = g_r2;
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    SolverContext solve_ctx = SolverContext::capture_current();
+    solve_ctx.b1 = b1;
+    solve_ctx.b2 = b2;
+    solve_ctx.r1 = r1;
+    solve_ctx.r2 = r2;
+    ScopedSolverContext guard(solve_ctx);
 
     try {
 
@@ -163,9 +164,7 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     // f_valid already false from top of function
 
     } catch (...) {
-        // Solver failed — restore globals, leave cache invalid
-        g_b1 = saved_b1; g_b2 = saved_b2;
-        g_r1 = saved_r1; g_r2 = saved_r2;
+        // Solver failed — leave cache invalid
         g_cache.valid = false;
         g_cache.f_valid = false;
     }
@@ -306,11 +305,12 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     g_output.clear();
     g_output.reserve(32 * 1024);
 
-    // Save/restore globals so sweep doesn't leave stale state
-    const double saved_b1 = g_b1, saved_b2 = g_b2;
-    const double saved_r1 = g_r1, saved_r2 = g_r2;
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    SolverContext sweep_ctx = SolverContext::capture_current();
+    sweep_ctx.b1 = b1;
+    sweep_ctx.b2 = b2;
+    sweep_ctx.r1 = r1;
+    sweep_ctx.r2 = r2;
+    ScopedSolverContext guard(sweep_ctx);
 
     std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
     compute_perfect_info(b1, b2, barD1_pi, barD2_pi, barX_pi);
@@ -369,8 +369,6 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     }
     out("]}");
 
-    g_b1 = saved_b1; g_b2 = saved_b2;
-    g_r1 = saved_r1; g_r2 = saved_r2;
     return g_output.c_str();
 }
 
@@ -381,10 +379,12 @@ const char* solve_sweep_point(double p1, double p2, double b1, double b2, double
     g_output.clear();
     g_output.reserve(8 * 1024);
 
-    const double saved_b1 = g_b1, saved_b2 = g_b2;
-    const double saved_r1 = g_r1, saved_r2 = g_r2;
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    SolverContext point_ctx = SolverContext::capture_current();
+    point_ctx.b1 = b1;
+    point_ctx.b2 = b2;
+    point_ctx.r1 = r1;
+    point_ctx.r2 = r2;
+    ScopedSolverContext guard(point_ctx);
 
     out("{\"p2\":%.6g", p2);
 
@@ -427,8 +427,6 @@ const char* solve_sweep_point(double p1, double p2, double b1, double b2, double
     out(","); out_array("V2", V2_arr.data(), g_n);
     out("}");
 
-    g_b1 = saved_b1; g_b2 = saved_b2;
-    g_r1 = saved_r1; g_r2 = saved_r2;
     return g_output.c_str();
 }
 
