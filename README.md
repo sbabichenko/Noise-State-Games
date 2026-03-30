@@ -43,6 +43,16 @@ cd .. && ./build/generate_figures   # writes CSV to data/
 python3 plot_figures.py             # renders Figures 3-12 as PDF
 ```
 
+If CMake cannot find Eigen (`Eigen3Config.cmake`), set one of:
+
+```bash
+cmake -S . -B build -DEigen3_DIR=/path/to/eigen/share/eigen3/cmake
+# or
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/prefix
+```
+
+On Debian/Ubuntu: `sudo apt-get install libeigen3-dev`.
+
 ## Project structure
 
 ```
@@ -69,6 +79,12 @@ Build & config
   CMakeLists.txt           CMake build configuration (C++17, Eigen3, OpenMP)
   data/                    generated CSV files (created by generate_figures)
 ```
+
+### `solve_interactive` output modes
+
+- `single`: full JSON including all kernels (larger payload; best for analysis/debugging).
+- `single_light`: compact JSON with residuals, bar paths, wedges, and costs (faster for UI loops).
+- `sweep`: per-`p2` comparative statics payload.
 
 ## Algorithm overview
 

@@ -24,6 +24,28 @@ double g_r1 = RHO;
 double g_r2 = RHO;
 double g_sigma = 1.0;
 
+SolverContext SolverContext::capture_current() {
+    return SolverContext{g_n, g_T, g_b1, g_b2, g_r1, g_r2, g_sigma};
+}
+
+void SolverContext::apply() const {
+    set_grid(n, T);
+    g_b1 = b1;
+    g_b2 = b2;
+    g_r1 = r1;
+    g_r2 = r2;
+    g_sigma = sigma;
+}
+
+ScopedSolverContext::ScopedSolverContext(const SolverContext& next)
+    : previous_(SolverContext::capture_current()) {
+    next.apply();
+}
+
+ScopedSolverContext::~ScopedSolverContext() {
+    previous_.apply();
+}
+
 // --- state_kernel_from_calD ---
 
 void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,

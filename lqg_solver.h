@@ -50,6 +50,37 @@ extern double g_r1;  // player 1 control cost weight
 extern double g_r2;  // player 2 control cost weight
 extern double g_sigma;  // state diffusion coefficient (default 1.0)
 
+// Snapshot of all mutable runtime solver parameters.
+struct SolverContext {
+    int n;
+    double T;
+    double b1;
+    double b2;
+    double r1;
+    double r2;
+    double sigma;
+
+    static SolverContext capture_current();
+    void apply() const;
+};
+
+// RAII guard: applies a context on construction and restores the previous
+// context on destruction.
+class ScopedSolverContext {
+public:
+    explicit ScopedSolverContext(const SolverContext& next);
+    ~ScopedSolverContext();
+
+    ScopedSolverContext(const ScopedSolverContext&) = delete;
+    ScopedSolverContext& operator=(const ScopedSolverContext&) = delete;
+
+    ScopedSolverContext(ScopedSolverContext&&) = delete;
+    ScopedSolverContext& operator=(ScopedSolverContext&&) = delete;
+
+private:
+    SolverContext previous_;
+};
+
 // ---------- type aliases ----------
 using Vec3 = Eigen::Vector3d;
 using Mat3 = Eigen::Matrix3d;
