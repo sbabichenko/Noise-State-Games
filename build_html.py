@@ -11,6 +11,11 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(DIR, "solver.js"), "r") as f:
     solver_js = f.read()
 
+# Emscripten may embed raw NUL bytes in solver.js (inside binaryDecode literals).
+# Many static hosts/text pipelines mangle or truncate NUL-containing HTML files.
+# Escape NULs before inlining so interactive.html is robust when served as a webpage.
+solver_js = solver_js.replace("\x00", "\\0")
+
 with open(os.path.join(DIR, "interactive_template.html"), "r") as f:
     template = f.read()
 
