@@ -68,8 +68,12 @@ static int run_single(int argc, char* argv[]) {
     double p1 = atof(argv[2]), p2 = atof(argv[3]);
     double b1 = atof(argv[4]), b2 = atof(argv[5]);
     double r1 = atof(argv[6]), r2 = atof(argv[7]);
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    SolverContext run_ctx = SolverContext::capture_current();
+    run_ctx.b1 = b1;
+    run_ctx.b2 = b2;
+    run_ctx.r1 = r1;
+    run_ctx.r2 = r2;
+    ScopedSolverContext guard(run_ctx);
 
     auto eq = solve_equilibrium(p1, p2, false);
     auto bar = solve_bar_equilibrium(eq.env, eq.D1, eq.D2,
@@ -140,8 +144,12 @@ static int run_sweep(int argc, char* argv[]) {
     double p1 = atof(argv[2]);
     double b1 = atof(argv[3]), b2 = atof(argv[4]);
     double r1 = atof(argv[5]), r2 = atof(argv[6]);
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    SolverContext run_ctx = SolverContext::capture_current();
+    run_ctx.b1 = b1;
+    run_ctx.b2 = b2;
+    run_ctx.r1 = r1;
+    run_ctx.r2 = r2;
+    ScopedSolverContext guard(run_ctx);
 
     int n_p2 = argc - 7;
     std::vector<double> p2_vals(n_p2);
@@ -218,7 +226,10 @@ static int run_sweep(int argc, char* argv[]) {
 
 int main(int argc, char* argv[]) {
     // Initialize grid to default (N=40, T=1.0) — matches previous compile-time constants
-    set_grid(40, 1.0);
+    SolverContext init_ctx = SolverContext::capture_current();
+    init_ctx.n = 40;
+    init_ctx.T = 1.0;
+    init_ctx.apply();
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <single|sweep> ...\n", argv[0]);

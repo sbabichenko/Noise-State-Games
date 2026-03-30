@@ -15,8 +15,14 @@ static double ms_since(Clock::time_point t0) {
 }
 
 static void bench(int n, double T, double p1, double p2, double b1, double b2, double r1, double r2) {
-    set_grid(n, T);
-    g_b1 = b1; g_b2 = b2; g_r1 = r1; g_r2 = r2;
+    SolverContext run_ctx = SolverContext::capture_current();
+    run_ctx.n = n;
+    run_ctx.T = T;
+    run_ctx.b1 = b1;
+    run_ctx.b2 = b2;
+    run_ctx.r1 = r1;
+    run_ctx.r2 = r2;
+    ScopedSolverContext guard(run_ctx);
     printf("\n=== N=%d, T=%.1f, p1=%.1f, p2=%.1f ===\n", n, T, p1, p2);
 
     // 1. solve_equilibrium
