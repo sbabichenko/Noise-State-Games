@@ -2596,7 +2596,24 @@ function onTabSwitch(tab) {
 }
 
 // --- init ---
-SolverModule().then(mod => {
+function getSolverModuleFactory() {
+    if (typeof SolverModule === 'function') {
+        return Promise.resolve(SolverModule);
+    }
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'solver.js';
+        script.async = true;
+        script.onload = () => {
+            if (typeof SolverModule === 'function') resolve(SolverModule);
+            else reject(new Error('solver.js loaded but SolverModule is unavailable.'));
+        };
+        script.onerror = () => reject(new Error('Could not load solver.js. Run build_html.py or place solver.js next to this HTML file.'));
+        document.head.appendChild(script);
+    });
+}
+
+getSolverModuleFactory().then(factory => factory()).then(mod => {
     Module = mod;
     solveLight = mod.cwrap('solve_light', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
