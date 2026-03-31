@@ -3,3 +3,4 @@ data/
 __pycache__/
 *.pyc
 solver.js
+test_ce_picard

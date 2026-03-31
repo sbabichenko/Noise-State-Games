@@ -50,6 +50,37 @@ extern double g_r1;  // player 1 control cost weight
 extern double g_r2;  // player 2 control cost weight
 extern double g_sigma;  // state diffusion coefficient (default 1.0)
 
+// Snapshot of all mutable runtime solver parameters.
+struct SolverContext {
+    int n;
+    double T;
+    double b1;
+    double b2;
+    double r1;
+    double r2;
+    double sigma;
+
+    static SolverContext capture_current();
+    void apply() const;
+};
+
+// RAII guard: applies a context on construction and restores the previous
+// context on destruction.
+class ScopedSolverContext {
+public:
+    explicit ScopedSolverContext(const SolverContext& next);
+    ~ScopedSolverContext();
+
+    ScopedSolverContext(const ScopedSolverContext&) = delete;
+    ScopedSolverContext& operator=(const ScopedSolverContext&) = delete;
+
+    ScopedSolverContext(ScopedSolverContext&&) = delete;
+    ScopedSolverContext& operator=(ScopedSolverContext&&) = delete;
+
+private:
+    SolverContext previous_;
+};
+
 // ---------- type aliases ----------
 using Vec3 = Eigen::Vector3d;
 using Mat3 = Eigen::Matrix3d;
@@ -218,6 +249,12 @@ EquilibriumResult solve_equilibrium(
     const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
     const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
 
+// CE-based version: uses discrete conditional expectation in the Picard loop
+EquilibriumResult solve_equilibrium_ce(
+    double p1_val, double p2_val, bool verbose = true,
+    const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
+    const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
+
 // Warm-started version: uses D1_init, D2_init as initial guesses
 EquilibriumResult solve_equilibrium_warm(
     double p1_val, double p2_val,
@@ -260,6 +297,41 @@ std::unique_ptr<FSlice> compute_F_slice_at_T(const Kernel2D& Xtilde, const Kerne
 // Same algorithm as compute_F_slice_at_T but stops iteration at t_idx.
 std::unique_ptr<FSlice> compute_F_slice_at(const Kernel2D& Xtilde, const Kernel2D& A_store,
                                             double obs_gain, int obs_index, int t_idx);
+
+// ---------- exact discrete conditional expectation (post-processing) ----------
+
+struct DiscreteProjection {
+    Eigen::MatrixXd M;       // 3n x 3n projection matrix, n = t_idx + 1
+    Kernel2D Xtilde;         // extracted Xtilde(j,z) for j = 0..t_idx
+    int rank;                // rank of M (should equal t_idx)
+    double idem_residual;    // ||M^2 - M|| / ||M||
+};
+
+// Build exact discrete CE projection M = H^T (H H^T)^{-1} H at a given time index.
+DiscreteProjection discrete_conditional_expectation(
+    const Kernel2D& X, int obs_idx, double obs_gain, int t_idx);
+
+// Incremental version: builds M via rank-1 updates at each observation step.
+struct IncrementalProjection {
+    Eigen::MatrixXd M;       // terminal projection (3*g_n x 3*g_n)
+    Kernel2D Xtilde;         // extracted from terminal M
+    double idem_residual;
+};
+
+IncrementalProjection build_projections_incremental(
+    const Kernel2D& X, int obs_idx, double obs_gain);
+
+// Convenience: exact discrete CE for both players at terminal time.
+struct ProjectionPair {
+    DiscreteProjection player1, player2;
+};
+
+ProjectionPair exact_discrete_CE(const EquilibriumResult& eq);
+
+// Compute F kernel from the exact discrete CE projection at terminal time.
+// F_ce(u,s) = [M(u,s) - Pi*delta(u,s)] / dt  where M = VV^T is the CE projection.
+std::unique_ptr<FSlice> compute_ce_F_slice_at_T(
+    const Kernel2D& X, int obs_idx, double obs_gain, const Mat3& Pi);
 
 // ---------- utility ----------
 inline std::array<double, N_MAX> make_constant_prec(double val) {

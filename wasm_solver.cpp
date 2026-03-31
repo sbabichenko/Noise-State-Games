@@ -67,10 +67,13 @@ static void compute_perfect_info(double b1, double b2,
 // Single-level cache: recompute everything if any parameter changes.
 // F kernel is still lazy (only computed when requested).
 
+static bool g_use_ce = false;
+
 static struct SolveCache {
     double p1, p2, b1, b2, r1, r2;
     int n; double T;
     bool valid;
+    bool ce_mode;
 
     EquilibriumResult eq;
     Kernel2D Vkernel1, Vkernel2;  // kernel information wedges V^i(t,r)
@@ -90,18 +93,32 @@ static bool cache_matches(double p1, double p2, double b1, double b2, double r1,
            g_cache.p1 == p1 && g_cache.p2 == p2 &&
            g_cache.b1 == b1 && g_cache.b2 == b2 &&
            g_cache.r1 == r1 && g_cache.r2 == r2 &&
-           g_cache.n == g_n && g_cache.T == g_T;
+           g_cache.n == g_n && g_cache.T == g_T &&
+           g_cache.ce_mode == g_use_ce;
 }
 
 // Run the full solve pipeline if not cached. After this, g_cache holds all results.
 static void ensure_solve(double p1, double p2, double b1, double b2, double r1, double r2) {
     if (cache_matches(p1, p2, b1, b2, r1, r2)) return;
 
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    // Invalidate cache FIRST — if anything below fails, we won't serve stale data
+    g_cache.valid = false;
+    g_cache.f_valid = false;
 
-    // Solve equilibrium
-    g_cache.eq = solve_equilibrium(p1, p2, false);
+    SolverContext solve_ctx = SolverContext::capture_current();
+    solve_ctx.b1 = b1;
+    solve_ctx.b2 = b2;
+    solve_ctx.r1 = r1;
+    solve_ctx.r2 = r2;
+    ScopedSolverContext guard(solve_ctx);
+
+    try {
+
+    // Solve equilibrium (standard or CE mode)
+    if (g_use_ce)
+        g_cache.eq = solve_equilibrium_ce(p1, p2, false);
+    else
+        g_cache.eq = solve_equilibrium(p1, p2, false);
 
     // Compute kernel information wedges V^i(t,r)
     auto prec1_eq = make_constant_prec(p1 * p1);
@@ -142,8 +159,15 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     g_cache.b1 = b1; g_cache.b2 = b2;
     g_cache.r1 = r1; g_cache.r2 = r2;
     g_cache.n = g_n; g_cache.T = g_T;
+    g_cache.ce_mode = g_use_ce;
     g_cache.valid = true;
-    g_cache.f_valid = false;
+    // f_valid already false from top of function
+
+    } catch (...) {
+        // Solver failed — leave cache invalid
+        g_cache.valid = false;
+        g_cache.f_valid = false;
+    }
 }
 
 // Compute F kernel slices if not cached. Requires ensure_solve() first.
@@ -152,10 +176,15 @@ static void ensure_f_kernel(double p1, double p2, double b1, double b2, double r
     if (g_cache.f_valid) return;
 
     const auto& env = g_cache.eq.env;
-    g_cache.F1 = compute_F_slice_at_T(env.Xtilde1, env.A_store1,
-                                       env.obs_gain1, env.obs_idx1);
-    g_cache.F2 = compute_F_slice_at_T(env.Xtilde2, env.A_store2,
-                                       env.obs_gain2, env.obs_idx2);
+    if (g_use_ce) {
+        g_cache.F1 = compute_ce_F_slice_at_T(env.X, env.obs_idx1, env.obs_gain1, Pi1());
+        g_cache.F2 = compute_ce_F_slice_at_T(env.X, env.obs_idx2, env.obs_gain2, Pi2());
+    } else {
+        g_cache.F1 = compute_F_slice_at_T(env.Xtilde1, env.A_store1,
+                                           env.obs_gain1, env.obs_idx1);
+        g_cache.F2 = compute_F_slice_at_T(env.Xtilde2, env.A_store2,
+                                           env.obs_gain2, env.obs_idx2);
+    }
     g_cache.f_valid = true;
 }
 
@@ -195,6 +224,7 @@ static void serialize_light() {
     out(",\"obs_gain1\":%.6g,\"obs_idx1\":%d,\"obs_gain2\":%.6g,\"obs_idx2\":%d",
         g_cache.eq.env.obs_gain1, g_cache.eq.env.obs_idx1,
         g_cache.eq.env.obs_gain2, g_cache.eq.env.obs_idx2);
+    out(",\"ce_mode\":%s", g_use_ce ? "true" : "false");
     out("}");
 }
 
@@ -205,6 +235,16 @@ void wasm_set_grid(int n, double T) {
     set_grid(n, T);
     g_cache.valid = false;
     g_cache.f_valid = false;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_set_ce_mode(int use_ce) {
+    bool new_mode = (use_ce != 0);
+    if (new_mode != g_use_ce) {
+        g_use_ce = new_mode;
+        g_cache.valid = false;
+        g_cache.f_valid = false;
+    }
 }
 
 // Light solve: bar solution + costs + wedges + residuals. ~5KB JSON.
@@ -265,11 +305,12 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     g_output.clear();
     g_output.reserve(32 * 1024);
 
-    // Save/restore globals so sweep doesn't leave stale state
-    const double saved_b1 = g_b1, saved_b2 = g_b2;
-    const double saved_r1 = g_r1, saved_r2 = g_r2;
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    SolverContext sweep_ctx = SolverContext::capture_current();
+    sweep_ctx.b1 = b1;
+    sweep_ctx.b2 = b2;
+    sweep_ctx.r1 = r1;
+    sweep_ctx.r2 = r2;
+    ScopedSolverContext guard(sweep_ctx);
 
     std::array<double, N_MAX> barD1_pi, barD2_pi, barX_pi;
     compute_perfect_info(b1, b2, barD1_pi, barD2_pi, barX_pi);
@@ -328,8 +369,6 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
     }
     out("]}");
 
-    g_b1 = saved_b1; g_b2 = saved_b2;
-    g_r1 = saved_r1; g_r2 = saved_r2;
     return g_output.c_str();
 }
 
@@ -340,10 +379,12 @@ const char* solve_sweep_point(double p1, double p2, double b1, double b2, double
     g_output.clear();
     g_output.reserve(8 * 1024);
 
-    const double saved_b1 = g_b1, saved_b2 = g_b2;
-    const double saved_r1 = g_r1, saved_r2 = g_r2;
-    g_b1 = b1; g_b2 = b2;
-    g_r1 = r1; g_r2 = r2;
+    SolverContext point_ctx = SolverContext::capture_current();
+    point_ctx.b1 = b1;
+    point_ctx.b2 = b2;
+    point_ctx.r1 = r1;
+    point_ctx.r2 = r2;
+    ScopedSolverContext guard(point_ctx);
 
     out("{\"p2\":%.6g", p2);
 
@@ -386,8 +427,6 @@ const char* solve_sweep_point(double p1, double p2, double b1, double b2, double
     out(","); out_array("V2", V2_arr.data(), g_n);
     out("}");
 
-    g_b1 = saved_b1; g_b2 = saved_b2;
-    g_r1 = saved_r1; g_r2 = saved_r2;
     return g_output.c_str();
 }
 
