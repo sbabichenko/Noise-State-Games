@@ -864,7 +864,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmSetCeMode, wasmMalloc, wasmFree, wasmFullKernelCount;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmSetCeMode, wasmMalloc, wasmFree, wasmFullKernelCount, wasmLastError, wasmLastStage;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -897,14 +897,78 @@ function makeViridis(n) {
     return Array.from({length: n}, (_, i) => viridisColor(i / (n - 1)));
 }
 
+function getWasmErrorDetails(prefix, extra = '') {
+    const stage = (typeof wasmLastStage === 'function' && wasmLastStage()) || 'unknown stage';
+    const detail = (typeof wasmLastError === 'function' && wasmLastError()) || 'no exception message from WASM';
+    return `${prefix} [${stage}] ${detail}${extra ? ' | ' + extra : ''}`;
+}
+
+function findFirstNonFiniteInKernel(name, kernel) {
+    for (const ch of ['ch0', 'ch1', 'ch2']) {
+        const rows = kernel[ch];
+        if (!rows) continue;
+        for (let i = 0; i < rows.length; i++) {
+            for (let j = 0; j < rows[i].length; j++) {
+                const v = rows[i][j];
+                if (!Number.isFinite(v)) return `${name}.${ch}[${i}][${j}] = ${v}`;
+            }
+        }
+    }
+    return null;
+}
+
+function assertFiniteLight(data) {
+    if (!data) return;
+    const vectors = ['t','residuals','barD1','barD2','barX','V1','V2','barD1_pi','barD2_pi','barX_pi'];
+    for (const key of vectors) {
+        const arr = data[key] || [];
+        for (let i = 0; i < arr.length; i++) {
+            if (!Number.isFinite(arr[i])) throw new Error(`Non-finite value in light output: ${key}[${i}] = ${arr[i]}`);
+        }
+    }
+    for (const key of ['bar_residual','J1','J2']) {
+        if (!Number.isFinite(data[key])) throw new Error(`Non-finite scalar in light output: ${key} = ${data[key]}`);
+    }
+}
+
+function assertFiniteFull(result) {
+    for (const [name, kernel] of Object.entries(result)) {
+        if (!kernel || typeof kernel !== 'object' || !('ch0' in kernel)) continue;
+        const firstBad = findFirstNonFiniteInKernel(name, kernel);
+        if (firstBad) throw new Error(`Non-finite value in full kernel output: ${firstBad}`);
+    }
+}
+
+function assertFiniteFKernel(result) {
+    for (const player of ['F1', 'F2']) {
+        const P = result[player] || {};
+        for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < 3; c++) {
+                const key = `r${r}c${c}`;
+                const z = P[key] || [];
+                for (let u = 0; u < z.length; u++) {
+                    for (let w = 0; w < z[u].length; w++) {
+                        const v = z[u][w];
+                        if (!Number.isFinite(v)) throw new Error(`Non-finite value in F-kernel output: ${player}.${key}[${u}][${w}] = ${v}`);
+                    }
+                }
+            }
+        }
+    }
+}
+
 function callLight(p1, p2, b1, b2, r1, r2) {
     try {
         const ptr = solveLight(p1, p2, b1, b2, r1, r2);
+        if (!ptr) throw new Error(getWasmErrorDetails('solve_light failed'));
         const json = Module.UTF8ToString(ptr);
-        return JSON.parse(json);
+        const parsed = JSON.parse(json);
+        assertFiniteLight(parsed);
+        return parsed;
     } catch (e) {
+        const msg = `Solver error (light): ${e.message}`;
         console.error('callLight failed:', e);
-        document.getElementById('status').textContent = 'Solver error: ' + e.message;
+        document.getElementById('status').textContent = msg;
         return null;
     }
 }
@@ -915,6 +979,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         // After recompilation, WASM outputs 7 kernels (X, D1, D2, calD1, calD2, Xtilde1, Xtilde2).
         // Detect count via wasm_full_kernel_count if available, otherwise assume 5 (old WASM).
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
+        if (!ptr) throw new Error(getWasmErrorDetails('solve_full_bin failed'));
         const n = N;
         const block = n * n;
         const numKernels = (typeof wasmFullKernelCount === 'function') ? wasmFullKernelCount() : 5;
@@ -940,9 +1005,13 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         }
         result[name] = kernel;
     }
+    assertFiniteFull(result);
     return result;
     } catch (e) {
+        const msg = `Solver error (full kernels): ${e.message}`;
         console.error('callFull failed:', e);
+        const statusEl = document.getElementById('status');
+        if (statusEl) statusEl.textContent = msg;
         return null;
     }
 }
@@ -969,6 +1038,7 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
     try {
         // Binary transfer: returns pointer to 2*9*N*N doubles in WASM heap
         const ptr = solveFKernelBin(p1, p2, b1, b2, r1, r2);
+        if (!ptr) throw new Error(getWasmErrorDetails('solve_f_kernel_bin failed'));
         const n = N;
         const block = n * n;
         const total = 2 * 9 * block;
@@ -989,9 +1059,13 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
                 }
             }
         }
+        assertFiniteFKernel(result);
         return result;
     } catch (e) {
+        const msg = `Solver error (F kernel): ${e.message}`;
         console.error('callFKernel failed:', e);
+        const statusEl = document.getElementById('status');
+        if (statusEl) statusEl.textContent = msg;
         return null;
     }
 }
@@ -2567,7 +2641,9 @@ SolverModule().then(mod => {
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
-wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
+    wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
+    wasmLastError = mod.cwrap('wasm_last_error', 'string', []);
+    wasmLastStage = mod.cwrap('wasm_last_stage', 'string', []);
     wasmMalloc = mod._malloc;
     wasmFree = mod._free;
     try { wasmFullKernelCount = mod.cwrap('full_kernel_count', 'number', []); } catch(e) {}
