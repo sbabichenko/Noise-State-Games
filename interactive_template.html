@@ -835,10 +835,6 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 </div>
 
 <script>
-/* SOLVER_JS_INLINE */
-</script>
-
-<script>
 // --- toggle ---
 function toggleMore() {
     const el = document.getElementById('more-params');
@@ -865,6 +861,8 @@ document.addEventListener('click', function(e) {
 // --- WASM solver interface ---
 let Module = null;
 let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmSetCeMode, wasmMalloc, wasmFree, wasmFullKernelCount;
+let wasmReady = false;
+let sweepBufPtr = 0, sweepBufCap = 0;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -894,30 +892,49 @@ function hsvToRgb(h, s, v) {
 }
 
 function makeViridis(n) {
-    return Array.from({length: n}, (_, i) => viridisColor(i / (n - 1)));
+    if (!makeViridis._cache) makeViridis._cache = new Map();
+    if (makeViridis._cache.has(n)) return makeViridis._cache.get(n);
+    const colors = Array.from({length: n}, (_, i) => viridisColor(i / (n - 1)));
+    makeViridis._cache.set(n, colors);
+    return colors;
+}
+
+function setStatus(msg, color='') {
+    const el = document.getElementById('status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = color;
 }
 
 function callLight(p1, p2, b1, b2, r1, r2) {
     try {
+        if (!wasmReady || !solveLight) return null;
         const ptr = solveLight(p1, p2, b1, b2, r1, r2);
+        if (!ptr) throw new Error('WASM returned null pointer from solve_light');
         const json = Module.UTF8ToString(ptr);
+        if (!json) throw new Error('Empty solve_light payload');
         return JSON.parse(json);
     } catch (e) {
         console.error('callLight failed:', e);
-        document.getElementById('status').textContent = 'Solver error: ' + e.message;
+        setStatus('Solver error: ' + e.message, '#d62728');
         return null;
     }
 }
 
 function callFull(p1, p2, b1, b2, r1, r2) {
     try {
+        if (!wasmReady || !solveFullBin) return null;
         // Binary transfer: returns pointer to kernels × 3 channels × N×N doubles
         // After recompilation, WASM outputs 7 kernels (X, D1, D2, calD1, calD2, Xtilde1, Xtilde2).
         // Detect count via wasm_full_kernel_count if available, otherwise assume 5 (old WASM).
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
+        if (!ptr) throw new Error('WASM returned null pointer from solve_full_bin');
         const n = N;
         const block = n * n;
         const numKernels = (typeof wasmFullKernelCount === 'function') ? wasmFullKernelCount() : 5;
+        if (![5,7,9,11].includes(numKernels)) {
+            throw new Error(`Unsupported kernel count from WASM: ${numKernels}`);
+        }
         const total = numKernels * 3 * block;
         // Re-read HEAPF64 after WASM call in case memory grew
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
@@ -949,15 +966,23 @@ function callFull(p1, p2, b1, b2, r1, r2) {
 
 function callSweep(p1, b1, b2, r1, r2, p2Arr) {
     try {
+        if (!wasmReady || !solveSweep || !wasmMalloc) return null;
         const n = p2Arr.length;
-        const buf = wasmMalloc(n * 8);
+        const bytes = n * 8;
+        if (bytes > sweepBufCap) {
+            if (sweepBufPtr && wasmFree) wasmFree(sweepBufPtr);
+            sweepBufPtr = wasmMalloc(bytes);
+            sweepBufCap = bytes;
+        }
+        if (!sweepBufPtr) throw new Error('WASM malloc failed for sweep input buffer');
         // Re-read HEAPF64 after malloc (memory may have grown)
-        const view = new Float64Array(Module.HEAPF64.buffer, buf, n);
+        const view = new Float64Array(Module.HEAPF64.buffer, sweepBufPtr, n);
         for (let i = 0; i < n; i++) view[i] = p2Arr[i];
-        const ptr = solveSweep(p1, b1, b2, r1, r2, buf, n);
+        const ptr = solveSweep(p1, b1, b2, r1, r2, sweepBufPtr, n);
+        if (!ptr) throw new Error('WASM returned null pointer from solve_sweep');
         const json = Module.UTF8ToString(ptr);
+        if (!json) throw new Error('Empty solve_sweep payload');
         const result = JSON.parse(json);
-        if (wasmFree) wasmFree(buf);
         return result;
     } catch (e) {
         console.error('callSweep failed:', e);
@@ -967,8 +992,10 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
 
 function callFKernel(p1, p2, b1, b2, r1, r2) {
     try {
+        if (!wasmReady || !solveFKernelBin) return null;
         // Binary transfer: returns pointer to 2*9*N*N doubles in WASM heap
         const ptr = solveFKernelBin(p1, p2, b1, b2, r1, r2);
+        if (!ptr) throw new Error('WASM returned null pointer from solve_f_kernel_bin');
         const n = N;
         const block = n * n;
         const total = 2 * 9 * block;
@@ -1792,6 +1819,7 @@ function updateLabels() {
 }
 
 function applyGrid(p) {
+    if (!wasmReady || !wasmSetGrid) return;
     if (p.N !== currentN || p.T !== currentT) {
         wasmSetGrid(p.N, p.T);
         currentN = p.N;
@@ -2472,6 +2500,7 @@ function renderTab(tab, p) {
 }
 
 function resetSolverState() {
+    if (!wasmReady || !wasmSetGrid || !wasmSetCeMode) return;
     // Nuclear reset: wipe all caches, re-init WASM grid and CE mode
     lightData = null; fullData = null; sweepData = null; fKernelData = null;
     allocData = null; lastParamsKey = '';
@@ -2483,6 +2512,10 @@ function resetSolverState() {
 }
 
 function updateActive() {
+    if (!wasmReady) {
+        setStatus('Solver module is still loading...', '#e67e22');
+        return;
+    }
     // Prevent concurrent solver calls — queue for after current finishes
     if (solving) { pendingUpdate = true; return; }
     solving = true;
@@ -2490,8 +2523,7 @@ function updateActive() {
     const statusEl = document.getElementById('status');
     const p = getParams();
     const hint = p.N >= 100 ? ` (N=${p.N}, may take a few seconds...)` : '';
-    statusEl.textContent = 'Computing...' + hint;
-    statusEl.style.color = '';
+    setStatus('Computing...' + hint, '');
 
     // Yield to browser to show status before blocking on WASM
     setTimeout(() => {
@@ -2508,20 +2540,19 @@ function updateActive() {
             if (data) {
                 const warn = data.converged === false ? ' | NOT CONVERGED' : '';
                 const ceTag = data.ce_mode ? ' | CE' : '';
-                statusEl.textContent =
+                setStatus(
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-                    `${totalMs.toFixed(0)}ms${ceTag}${warn}`;
-                statusEl.style.color = data.converged === false ? '#d62728' : '';
+                    `${totalMs.toFixed(0)}ms${ceTag}${warn}`,
+                    data.converged === false ? '#d62728' : ''
+                );
             } else {
-                statusEl.textContent = `Solver returned no data — retrying on next change`;
-                statusEl.style.color = '#e67e22';
+                setStatus('Solver returned no data — retrying on next change', '#e67e22');
                 resetSolverState();
             }
         } catch (e) {
             console.error('updateActive failed:', e);
-            statusEl.textContent = `Error: ${e.message} — state reset, try again`;
-            statusEl.style.color = '#d62728';
+            setStatus(`Error: ${e.message} — state reset, try again`, '#d62728');
             resetSolverState();
         } finally {
             solving = false;
@@ -2561,7 +2592,24 @@ function onTabSwitch(tab) {
 }
 
 // --- init ---
-SolverModule().then(mod => {
+function getSolverModuleFactory() {
+    if (typeof SolverModule === 'function') {
+        return Promise.resolve(SolverModule);
+    }
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'solver.js';
+        script.async = true;
+        script.onload = () => {
+            if (typeof SolverModule === 'function') resolve(SolverModule);
+            else reject(new Error('solver.js loaded but SolverModule is unavailable.'));
+        };
+        script.onerror = () => reject(new Error('Could not load solver.js. Run build_html.py or place solver.js next to this HTML file.'));
+        document.head.appendChild(script);
+    });
+}
+
+getSolverModuleFactory().then(factory => factory()).then(mod => {
     Module = mod;
     solveLight = mod.cwrap('solve_light', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
     solveFullBin = mod.cwrap('solve_full_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
@@ -2573,9 +2621,10 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     try { wasmFullKernelCount = mod.cwrap('full_kernel_count', 'number', []); } catch(e) {}
 
     // Set initial grid and CE mode
-    wasmSetGrid(40, 1.0);
     wasmSetCeMode = mod.cwrap('wasm_set_ce_mode', null, ['number']);
+    wasmSetGrid(40, 1.0);
     wasmSetCeMode(1);  // CE mode on by default
+    wasmReady = true;
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -2695,8 +2744,28 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         }
     }
 
-updateLabels();
+    updateLabels();
     updateActive();
+}).catch(err => {
+    console.error('WASM module init failed:', err);
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = 'none';
+    const app = document.getElementById('app');
+    if (app) app.style.display = 'block';
+    setStatus(`Failed to initialize solver module: ${err.message || err}`, '#d62728');
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+    setStatus(`Unhandled error: ${event.reason?.message || event.reason}`, '#d62728');
+});
+
+window.addEventListener('beforeunload', () => {
+    if (sweepBufPtr && wasmFree) {
+        wasmFree(sweepBufPtr);
+        sweepBufPtr = 0;
+        sweepBufCap = 0;
+    }
 });
 </script>
 </body>
