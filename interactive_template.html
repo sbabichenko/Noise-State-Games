@@ -65,6 +65,18 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
           font-size: 0.73em; color: #8a9099; padding: 7px 16px; margin: 6px 0 2px;
           background: #eef0f2; border-radius: 6px; letter-spacing: 0.01em; }
 
+/* Error detail panel */
+#error-panel { display: none; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+               font-size: 0.72em; color: #c0392b; background: #fdf0ef; border: 1px solid #e8c4c0;
+               border-radius: 6px; padding: 10px 16px; margin: 4px 0 2px; text-align: left;
+               max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+#error-panel .error-header { font-weight: 700; margin-bottom: 4px; font-size: 1.05em; }
+#error-panel .error-stage { color: #a04030; }
+#error-panel .error-params { color: #7a6860; margin: 3px 0; }
+#error-panel .error-stack { color: #999; font-size: 0.92em; margin-top: 6px; border-top: 1px solid #e8c4c0; padding-top: 5px; }
+#error-panel .error-dismiss { float: right; cursor: pointer; color: #c0392b; font-weight: 700;
+                              border: none; background: none; font-size: 1.1em; padding: 0 4px; }
+
 /* Tab bar */
 .tab-bar { display: flex; gap: 0; border-bottom: 2px solid #e0e3e8;
            margin-top: 10px; flex-wrap: wrap; }
@@ -213,6 +225,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 </div>
 
 <div id="status"></div>
+<div id="error-panel"></div>
 
 <!-- Tab bar -->
 <div class="tab-bar">
@@ -897,14 +910,86 @@ function makeViridis(n) {
     return Array.from({length: n}, (_, i) => viridisColor(i / (n - 1)));
 }
 
+// --- Error reporting utilities ---
+function showError(stage, error, params) {
+    const panel = document.getElementById('error-panel');
+    const timestamp = new Date().toLocaleTimeString();
+    const reqN = params ? (params.N || N) : N;
+    const paramStr = params
+        ? `p\u2081=${params.p1} p\u2082=${params.p2} b\u2081=${params.b1} b\u2082=${params.b2} r\u2081=${params.r1} r\u2082=${params.r2} N=${reqN} T=${params.T || currentT}`
+        : '';
+    const gridInfo = `JS global N=${N}, currentN=${currentN}, currentT=${currentT}`;
+    const stack = error && error.stack
+        ? error.stack.split('\n').slice(0, 6).join('\n')
+        : '';
+    panel.innerHTML =
+        `<button class="error-dismiss" onclick="dismissError()" title="Dismiss">\u00d7</button>` +
+        `<div class="error-header">Solver Error [${timestamp}]</div>` +
+        `<div class="error-stage">Stage: ${stage}</div>` +
+        (paramStr ? `<div class="error-params">Params: ${paramStr}</div>` : '') +
+        `<div class="error-params">Grid state: ${gridInfo}</div>` +
+        `<div>Message: ${error ? (error.message || String(error)) : 'unknown'}</div>` +
+        (stack ? `<div class="error-stack">Stack trace:\n${stack}</div>` : '');
+    panel.style.display = 'block';
+    console.error(`[${stage}]`, error, `| grid: ${gridInfo}`);
+}
+
+function showConvergenceWarning(data, params) {
+    const panel = document.getElementById('error-panel');
+    const timestamp = new Date().toLocaleTimeString();
+    const finalResidual = data.residuals && data.residuals.length > 0
+        ? data.residuals[data.residuals.length - 1] : '?';
+    const nIters = data.n_iters || (data.residuals ? data.residuals.length : '?');
+    const maxIters = data.max_picard_iters || 10000;
+    const tol = data.picard_tol || 1e-5;
+    const paramStr = params
+        ? `p\u2081=${params.p1} p\u2082=${params.p2} b\u2081=${params.b1} b\u2082=${params.b2} r\u2081=${params.r1} r\u2082=${params.r2} N=${params.N || N} T=${params.T || currentT}`
+        : '';
+    const residNaN = data.residuals && data.residuals.some(r => r === null || !isFinite(r));
+    const hitMaxIters = nIters >= maxIters;
+    let detail = `Picard iteration did not converge after ${nIters} iterations`;
+    detail += hitMaxIters ? ` (hit max_iters=${maxIters}).\n` : '.\n';
+    detail += `Final residual: ${typeof finalResidual === 'number' ? finalResidual.toExponential(4) : finalResidual} (tolerance: ${tol.toExponential(0)})\n`;
+    if (residNaN) detail += `\u26a0 NaN/Inf detected in residual history \u2014 numerical instability likely.\n`;
+    if (data.bar_converged === false) detail += `\u26a0 Bar equilibrium also failed to converge (bar_residual=${data.bar_residual != null ? data.bar_residual.toExponential(4) : '?'}).\n`;
+    if (data.costs_finite === false) detail += `\u26a0 Non-finite cost values detected \u2014 solution may be meaningless.\n`;
+    detail += `Costs: J\u00b9=${data.J1 != null ? data.J1.toFixed(6) : '?'}, J\u00b2=${data.J2 != null ? data.J2.toFixed(6) : '?'}`;
+    detail += `\nMode: ${data.ce_mode ? 'CE (discrete conditional expectation)' : 'Standard Picard'}`;
+    panel.innerHTML =
+        `<button class="error-dismiss" onclick="dismissError()" title="Dismiss">\u00d7</button>` +
+        `<div class="error-header">Convergence Failure [${timestamp}]</div>` +
+        (paramStr ? `<div class="error-params">Params: ${paramStr}</div>` : '') +
+        `<div>${detail}</div>`;
+    panel.style.display = 'block';
+}
+
+function dismissError() {
+    document.getElementById('error-panel').style.display = 'none';
+}
+
 function callLight(p1, p2, b1, b2, r1, r2) {
     try {
         const ptr = solveLight(p1, p2, b1, b2, r1, r2);
         const json = Module.UTF8ToString(ptr);
-        return JSON.parse(json);
+        const result = JSON.parse(json);
+        if (!result || typeof result !== 'object') {
+            showError('callLight \u2192 JSON parse', new Error('Solver returned empty or non-object JSON'), {p1, p2, b1, b2, r1, r2});
+            document.getElementById('status').textContent = 'Solver error: empty response from solve_light';
+            return null;
+        }
+        // Handle C++ solver pipeline failure
+        if (result.solver_error) {
+            const stage = result.failed_stage || 'unknown';
+            const msg = result.error_message || 'unknown C++ exception';
+            showError(`C++ solver pipeline \u2192 ${stage}`, new Error(msg), {p1, p2, b1, b2, r1, r2, N: result.N, T: result.T});
+            document.getElementById('status').textContent = `Solver failed at ${stage}: ${msg}`;
+            document.getElementById('status').style.color = '#d62728';
+            return null;
+        }
+        return result;
     } catch (e) {
-        console.error('callLight failed:', e);
-        document.getElementById('status').textContent = 'Solver error: ' + e.message;
+        showError('callLight \u2192 solve_light WASM call', e, {p1, p2, b1, b2, r1, r2});
+        document.getElementById('status').textContent = 'Solver error (solve_light): ' + e.message;
         return null;
     }
 }
@@ -914,11 +999,19 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         // Binary transfer: returns pointer to kernels × 3 channels × N×N doubles
         // After recompilation, WASM outputs 7 kernels (X, D1, D2, calD1, calD2, Xtilde1, Xtilde2).
         // Detect count via wasm_full_kernel_count if available, otherwise assume 5 (old WASM).
+        const nBefore = N;
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
+        if (n !== nBefore) {
+            console.warn(`[callFull] N changed during WASM call: ${nBefore}\u2192${n}`);
+        }
         const block = n * n;
         const numKernels = (typeof wasmFullKernelCount === 'function') ? wasmFullKernelCount() : 5;
         const total = numKernels * 3 * block;
+        console.log(`[callFull] N=${n}, numKernels=${numKernels}, total_doubles=${total}, ptr=${ptr}, heap_byte_len=${Module.HEAPF64.buffer.byteLength}`);
+        if (ptr + total * 8 > Module.HEAPF64.buffer.byteLength) {
+            throw new Error(`Buffer overrun: ptr=${ptr}, need=${total * 8} bytes, heap=${Module.HEAPF64.buffer.byteLength}`);
+        }
         // Re-read HEAPF64 after WASM call in case memory grew
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
@@ -926,7 +1019,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
     if (numKernels >= 7) kernelNames.push('Xtilde1', 'Xtilde2');
     if (numKernels >= 9) kernelNames.push('Vkernel1', 'Vkernel2');
     if (numKernels >= 11) kernelNames.push('A_store1', 'A_store2');
-    const result = {t};
+    const result = {t, _debug: {N: n, numKernels, total, ptr}};
     let offset = 0;
     for (const name of kernelNames) {
         const kernel = {};
@@ -942,7 +1035,8 @@ function callFull(p1, p2, b1, b2, r1, r2) {
     }
     return result;
     } catch (e) {
-        console.error('callFull failed:', e);
+        showError('callFull \u2192 solve_full_bin WASM call', e, {p1, p2, b1, b2, r1, r2});
+        document.getElementById('status').textContent = 'Solver error (solve_full_bin): ' + e.message;
         return null;
     }
 }
@@ -960,7 +1054,8 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
         if (wasmFree) wasmFree(buf);
         return result;
     } catch (e) {
-        console.error('callSweep failed:', e);
+        showError('callSweep \u2192 solve_sweep WASM call', e, {p1, b1, b2, r1, r2, p2: 'sweep'});
+        document.getElementById('status').textContent = 'Solver error (solve_sweep): ' + e.message;
         return null;
     }
 }
@@ -972,6 +1067,10 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
         const n = N;
         const block = n * n;
         const total = 2 * 9 * block;
+        console.log(`[callFKernel] N=${n}, total_doubles=${total}, ptr=${ptr}, heap_byte_len=${Module.HEAPF64.buffer.byteLength}`);
+        if (ptr + total * 8 > Module.HEAPF64.buffer.byteLength) {
+            throw new Error(`Buffer overrun: ptr=${ptr}, need=${total * 8} bytes, heap=${Module.HEAPF64.buffer.byteLength}`);
+        }
         // ptr is byte offset; HEAPF64 is indexed by float64 offset
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
@@ -991,7 +1090,8 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
         }
         return result;
     } catch (e) {
-        console.error('callFKernel failed:', e);
+        showError('callFKernel \u2192 solve_f_kernel_bin WASM call', e, {p1, p2, b1, b2, r1, r2});
+        document.getElementById('status').textContent = 'Solver error (solve_f_kernel_bin): ' + e.message;
         return null;
     }
 }
@@ -1793,10 +1893,12 @@ function updateLabels() {
 
 function applyGrid(p) {
     if (p.N !== currentN || p.T !== currentT) {
+        const prevN = currentN, prevT = currentT;
         wasmSetGrid(p.N, p.T);
         currentN = p.N;
         currentT = p.T;
         N = p.N;
+        console.log(`[grid] N: ${prevN}\u2192${p.N}, T: ${prevT}\u2192${p.T}`);
     }
 }
 
@@ -2466,7 +2568,7 @@ function renderTab(tab, p) {
         if (ok) dirty[tab] = false;
         // If solver failed, leave tab dirty so it retries on next update
     } catch (e) {
-        console.error('renderTab failed:', e);
+        showError(`renderTab \u2192 ${tab}`, e, p);
         document.getElementById('status').textContent = `Error rendering ${tab}: ${e.message}`;
     }
 }
@@ -2508,19 +2610,31 @@ function updateActive() {
             if (data) {
                 const warn = data.converged === false ? ' | NOT CONVERGED' : '';
                 const ceTag = data.ce_mode ? ' | CE' : '';
+                const finalResid = data.residuals && data.residuals.length > 0
+                    ? ` | resid=${data.residuals[data.residuals.length - 1].toExponential(2)}` : '';
                 statusEl.textContent =
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-                    `${totalMs.toFixed(0)}ms${ceTag}${warn}`;
+                    `${totalMs.toFixed(0)}ms${ceTag}${finalResid}${warn}`;
                 statusEl.style.color = data.converged === false ? '#d62728' : '';
+                // Show detailed convergence warning panel if not converged
+                if (data.converged === false) {
+                    showConvergenceWarning(data, p);
+                } else {
+                    dismissError();
+                }
             } else {
-                statusEl.textContent = `Solver returned no data — retrying on next change`;
+                statusEl.textContent = `Solver returned no data (solve_light returned null) \u2014 retrying on next change`;
                 statusEl.style.color = '#e67e22';
+                // showError may already have been called by callLight; if not, add context
+                if (document.getElementById('error-panel').style.display === 'none') {
+                    showError('updateActive \u2192 ensureLight', new Error('Solver returned null \u2014 WASM call may have thrown (check above) or returned invalid JSON'), p);
+                }
                 resetSolverState();
             }
         } catch (e) {
-            console.error('updateActive failed:', e);
-            statusEl.textContent = `Error: ${e.message} — state reset, try again`;
+            showError(`updateActive \u2192 ${activeTab}`, e, p);
+            statusEl.textContent = `Error: ${e.message} \u2014 state reset, try again`;
             statusEl.style.color = '#d62728';
             resetSolverState();
         } finally {
@@ -2697,6 +2811,19 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
 
 updateLabels();
     updateActive();
+}).catch(err => {
+    const loadEl = document.getElementById('loading');
+    loadEl.textContent = 'Failed to load WASM solver module';
+    loadEl.style.color = '#c0392b';
+    const panel = document.getElementById('error-panel');
+    panel.innerHTML =
+        `<div class="error-header">WASM Load Failure</div>` +
+        `<div class="error-stage">Stage: SolverModule() initialization</div>` +
+        `<div>Message: ${err.message || String(err)}</div>` +
+        `<div>This usually means the solver.js or .wasm file failed to download or compile.</div>` +
+        (err.stack ? `<div class="error-stack">Stack trace:\n${err.stack.split('\n').slice(0, 6).join('\n')}</div>` : '');
+    panel.style.display = 'block';
+    console.error('WASM module load failed:', err);
 });
 </script>
 </body>
