@@ -177,6 +177,20 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 .guide-link { color: #1f77b4; text-decoration: none; font-weight: 600; cursor: pointer; }
 .guide-link:hover { text-decoration: underline; }
 
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .container { padding: 8px 12px; }
+  h1 { font-size: 0.95em; margin: 6px 0 4px; }
+  .param-card { padding: 12px 14px 10px; }
+  .slider-pair { min-width: 100%; padding: 8px 10px 6px; }
+  .slider-group { min-width: 120px; }
+  .tab-btn { padding: 7px 10px; font-size: 0.75em; }
+  .tab-sep { display: none; }
+  .subtab-btn { padding: 4px 10px; font-size: 0.72em; }
+  .figure-caption { padding: 6px 10px; font-size: 0.78em; }
+  .theme-toggle { top: 8px; right: 8px; padding: 4px 6px; font-size: 0.95em; }
+}
+
 /* Dark mode toggle */
 .theme-toggle { position: fixed; top: 12px; right: 16px; z-index: 100;
                 background: var(--card); border: 1px solid var(--card-border); border-radius: 8px;
@@ -784,7 +798,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
           <option value="2">W&#xB2; (player 2 obs.)</option>
         </select>
       </div>
-      <div class="slider-group" style="min-width:250px; max-width:400px;">
+      <div class="slider-group" style="min-width:150px; max-width:100%;">
         <label style="font-weight:600; font-size:0.85em;">Shock time $s$</label>
         <div class="slider-row">
           <input type="range" id="impulse-s" min="0" max="39" step="1" value="0">
@@ -871,7 +885,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 <div id="tab-allocation" class="tab-panel">
   <div class="param-card" style="margin-bottom:14px;">
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:2px 0;">
-      <div class="slider-group" style="min-width:250px; max-width:400px;">
+      <div class="slider-group" style="min-width:150px; max-width:100%;">
         <label>$\bar{P}$ (precision budget, $p_1^2+p_2^2 = \bar{P}$)</label>
         <div class="slider-row">
           <input type="range" id="sl-Pbar" min="5" max="80" step="1" value="20">
@@ -1223,6 +1237,10 @@ function styledAxes(n) {
     return ax;
 }
 
+function plotH(desktopH) {
+    return window.innerWidth < 768 ? Math.round(desktopH * 0.7) : desktopH;
+}
+
 function toggleTheme() {
     const html = document.documentElement;
     const isDark = html.classList.toggle('dark');
@@ -1268,7 +1286,7 @@ function plotKernel(divId, t, kernelData, title) {
     });
     const layout = {
         ...baseLayout, ...styledAxes(3),
-        height: 320, margin: {...margin, t: 60},
+        height: plotH(320), margin: {...margin, t: 60},
         grid: {rows: 1, columns: 3, pattern: 'independent'},
         annotations,
     };
@@ -1283,7 +1301,7 @@ function plotResidual(divId, data) {
     const iters = data.residuals.map((_, i) => i);
     Plotly.react(divId, [{x: iters, y: data.residuals, mode: 'lines', line: {width: 2, color: '#1f77b4'}}], {
         ...baseLayout, ...styledAxes(1),
-        height: 270, margin: {...margin, t: 50},
+        height: plotH(270), margin: {...margin, t: 50},
         annotations: [{
             text: `Picard Residual (${data.n_iters} iterations)`, xref: 'paper', yref: 'paper',
             x: 0.5, y: 1.1, showarrow: false, font: {size: 13, color: getThemeColors().title},
@@ -1325,7 +1343,7 @@ function plotControls(divId, data, b1, b2) {
     });
     const layout = {
         ...baseLayout, ...styledAxes(3),
-        height: 320, margin: {...margin, t: 60}, grid: {rows: 1, columns: 3, pattern: 'independent'},
+        height: plotH(320), margin: {...margin, t: 60}, grid: {rows: 1, columns: 3, pattern: 'independent'},
         annotations,
         shapes: [
             {type: 'line', x0: t[0], x1: tmax, y0: b1, y1: b1,
@@ -1358,7 +1376,7 @@ function plotWedges(divId, data) {
         {x: t, y: data.V2, name: '$\\bar{V}^2$', line: {width: 2, color: '#d62728'}, xaxis: 'x2', yaxis: 'y2'},
     ], {
         ...baseLayout, ...styledAxes(2),
-        height: 290, margin: {...margin, t: 60}, grid: {rows: 1, columns: 2, pattern: 'independent'},
+        height: plotH(290), margin: {...margin, t: 60}, grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations,
         xaxis: {...styledAxes(2).xaxis, title: {text: 't', font: {size: 11}}},
         xaxis2: {...styledAxes(2).xaxis2, title: {text: 't', font: {size: 11}}},
@@ -1393,7 +1411,7 @@ function plotFKernel(divId, t, fData, title, spikeInfo) {
     }
     const layout = {
         ...baseLayout,
-        height: 800, margin: {t: 55, b: 40, l: 50, r: 20},
+        height: plotH(800), margin: {t: 55, b: 40, l: 50, r: 20},
         annotations: [],
     };
     for (let row = 0; row < 3; row++) {
@@ -1501,7 +1519,7 @@ function plotCosts(divId, sweep) {
     });
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(2),
-        height: 350, margin: {...margin, t: 60},
+        height: plotH(350), margin: {...margin, t: 60},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations: costAnnotations,
         xaxis: {...styledAxes(2).xaxis, title: '$p_2$'},
@@ -1524,7 +1542,7 @@ function plotBarD1Sweep(divId, sweep) {
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(1),
-        height: 350, margin: {...margin, t: 50},
+        height: plotH(350), margin: {...margin, t: 50},
         annotations: [{
             text: `$\\bar{D}^1(t)$ — p\u2081=${sweep.p1.toFixed(1)} fixed`,
             xref: 'paper', yref: 'paper',
@@ -1548,7 +1566,7 @@ function plotBarD2Sweep(divId, sweep) {
                  line: {width: 2, dash: 'dash', color: 'gray'}});
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(1),
-        height: 350, margin: {...margin, t: 50},
+        height: plotH(350), margin: {...margin, t: 50},
         annotations: [{
             text: `$\\bar{D}^2(t)$ — p\u2081=${sweep.p1.toFixed(1)} fixed`,
             xref: 'paper', yref: 'paper',
@@ -1584,7 +1602,7 @@ function plotWedgesSweep(divId, sweep) {
     });
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(2),
-        height: 330, margin: {...margin, t: 60},
+        height: plotH(330), margin: {...margin, t: 60},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations: sweepAnnotations,
         xaxis: {...styledAxes(2).xaxis, title: '$t$'},
@@ -1637,7 +1655,7 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
 
     const impPhysLayout = {
         ...baseLayout, ...styledAxes(3),
-        height: 300, margin: {t: 60, b: 45, l: 50, r: 20},
+        height: plotH(300), margin: {t: 60, b: 45, l: 50, r: 20},
         grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.06},
         shapes: [{...vline, xref:'x1'}, {...vline, xref:'x2'}, {...vline, xref:'x3'}],
         legend: {orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center',
@@ -1808,7 +1826,7 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
     const sup = playerNum === 1 ? '\u00B9' : '\u00B2';
     const layout = {
         ...baseLayout, ...styledAxes(3),
-        height: 320, margin: {t: 50, b: 45, l: 45, r: 10},
+        height: plotH(320), margin: {t: 50, b: 45, l: 45, r: 10},
         grid: {rows: 1, columns: 3, pattern: 'independent', xgap: 0.04},
         annotations,
         title: {text: `Player ${playerNum} noise-state impulse response (F${sup}+\u03A0${sup}) \u2014 ${chNames[channel]} shock at s = ${sTime}`,
@@ -1945,7 +1963,7 @@ function plotRankAnalysis(svdDivId, tableDivId, fullData, kernelName) {
 
     const layout = {
         ...baseLayout, ...styledAxes(2),
-        height: 350, margin: {...margin, t: 65},
+        height: plotH(350), margin: {...margin, t: 65},
         grid: {rows: 1, columns: 2, pattern: 'independent'},
         annotations,
         xaxis: {...styledAxes(2).xaxis, title: 'Index k', dtick: 2},
@@ -2398,7 +2416,7 @@ function plotAllocationCosts(divId, ad) {
     ];
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(1),
-        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: 'Cost', font: { size: 11 } } },
         title: { text: 'Individual equilibrium costs', font: { size: 13, color: '#555' }, y: 0.97 },
@@ -2417,7 +2435,7 @@ function plotAllocationEffort(divId, ad) {
     ];
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(1),
-        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: '$\\int(r_1\\bar{D}_1^2 + r_2\\bar{D}_2^2)\\,dt$', font: { size: 11 } } },
         title: { text: 'Total effort-weighted control cost', font: { size: 13, color: '#555' }, y: 0.97 },
@@ -2442,7 +2460,7 @@ function plotAllocationControls(divId, ad) {
     ];
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(1),
-        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: 'Mean control / state', font: { size: 11 } } },
         title: { text: 'Time-averaged mean controls and state', font: { size: 13, color: '#555' }, y: 0.97 },
@@ -2461,7 +2479,7 @@ function plotAllocationWedges(divId, ad) {
     ];
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(1),
-        height: 320, margin: { t: 45, b: 45, l: 55, r: 15 },
+        height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: '$\\max_t |\\bar{V}^i(t)|$', font: { size: 11 } } },
         title: { text: 'Peak information wedge magnitude', font: { size: 13, color: '#555' }, y: 0.97 },
