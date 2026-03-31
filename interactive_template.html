@@ -15,45 +15,81 @@ MathJax.Hub.Config({
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
-       background: #f5f6f8; color: #2d3436; -webkit-font-smoothing: antialiased; }
+       background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
+       transition: background 0.2s, color 0.2s; }
+
+/* Theme variables */
+:root {
+  --bg: #f5f6f8; --text: #2d3436; --text-muted: #6b7280; --text-faint: #9ca3af;
+  --card: #fff; --card-border: #dce0e6; --card-shadow: rgba(0,0,0,0.06);
+  --pair-bg: #f8f9fb; --track: #dde1e7; --track-hover: #cdd1d7;
+  --border: #e0e3e8; --border-light: #e8eaed;
+  --caption-bg: #fafbfc; --status-bg: #eef0f3;
+  --subtab: #f0f1f4; --subtab-hover: #e4e6ea;
+  --tab-inactive: #a0a7b0; --tab-hover-bg: #f8f9fb;
+  --tab-active: #1a1a2e; --label: #666;
+  --input-bg: #fff; --input-border: #d0d4da;
+  --error-bg: #fdf0ef; --error-border: #e8c4c0; --error-text: #c0392b;
+  --notice-bg: #f0f7ff;
+  --plot-font: #444; --plot-grid: #e8eaed; --plot-line: #ccc;
+  --thumb-border: #fff;
+}
+html.dark {
+  --bg: #1F2022; --text: #e0e0e0; --text-muted: #9ca3af; --text-faint: #6b7280;
+  --card: #2a2b2e; --card-border: #3a3b3e; --card-shadow: rgba(0,0,0,0.3);
+  --pair-bg: #252628; --track: #3a3c40; --track-hover: #4a4c50;
+  --border: #3a3b3e; --border-light: #333;
+  --caption-bg: #252628; --status-bg: #252628;
+  --subtab: #2e3033; --subtab-hover: #3a3c40;
+  --tab-inactive: #6b7280; --tab-hover-bg: #2a2b2e;
+  --tab-active: #e0e0e0; --label: #9ca3af;
+  --input-bg: #2a2b2e; --input-border: #4a4c50;
+  --error-bg: #2d1f1f; --error-border: #5a3030; --error-text: #ef6b6b;
+  --notice-bg: #1a2535;
+  --plot-font: #bbb; --plot-grid: #333; --plot-line: #444;
+  --thumb-border: #2a2b2e;
+}
+
 .container { max-width: 1400px; margin: 0 auto; padding: 12px 28px; }
 
 h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.04em;
-     text-transform: uppercase; margin: 10px 0 6px; color: #5a6270;
+     text-transform: uppercase; margin: 10px 0 6px; color: var(--text-muted);
      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }
 
 /* Parameter card */
-.param-card { background: #fff; border: 1px solid #dce0e6; border-radius: 12px;
+.param-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px;
               padding: 16px 22px 12px; margin-bottom: 10px;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.02); }
+              box-shadow: 0 2px 8px var(--card-shadow), 0 0 0 1px rgba(0,0,0,0.02);
+              transition: background 0.2s, border-color 0.2s; }
 
 /* Sliders */
 .sliders { display: flex; gap: 12px; margin: 4px 0; flex-wrap: wrap; }
 .slider-pair { display: flex; gap: 20px; flex: 1; min-width: 380px;
-               background: #f8f9fb; border-radius: 8px; padding: 10px 14px 8px; }
+               background: var(--pair-bg); border-radius: 8px; padding: 10px 14px 8px;
+               transition: background 0.2s; }
 .slider-pair-label { font-size: 0.68em; font-weight: 700; text-transform: uppercase;
-                     letter-spacing: 0.08em; color: #9ca3af; margin-bottom: 6px; }
+                     letter-spacing: 0.08em; color: var(--text-faint); margin-bottom: 6px; }
 .slider-group { flex: 1; min-width: 170px; }
 .slider-group label { font-size: 0.78em; font-weight: 600; display: block;
-                      margin-bottom: 4px; color: #666; letter-spacing: 0.02em; }
+                      margin-bottom: 4px; color: var(--label); letter-spacing: 0.02em; }
 .slider-row { display: flex; align-items: center; gap: 10px; }
 .slider-row input[type=range] { flex: 1; -webkit-appearance: none; appearance: none;
-                                 height: 5px; background: #dde1e7; border-radius: 3px;
+                                 height: 5px; background: var(--track); border-radius: 3px;
                                  outline: none; transition: background 0.15s; }
-.slider-row input[type=range]:hover { background: #cdd1d7; }
+.slider-row input[type=range]:hover { background: var(--track-hover); }
 .slider-row input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
-    background: #1f77b4; cursor: pointer; border: 2.5px solid #fff;
+    background: #1f77b4; cursor: pointer; border: 2.5px solid var(--thumb-border);
     box-shadow: 0 1px 4px rgba(31,119,180,0.35); transition: transform 0.12s, box-shadow 0.12s; }
 .slider-row input[type=range]::-webkit-slider-thumb:hover {
     transform: scale(1.12); box-shadow: 0 2px 8px rgba(31,119,180,0.4); }
 .slider-row input[type=range]::-webkit-slider-thumb:active { transform: scale(0.95); }
 .slider-row input[type=range]::-moz-range-thumb {
     width: 16px; height: 16px; border-radius: 50%; background: #1f77b4;
-    cursor: pointer; border: 2.5px solid #fff;
+    cursor: pointer; border: 2.5px solid var(--thumb-border);
     box-shadow: 0 1px 4px rgba(31,119,180,0.35); }
 .slider-row input[type=range]::-moz-range-track {
-    height: 5px; background: #dde1e7; border-radius: 3px; border: none; }
+    height: 5px; background: var(--track); border-radius: 3px; border: none; }
 .slider-row .val { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
                    font-size: 0.85em; min-width: 3.5em; text-align: right;
                    color: #1f77b4; font-weight: 600; }
@@ -61,57 +97,59 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 /* More-parameters toggle */
 .more-toggle { text-align: center; margin: 6px 0 4px; }
-.more-toggle button { background: none; border: none; border-top: 1px solid #e8eaed;
-                       border-radius: 0; padding: 6px 18px; font-size: 0.75em; color: #9ca3af;
+.more-toggle button { background: none; border: none; border-top: 1px solid var(--border-light);
+                       border-radius: 0; padding: 6px 18px; font-size: 0.75em; color: var(--text-faint);
                        cursor: pointer; transition: all 0.15s; letter-spacing: 0.06em;
                        text-transform: uppercase; font-weight: 700; width: 100%; }
-.more-toggle button:hover { color: #6b7280; background: #f8f9fb; }
+.more-toggle button:hover { color: var(--text-muted); background: var(--pair-bg); }
 
 /* Status strip */
 #status { text-align: left; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-          font-size: 0.73em; color: #6b7280; padding: 7px 16px; margin: 8px 0 4px;
-          background: #eef0f3; border-radius: 6px; letter-spacing: 0.01em;
-          border-left: 3px solid #16a085; }
+          font-size: 0.73em; color: var(--text-muted); padding: 7px 16px; margin: 8px 0 4px;
+          background: var(--status-bg); border-radius: 6px; letter-spacing: 0.01em;
+          border-left: 3px solid #16a085; transition: background 0.2s; }
 
 /* Error detail panel */
 #error-panel { display: none; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-               font-size: 0.72em; color: #c0392b; background: #fdf0ef; border: 1px solid #e8c4c0;
+               font-size: 0.72em; color: var(--error-text); background: var(--error-bg);
+               border: 1px solid var(--error-border);
                border-radius: 6px; padding: 10px 16px; margin: 4px 0 2px; text-align: left;
                max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
 #error-panel .error-header { font-weight: 700; margin-bottom: 4px; font-size: 1.05em; }
-#error-panel .error-stage { color: #a04030; }
-#error-panel .error-params { color: #7a6860; margin: 3px 0; }
-#error-panel .error-stack { color: #999; font-size: 0.92em; margin-top: 6px; border-top: 1px solid #e8c4c0; padding-top: 5px; }
-#error-panel .error-dismiss { float: right; cursor: pointer; color: #c0392b; font-weight: 700;
+#error-panel .error-stage { color: var(--error-text); }
+#error-panel .error-params { color: var(--text-muted); margin: 3px 0; }
+#error-panel .error-stack { color: var(--text-faint); font-size: 0.92em; margin-top: 6px;
+                            border-top: 1px solid var(--error-border); padding-top: 5px; }
+#error-panel .error-dismiss { float: right; cursor: pointer; color: var(--error-text); font-weight: 700;
                               border: none; background: none; font-size: 1.1em; padding: 0 4px; }
 
 /* Tab bar */
-.tab-bar { display: flex; gap: 0; border-bottom: 2px solid #e0e3e8;
+.tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border);
            margin-top: 12px; flex-wrap: wrap; align-items: flex-end; }
 .tab-btn { padding: 9px 16px; font-size: 0.82em; font-weight: 600; cursor: pointer;
            background: none; border: none; border-bottom: 2.5px solid transparent;
-           color: #a0a7b0; transition: all 0.15s; }
-.tab-btn:hover { color: #555; background: #f8f9fb; }
-.tab-btn.active { color: #1a1a2e; border-bottom-color: #1f77b4; background: none; }
-.tab-sep { width: 1px; height: 18px; background: #dde1e7; margin: 0 4px;
+           color: var(--tab-inactive); transition: all 0.15s; }
+.tab-btn:hover { color: var(--text); background: var(--tab-hover-bg); }
+.tab-btn.active { color: var(--tab-active); border-bottom-color: #1f77b4; background: none; }
+.tab-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px;
            align-self: center; flex-shrink: 0; }
 
 /* Content panels */
 .tab-panel { display: none; padding-top: 20px; }
 .tab-panel.active { display: block; }
 .figure-block { margin-bottom: 24px; }
-.figure-caption { text-align: left; font-size: 0.82em; color: #6b7280; line-height: 1.6;
+.figure-caption { text-align: left; font-size: 0.82em; color: var(--text-muted); line-height: 1.6;
                    max-width: 880px; margin: 8px auto 0; padding: 8px 16px;
-                   background: #fafbfc; border-left: 3px solid #e0e3e8;
-                   border-radius: 0 4px 4px 0; }
+                   background: var(--caption-bg); border-left: 3px solid var(--border);
+                   border-radius: 0 4px 4px 0; transition: background 0.2s; }
 .plot { width: 100%; }
-#loading { text-align: center; padding: 50px; font-size: 1.15em; color: #aaa; }
+#loading { text-align: center; padding: 50px; font-size: 1.15em; color: var(--text-faint); }
 
 /* Subtabs */
 .subtab-btn { padding: 5px 14px; font-size: 0.78em; font-weight: 600; cursor: pointer;
-              background: #f0f1f4; border: none; border-radius: 5px;
-              color: #888; transition: all 0.15s; margin-right: 4px; margin-bottom: 6px; }
-.subtab-btn:hover { background: #e4e6ea; color: #555; }
+              background: var(--subtab); border: none; border-radius: 5px;
+              color: var(--text-muted); transition: all 0.15s; margin-right: 4px; margin-bottom: 6px; }
+.subtab-btn:hover { background: var(--subtab-hover); color: var(--text); }
 .subtab-btn.active { background: #1f77b4; color: #fff; }
 .subtab-panel { display: none; padding-top: 12px; }
 .subtab-panel.active { display: block; }
@@ -124,22 +162,41 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 #sim-resample:active { transform: scale(0.97); }
 #sim-npaths { width: 100px; vertical-align: middle; }
 #sim-seed { width: 70px; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-            font-size: 0.85em; padding: 3px 6px; border: 1px solid #d0d4da; border-radius: 4px;
-            text-align: center; }
+            font-size: 0.85em; padding: 3px 6px; border: 1px solid var(--input-border); border-radius: 4px;
+            text-align: center; background: var(--input-bg); color: var(--text); }
 #sim-seed:focus { outline: none; border-color: #1f77b4; box-shadow: 0 0 0 2px rgba(31,119,180,0.15); }
 
 /* Impulse controls (match sim styling) */
 #impulse-channel, #rank-kernel-select { padding: 4px 10px; font-size: 0.85em;
-    border: 1px solid #d0d4da; border-radius: 5px; background: #fff; }
+    border: 1px solid var(--input-border); border-radius: 5px;
+    background: var(--input-bg); color: var(--text); }
 #impulse-channel:focus, #rank-kernel-select:focus {
     outline: none; border-color: #1f77b4; box-shadow: 0 0 0 2px rgba(31,119,180,0.15); }
 
 /* Guide tab cross-links */
 .guide-link { color: #1f77b4; text-decoration: none; font-weight: 600; cursor: pointer; }
 .guide-link:hover { text-decoration: underline; }
+
+/* Dark mode toggle */
+.theme-toggle { position: fixed; top: 12px; right: 16px; z-index: 100;
+                background: var(--card); border: 1px solid var(--card-border); border-radius: 8px;
+                padding: 5px 8px; cursor: pointer; font-size: 1.1em; line-height: 1;
+                box-shadow: 0 1px 4px var(--card-shadow); transition: all 0.2s; }
+.theme-toggle:hover { transform: scale(1.1); }
 </style>
+<script>
+// Dark mode: check localStorage (shared with main site) or system preference
+(function() {
+  var stored = localStorage.getItem('dark');
+  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (stored === 'true' || (stored === null && prefersDark)) {
+    document.documentElement.classList.add('dark');
+  }
+})();
+</script>
 </head>
 <body>
+<button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode" id="theme-btn">&#x263C;</button>
 <div class="container">
 <h1>Noise-State Game Explorer</h1>
 <div id="loading">Loading solver (WASM)...</div>
@@ -235,7 +292,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
       <input type="checkbox" id="cb-ce-mode" checked style="width:16px; height:16px;">
       Exact discrete CE
-      <span style="font-size:0.82em; color:#888;">(uses discrete conditional expectation in Picard loop and for F kernel)</span>
+      <span style="font-size:0.82em; color:var(--text-faint);">(uses discrete conditional expectation in Picard loop and for F kernel)</span>
     </label>
   </div>
 </div>
@@ -353,7 +410,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     </p>
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">State kernel $X(t,s)$</h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
@@ -367,7 +424,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <h3 style="margin:22px 0 6px; font-size:1.15em;">
       Control kernels $D^i(t,s)$ and $\mathcal{D}^i(t,s)$
     </h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
@@ -382,7 +439,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <h3 style="margin:22px 0 6px; font-size:1.15em;">
       Unresolved state $\widetilde{X}^i(t,s)$
     </h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
@@ -396,7 +453,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <h3 style="margin:22px 0 6px; font-size:1.15em;">
       Filtration kernel $F^i(t,u,s)$
     </h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-kernels">Kernels</a> tab.
     </p>
     <p>
@@ -409,7 +466,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <h3 style="margin:22px 0 6px; font-size:1.15em;">
       Mean controls $\bar{D}^i(t)$ and mean state $\bar{X}(t)$
     </h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-equilibrium">Equilibrium</a> tab (top panel).
     </p>
     <p>
@@ -421,7 +478,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <h3 style="margin:22px 0 6px; font-size:1.15em;">
       Information wedge $\mathcal{V}^i(t,r)$
     </h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       Mean $\bar{V}^i(t)$ and full kernel $\mathcal{V}^i(t,r)$ on the
       <a href="#" class="guide-link" data-target="tab-equilibrium">Equilibrium</a> tab.
     </p>
@@ -447,7 +504,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     </p>
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Comparative statics</h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-statics">Statics</a> tab.
     </p>
     <p>
@@ -458,7 +515,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     </p>
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Precision allocation</h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-allocation">Allocation</a> tab.
     </p>
     <p>
@@ -474,7 +531,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     </p>
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Simulation</h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-simulation">Simulation</a> tab.
     </p>
     <p>
@@ -490,7 +547,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     </p>
 
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Diagnostics</h3>
-    <p style="font-style:italic; color:#555; margin-bottom:6px;">
+    <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-diagnostics">Diagnostics</a> tab.
     </p>
     <p>
@@ -642,8 +699,8 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
   </div>
 
   <div id="kern-filtration" class="subtab-panel">
-    <div id="fkernel-spike-notice" style="display:none; font-size:0.82em; color:#6b7280;
-         background:#f0f7ff; border-left:3px solid #1f77b4; border-radius:0 4px 4px 0;
+    <div id="fkernel-spike-notice" style="display:none; font-size:0.82em; color:var(--text-muted);
+         background:var(--notice-bg); border-left:3px solid #1f77b4; border-radius:0 4px 4px 0;
          padding:8px 14px; margin-bottom:12px; max-width:880px; line-height:1.5;">
       <strong>Note (CE mode):</strong> The discrete filtration kernel has a Dirac-delta singularity
       on the own-observation diagonal at $u=s$ (the player perfectly resolves their own innovation).
@@ -862,11 +919,11 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     </div>
   </div>
   <div id="diag-summary" style="max-width:700px; margin:20px auto; padding:14px 20px;
-       background:#fff; border:1px solid #dce0e6; border-radius:10px; font-size:0.9em;
-       line-height:1.7; color:#555; box-shadow:0 2px 8px rgba(0,0,0,0.06);"></div>
+       background:var(--card); border:1px solid var(--card-border); border-radius:10px; font-size:0.9em;
+       line-height:1.7; color:var(--text-muted); box-shadow:0 2px 8px var(--card-shadow);"></div>
   <div id="diag-projection" style="max-width:700px; margin:20px auto; padding:14px 20px;
-       background:#fff; border:1px solid #dce0e6; border-radius:10px; font-size:0.9em;
-       line-height:1.7; color:#555; box-shadow:0 2px 8px rgba(0,0,0,0.06);"></div>
+       background:var(--card); border:1px solid var(--card-border); border-radius:10px; font-size:0.9em;
+       line-height:1.7; color:var(--text-muted); box-shadow:0 2px 8px var(--card-shadow);"></div>
 </div>
 
 </div>
@@ -1126,23 +1183,56 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
 const plotCfg = {responsive: true, displayModeBar: false};
 const margin = {t: 40, b: 40, l: 55, r: 20};
 
-const baseLayout = {
-    font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', size: 12, color: '#444' },
-    paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: 'rgba(0,0,0,0)',
-    hoverlabel: { font: { family: 'monospace', size: 11 } },
-};
+function getThemeColors() {
+    const s = getComputedStyle(document.documentElement);
+    return {
+        font: s.getPropertyValue('--plot-font').trim() || '#444',
+        grid: s.getPropertyValue('--plot-grid').trim() || '#e8eaed',
+        line: s.getPropertyValue('--plot-line').trim() || '#ccc',
+    };
+}
+
+function getBaseLayout() {
+    const c = getThemeColors();
+    return {
+        font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', size: 12, color: c.font },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        hoverlabel: { font: { family: 'monospace', size: 11 } },
+    };
+}
+// Keep baseLayout as a getter for backwards compat in spread usage
+Object.defineProperty(window, 'baseLayout', { get: getBaseLayout });
 
 function styledAxes(n) {
+    const c = getThemeColors();
     const ax = {};
     for (let i = 1; i <= n; i++) {
-        ax['xaxis' + (i > 1 ? i : '')] = { gridcolor: '#e8eaed', gridwidth: 1,
-            zeroline: false, linecolor: '#ccc', linewidth: 1, tickfont: { size: 11 } };
-        ax['yaxis' + (i > 1 ? i : '')] = { gridcolor: '#e8eaed', gridwidth: 1,
-            zeroline: false, linecolor: '#ccc', linewidth: 1, tickfont: { size: 11 } };
+        ax['xaxis' + (i > 1 ? i : '')] = { gridcolor: c.grid, gridwidth: 1,
+            zeroline: false, linecolor: c.line, linewidth: 1, tickfont: { size: 11, color: c.font } };
+        ax['yaxis' + (i > 1 ? i : '')] = { gridcolor: c.grid, gridwidth: 1,
+            zeroline: false, linecolor: c.line, linewidth: 1, tickfont: { size: 11, color: c.font } };
     }
     return ax;
 }
+
+function toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.classList.toggle('dark');
+    localStorage.setItem('dark', isDark ? 'true' : 'false');
+    document.getElementById('theme-btn').textContent = isDark ? '\u263E' : '\u263C';
+    // Re-render active tab with new theme colors
+    if (typeof updateActive === 'function') {
+        for (const k in dirty) dirty[k] = true;
+        updateActive();
+    }
+}
+
+// Set initial icon
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('theme-btn');
+    if (btn) btn.textContent = document.documentElement.classList.contains('dark') ? '\u263E' : '\u263C';
+});
 
 function plotKernel(divId, t, kernelData, title) {
     const chLabels = ['$W^0$', '$W^1$', '$W^2$'];
