@@ -12,28 +12,9 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <exception>
 
 // Shared output buffer (grows as needed)
 static std::string g_output;
-static std::string g_last_error;
-static std::string g_last_stage;
-
-static void clear_last_error() {
-    g_last_error.clear();
-    g_last_stage.clear();
-}
-
-static void set_last_error(const char* stage, const std::exception& e) {
-    g_last_stage = stage ? stage : "unknown";
-    g_last_error = e.what();
-}
-
-static void set_last_error_unknown(const char* stage) {
-    g_last_stage = stage ? stage : "unknown";
-    g_last_error = "unknown non-std exception";
-}
-
 
 static void out(const char* fmt, ...) {
     char buf[256];
@@ -123,7 +104,6 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     // Invalidate cache FIRST — if anything below fails, we won't serve stale data
     g_cache.valid = false;
     g_cache.f_valid = false;
-    clear_last_error();
 
     SolverContext solve_ctx = SolverContext::capture_current();
     solve_ctx.b1 = b1;
@@ -133,71 +113,58 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     ScopedSolverContext guard(solve_ctx);
 
     try {
-        g_last_stage = "solve_equilibrium";
-        if (g_use_ce)
-            g_cache.eq = solve_equilibrium_ce(p1, p2, false);
-        else
-            g_cache.eq = solve_equilibrium(p1, p2, false);
 
-        g_last_stage = "backward_kernels_player1";
-        auto prec1_eq = make_constant_prec(p1 * p1);
-        auto prec2_eq = make_constant_prec(p2 * p2);
-        Kernel2D Hx1_tmp, Hx2_tmp;
-        backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
-                         prec2_eq, 0.0, Hx1_tmp, g_cache.Vkernel1);
+    // Solve equilibrium (standard or CE mode)
+    if (g_use_ce)
+        g_cache.eq = solve_equilibrium_ce(p1, p2, false);
+    else
+        g_cache.eq = solve_equilibrium(p1, p2, false);
 
-        g_last_stage = "backward_kernels_player2";
-        backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
-                         prec1_eq, 0.0, Hx2_tmp, g_cache.Vkernel2);
+    // Compute kernel information wedges V^i(t,r)
+    auto prec1_eq = make_constant_prec(p1 * p1);
+    auto prec2_eq = make_constant_prec(p2 * p2);
+    Kernel2D Hx1_tmp, Hx2_tmp;
+    backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
+                     prec2_eq, 0.0, Hx1_tmp, g_cache.Vkernel1);
+    backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
+                     prec1_eq, 0.0, Hx2_tmp, g_cache.Vkernel2);
 
-        g_last_stage = "solve_bar_equilibrium";
-        g_cache.bar = solve_bar_equilibrium(g_cache.eq.env, g_cache.eq.D1, g_cache.eq.D2,
-                                            p1*p1, p2*p2, 2000, 0.08, 1e-10);
+    // Bar solution, costs, wedges
+    g_cache.bar = solve_bar_equilibrium(g_cache.eq.env, g_cache.eq.D1, g_cache.eq.D2,
+                                         p1*p1, p2*p2, 2000, 0.08, 1e-10);
+    g_cache.costs = compute_costs_general(g_cache.eq.env, g_cache.eq.calD1, g_cache.eq.calD2,
+                                           g_cache.bar, r1, r2, b1, b2);
 
-        g_last_stage = "compute_costs_general";
-        g_cache.costs = compute_costs_general(g_cache.eq.env, g_cache.eq.calD1, g_cache.eq.calD2,
-                                              g_cache.bar, r1, r2, b1, b2);
-
-        auto prec1_arr = make_constant_prec(p1 * p1);
-        auto prec2_arr = make_constant_prec(p2 * p2);
-
-        g_last_stage = "backward_bar_adjoints_player1";
-        auto bba1 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
-                                          g_cache.bar.barX, b1, prec2_arr, 0.0);
-
-        g_last_stage = "backward_bar_adjoints_player2";
-        auto bba2 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
-                                          g_cache.bar.barX, b2, prec1_arr, 0.0);
-
-        g_last_stage = "compute_wedges";
-        g_cache.barHk1 = std::move(bba1.barHk);
-        g_cache.barHk2 = std::move(bba2.barHk);
-        for (int j = 0; j < g_n; ++j) {
-            double V1 = 0.0, V2 = 0.0;
-            for (int z = 0; z <= j; ++z) {
-                V1 += g_cache.eq.env.Xtilde2[j][z].dot(g_cache.barHk1[j][z]);
-                V2 += g_cache.eq.env.Xtilde1[j][z].dot(g_cache.barHk2[j][z]);
-            }
-            g_cache.V1[j] = V1 * p2 * p2 * g_dt;
-            g_cache.V2[j] = V2 * p1 * p1 * g_dt;
+    auto prec1_arr = make_constant_prec(p1 * p1);
+    auto prec2_arr = make_constant_prec(p2 * p2);
+    auto bba1 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
+                                       g_cache.bar.barX, b1, prec2_arr, 0.0);
+    auto bba2 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
+                                       g_cache.bar.barX, b2, prec1_arr, 0.0);
+    g_cache.barHk1 = std::move(bba1.barHk);
+    g_cache.barHk2 = std::move(bba2.barHk);
+    for (int j = 0; j < g_n; ++j) {
+        double V1 = 0.0, V2 = 0.0;
+        for (int z = 0; z <= j; ++z) {
+            V1 += g_cache.eq.env.Xtilde2[j][z].dot(g_cache.barHk1[j][z]);
+            V2 += g_cache.eq.env.Xtilde1[j][z].dot(g_cache.barHk2[j][z]);
         }
+        g_cache.V1[j] = V1 * p2 * p2 * g_dt;
+        g_cache.V2[j] = V2 * p1 * p1 * g_dt;
+    }
 
-        g_last_stage = "compute_perfect_info";
-        compute_perfect_info(b1, b2, g_cache.barD1_pi, g_cache.barD2_pi, g_cache.barX_pi);
+    compute_perfect_info(b1, b2, g_cache.barD1_pi, g_cache.barD2_pi, g_cache.barX_pi);
 
-        g_cache.p1 = p1; g_cache.p2 = p2;
-        g_cache.b1 = b1; g_cache.b2 = b2;
-        g_cache.r1 = r1; g_cache.r2 = r2;
-        g_cache.n = g_n; g_cache.T = g_T;
-        g_cache.ce_mode = g_use_ce;
-        g_cache.valid = true;
-        g_last_stage = "ok";
-    } catch (const std::exception& e) {
-        set_last_error(g_last_stage.c_str(), e);
-        g_cache.valid = false;
-        g_cache.f_valid = false;
+    g_cache.p1 = p1; g_cache.p2 = p2;
+    g_cache.b1 = b1; g_cache.b2 = b2;
+    g_cache.r1 = r1; g_cache.r2 = r2;
+    g_cache.n = g_n; g_cache.T = g_T;
+    g_cache.ce_mode = g_use_ce;
+    g_cache.valid = true;
+    // f_valid already false from top of function
+
     } catch (...) {
-        set_last_error_unknown(g_last_stage.c_str());
+        // Solver failed — leave cache invalid
         g_cache.valid = false;
         g_cache.f_valid = false;
     }
@@ -206,29 +173,19 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
 // Compute F kernel slices if not cached. Requires ensure_solve() first.
 static void ensure_f_kernel(double p1, double p2, double b1, double b2, double r1, double r2) {
     ensure_solve(p1, p2, b1, b2, r1, r2);
-    if (!g_cache.valid) return;
     if (g_cache.f_valid) return;
 
-    try {
-        g_last_stage = "compute_f_kernel";
-        const auto& env = g_cache.eq.env;
-        if (g_use_ce) {
-            g_cache.F1 = compute_ce_F_slice_at_T(env.X, env.obs_idx1, env.obs_gain1, Pi1());
-            g_cache.F2 = compute_ce_F_slice_at_T(env.X, env.obs_idx2, env.obs_gain2, Pi2());
-        } else {
-            g_cache.F1 = compute_F_slice_at_T(env.Xtilde1, env.A_store1,
-                                              env.obs_gain1, env.obs_idx1);
-            g_cache.F2 = compute_F_slice_at_T(env.Xtilde2, env.A_store2,
-                                              env.obs_gain2, env.obs_idx2);
-        }
-        g_cache.f_valid = true;
-    } catch (const std::exception& e) {
-        set_last_error(g_last_stage.c_str(), e);
-        g_cache.f_valid = false;
-    } catch (...) {
-        set_last_error_unknown(g_last_stage.c_str());
-        g_cache.f_valid = false;
+    const auto& env = g_cache.eq.env;
+    if (g_use_ce) {
+        g_cache.F1 = compute_ce_F_slice_at_T(env.X, env.obs_idx1, env.obs_gain1, Pi1());
+        g_cache.F2 = compute_ce_F_slice_at_T(env.X, env.obs_idx2, env.obs_gain2, Pi2());
+    } else {
+        g_cache.F1 = compute_F_slice_at_T(env.Xtilde1, env.A_store1,
+                                           env.obs_gain1, env.obs_idx1);
+        g_cache.F2 = compute_F_slice_at_T(env.Xtilde2, env.A_store2,
+                                           env.obs_gain2, env.obs_idx2);
     }
+    g_cache.f_valid = true;
 }
 
 // Serialize only the "light" data (bar solution, costs, wedges, residuals).
@@ -290,16 +247,6 @@ void wasm_set_ce_mode(int use_ce) {
     }
 }
 
-EMSCRIPTEN_KEEPALIVE
-const char* wasm_last_error() {
-    return g_last_error.c_str();
-}
-
-EMSCRIPTEN_KEEPALIVE
-const char* wasm_last_stage() {
-    return g_last_stage.c_str();
-}
-
 // Light solve: bar solution + costs + wedges + residuals. ~5KB JSON.
 // Used by Equilibrium tab and Diagnostics tab.
 EMSCRIPTEN_KEEPALIVE
@@ -307,7 +254,6 @@ const char* solve_light(double p1, double p2, double b1, double b2, double r1, d
     g_output.clear();
     g_output.reserve(8 * 1024);
     ensure_solve(p1, p2, b1, b2, r1, r2);
-    if (!g_cache.valid) return nullptr;
     serialize_light();
     return g_output.c_str();
 }
@@ -324,7 +270,6 @@ int full_kernel_count() { return 11; }
 EMSCRIPTEN_KEEPALIVE
 double* solve_full_bin(double p1, double p2, double b1, double b2, double r1, double r2) {
     ensure_solve(p1, p2, b1, b2, r1, r2);
-    if (!g_cache.valid) return nullptr;
 
     const int n = g_n;
     const int block = n * n;
@@ -494,7 +439,6 @@ static std::vector<double> g_fkernel_buf;
 EMSCRIPTEN_KEEPALIVE
 double* solve_f_kernel_bin(double p1, double p2, double b1, double b2, double r1, double r2) {
     ensure_f_kernel(p1, p2, b1, b2, r1, r2);  // cached — no re-solve if params match
-    if (!g_cache.f_valid) return nullptr;
 
     const int n = g_n;
     const int block = n * n;
