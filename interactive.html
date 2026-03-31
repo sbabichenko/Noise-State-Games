@@ -12,61 +12,64 @@ MathJax.Hub.Config({
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_SVG"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
        background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
-       transition: background 0.2s, color 0.2s; }
+       transition: background 0.4s ease, color 0.4s ease; }
 
 /* Theme variables */
 :root {
-  --bg: #f5f6f8; --text: #2d3436; --text-muted: #6b7280; --text-faint: #9ca3af;
-  --card: #fff; --card-border: #dce0e6; --card-shadow: rgba(0,0,0,0.06);
-  --pair-bg: #f8f9fb; --track: #dde1e7; --track-hover: #cdd1d7;
-  --border: #e0e3e8; --border-light: #e8eaed;
-  --caption-bg: #fafbfc; --status-bg: #eef0f3;
-  --subtab: #f0f1f4; --subtab-hover: #e4e6ea;
-  --tab-inactive: #a0a7b0; --tab-hover-bg: #f8f9fb;
-  --tab-active: #1a1a2e; --label: #666;
-  --input-bg: #fff; --input-border: #d0d4da;
-  --error-bg: #fdf0ef; --error-border: #e8c4c0; --error-text: #c0392b;
-  --notice-bg: #f0f7ff;
-  --plot-font: #444; --plot-grid: #e8eaed; --plot-line: #ccc;
+  --bg: #f5f2ec; --text: #1a1a2e; --text-muted: #52526a; --text-faint: #8888a0;
+  --card: #ffffff; --card-border: #e2ddd4; --card-shadow: rgba(26,26,46,0.06);
+  --pair-bg: #f9f7f3; --track: #d8d2c6; --track-hover: #c4bdb0;
+  --border: #ddd8ce; --border-light: #e8e3da;
+  --caption-bg: #faf8f4; --status-bg: #edeae3;
+  --subtab: #ece8e0; --subtab-hover: #e0dbd1;
+  --tab-inactive: #8e8ea4; --tab-hover-bg: rgba(26,26,46,0.03);
+  --tab-active: #1a1a2e; --label: #52526a;
+  --input-bg: #ffffff; --input-border: #d4cec3;
+  --error-bg: #fdf2f1; --error-border: #e8c4c0; --error-text: #b91c1c;
+  --notice-bg: #eef3ff;
+  --plot-font: #3a3a52; --plot-grid: #e8e3da; --plot-line: #d4cec3;
   --thumb-border: #fff;
+  --tab-accent: #b8860b;
 }
 html.dark {
-  --bg: #1F2022; --text: #e0e0e0; --text-muted: #9ca3af; --text-faint: #6b7280;
-  --card: #2a2b2e; --card-border: #3a3b3e; --card-shadow: rgba(0,0,0,0.3);
-  --pair-bg: #252628; --track: #3a3c40; --track-hover: #4a4c50;
-  --border: #3a3b3e; --border-light: #333;
-  --caption-bg: #252628; --status-bg: #252628;
-  --subtab: #2e3033; --subtab-hover: #3a3c40;
-  --tab-inactive: #6b7280; --tab-hover-bg: #2a2b2e;
-  --tab-active: #e0e0e0; --label: #9ca3af;
-  --input-bg: #2a2b2e; --input-border: #4a4c50;
-  --error-bg: #2d1f1f; --error-border: #5a3030; --error-text: #ef6b6b;
-  --notice-bg: #1a2535;
-  --plot-font: #bbb; --plot-grid: #333; --plot-line: #444;
-  --thumb-border: #2a2b2e;
+  --bg: #111115; --text: #e4e0d8; --text-muted: #9898ae; --text-faint: #5e5e76;
+  --card: #18181f; --card-border: #26263a; --card-shadow: rgba(0,0,0,0.35);
+  --pair-bg: #14141c; --track: #2e2e40; --track-hover: #3e3e54;
+  --border: #26263a; --border-light: #20202e;
+  --caption-bg: #14141c; --status-bg: #14141c;
+  --subtab: #1c1c28; --subtab-hover: #26263a;
+  --tab-inactive: #5e5e76; --tab-hover-bg: rgba(228,224,216,0.03);
+  --tab-active: #e4e0d8; --label: #8888a0;
+  --input-bg: #18181f; --input-border: #36364a;
+  --error-bg: #281818; --error-border: #4a2828; --error-text: #f87171;
+  --notice-bg: #161626;
+  --plot-font: #a8a498; --plot-grid: #26263a; --plot-line: #36364a;
+  --thumb-border: #18181f;
+  --tab-accent: #d4a843;
 }
 
 .container { max-width: 1400px; margin: 0 auto; padding: 12px 28px; }
 
-h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.04em;
-     text-transform: uppercase; margin: 10px 0 6px; color: var(--text-muted);
-     font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }
+h1 { text-align: center; font-size: 1.3em; font-weight: 400; letter-spacing: 0.08em;
+     text-transform: uppercase; margin: 14px 0 8px; color: var(--text);
+     font-family: 'DM Serif Display', Georgia, serif; opacity: 0.85; }
 
 /* Parameter card */
-.param-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px;
-              padding: 16px 22px 12px; margin-bottom: 10px;
-              box-shadow: 0 2px 8px var(--card-shadow), 0 0 0 1px rgba(0,0,0,0.02);
-              transition: background 0.2s, border-color 0.2s; }
+.param-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 14px;
+              padding: 20px 24px 14px; margin-bottom: 12px;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 20px var(--card-shadow);
+              transition: background 0.4s, border-color 0.4s, box-shadow 0.4s; }
 
 /* Sliders */
 .sliders { display: flex; gap: 12px; margin: 4px 0; flex-wrap: wrap; }
 .slider-pair { display: flex; gap: 20px; flex: 1; min-width: 380px;
-               background: var(--pair-bg); border-radius: 8px; padding: 10px 14px 8px;
-               transition: background 0.2s; }
+               background: var(--pair-bg); border-radius: 10px; padding: 12px 16px 10px;
+               border: 1px solid var(--border-light); transition: background 0.4s, border-color 0.4s; }
 .slider-pair-label { font-size: 0.68em; font-weight: 700; text-transform: uppercase;
                      letter-spacing: 0.08em; color: var(--text-faint); margin-bottom: 6px; }
 .slider-group { flex: 1; min-width: 170px; }
@@ -79,38 +82,40 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 .slider-row input[type=range]:hover { background: var(--track-hover); }
 .slider-row input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
-    background: #1f77b4; cursor: pointer; border: 2.5px solid var(--thumb-border);
-    box-shadow: 0 1px 4px rgba(31,119,180,0.35); transition: transform 0.12s, box-shadow 0.12s; }
+    background: var(--tab-active); cursor: pointer; border: 2.5px solid var(--thumb-border);
+    box-shadow: 0 1px 6px rgba(26,26,46,0.25); transition: transform 0.15s ease, box-shadow 0.15s ease; }
 .slider-row input[type=range]::-webkit-slider-thumb:hover {
-    transform: scale(1.12); box-shadow: 0 2px 8px rgba(31,119,180,0.4); }
-.slider-row input[type=range]::-webkit-slider-thumb:active { transform: scale(0.95); }
+    transform: scale(1.15); box-shadow: 0 2px 10px rgba(26,26,46,0.3); }
+.slider-row input[type=range]::-webkit-slider-thumb:active { transform: scale(0.92); }
 .slider-row input[type=range]::-moz-range-thumb {
-    width: 16px; height: 16px; border-radius: 50%; background: #1f77b4;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--tab-active);
     cursor: pointer; border: 2.5px solid var(--thumb-border);
-    box-shadow: 0 1px 4px rgba(31,119,180,0.35); }
+    box-shadow: 0 1px 6px rgba(26,26,46,0.25); }
 .slider-row input[type=range]::-moz-range-track {
     height: 5px; background: var(--track); border-radius: 3px; border: none; }
-.slider-row .val { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+.slider-row .val { font-family: 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace;
                    font-size: 0.85em; min-width: 3.5em; text-align: right;
                    color: #1f77b4; font-weight: 600; }
 .slider-row .val-p2 { color: #d62728; }
+.slider-row .val-neutral { color: var(--text); }
 
 /* More-parameters toggle */
-.more-toggle { text-align: center; margin: 6px 0 4px; }
+.more-toggle { text-align: center; margin: 8px 0 4px; }
 .more-toggle button { background: none; border: none; border-top: 1px solid var(--border-light);
-                       border-radius: 0; padding: 6px 18px; font-size: 0.75em; color: var(--text-faint);
-                       cursor: pointer; transition: all 0.15s; letter-spacing: 0.06em;
-                       text-transform: uppercase; font-weight: 700; width: 100%; }
-.more-toggle button:hover { color: var(--text-muted); background: var(--pair-bg); }
+                       border-radius: 0; padding: 9px 20px; font-size: 0.68em; color: var(--text-faint);
+                       cursor: pointer; transition: all 0.25s ease; letter-spacing: 0.1em;
+                       text-transform: uppercase; font-weight: 700; width: 100%;
+                       font-family: 'IBM Plex Mono', 'Fira Code', monospace; }
+.more-toggle button:hover { color: var(--tab-accent); background: var(--pair-bg); }
 
 /* Status strip */
-#status { text-align: left; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+#status { text-align: left; font-family: 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace;
           font-size: 0.73em; color: var(--text-muted); padding: 7px 16px; margin: 8px 0 4px;
           background: var(--status-bg); border-radius: 6px; letter-spacing: 0.01em;
-          border-left: 3px solid #16a085; transition: background 0.2s; }
+          border-left: 3px solid var(--tab-accent); transition: background 0.4s; }
 
 /* Error detail panel */
-#error-panel { display: none; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+#error-panel { display: none; font-family: 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace;
                font-size: 0.72em; color: var(--error-text); background: var(--error-bg);
                border: 1px solid var(--error-border);
                border-radius: 6px; padding: 10px 16px; margin: 4px 0 2px; text-align: left;
@@ -130,51 +135,59 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
            background: none; border: none; border-bottom: 2.5px solid transparent;
            color: var(--tab-inactive); transition: all 0.15s; }
 .tab-btn:hover { color: var(--text); background: var(--tab-hover-bg); }
-.tab-btn.active { color: var(--tab-active); border-bottom-color: #1f77b4; background: none; }
+.tab-btn.active { color: var(--tab-active); border-bottom-color: var(--tab-accent); background: none; }
 .tab-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px;
            align-self: center; flex-shrink: 0; }
 
 /* Content panels */
-.tab-panel { display: none; padding-top: 20px; }
-.tab-panel.active { display: block; }
+.tab-panel { display: none; padding-top: 22px; }
+.tab-panel.active { display: block; animation: tabFadeIn 0.3s ease; }
+@keyframes tabFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .figure-block { margin-bottom: 24px; }
-.figure-caption { text-align: left; font-size: 0.82em; color: var(--text-muted); line-height: 1.6;
-                   max-width: 880px; margin: 8px auto 0; padding: 8px 16px;
-                   background: var(--caption-bg); border-left: 3px solid var(--border);
-                   border-radius: 0 4px 4px 0; transition: background 0.2s; }
+.figure-caption { text-align: left; font-size: 0.82em; color: var(--text-muted); line-height: 1.65;
+                   max-width: 880px; margin: 10px auto 0; padding: 10px 18px;
+                   background: var(--caption-bg); border-left: 3px solid var(--tab-accent);
+                   border-radius: 0 6px 6px 0; transition: background 0.4s; }
 .plot { width: 100%; }
-#loading { text-align: center; padding: 50px; font-size: 1.15em; color: var(--text-faint); }
+#loading { text-align: center; padding: 60px; font-size: 1.05em; color: var(--text-faint);
+           font-family: 'IBM Plex Mono', 'Fira Code', monospace; letter-spacing: 0.04em;
+           animation: loadPulse 2s ease-in-out infinite; }
+@keyframes loadPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+/* Content headings */
+.tab-panel h2 { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; }
+.tab-panel h3 { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; }
 
 /* Subtabs */
 .subtab-btn { padding: 5px 14px; font-size: 0.78em; font-weight: 600; cursor: pointer;
               background: var(--subtab); border: none; border-radius: 5px;
               color: var(--text-muted); transition: all 0.15s; margin-right: 4px; margin-bottom: 6px; }
 .subtab-btn:hover { background: var(--subtab-hover); color: var(--text); }
-.subtab-btn.active { background: #1f77b4; color: #fff; }
+.subtab-btn.active { background: var(--tab-active); color: var(--card); }
 .subtab-panel { display: none; padding-top: 12px; }
 .subtab-panel.active { display: block; }
 
 /* Simulation controls (inside param-card) */
-#sim-resample { padding: 6px 20px; font-weight: 600; font-size: 0.82em; cursor: pointer;
-                background: #1f77b4; color: #fff; border: none; border-radius: 6px;
-                transition: all 0.15s; letter-spacing: 0.02em; }
-#sim-resample:hover { background: #1a65a0; box-shadow: 0 2px 6px rgba(31,119,180,0.25); }
+#sim-resample { padding: 7px 22px; font-weight: 600; font-size: 0.82em; cursor: pointer;
+                background: var(--tab-active); color: var(--card); border: none; border-radius: 7px;
+                transition: all 0.2s ease; letter-spacing: 0.02em; font-family: 'DM Sans', sans-serif; }
+#sim-resample:hover { opacity: 0.85; box-shadow: 0 2px 8px rgba(26,26,46,0.2); }
 #sim-resample:active { transform: scale(0.97); }
 #sim-npaths { width: 100px; vertical-align: middle; }
-#sim-seed { width: 70px; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+#sim-seed { width: 70px; font-family: 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace;
             font-size: 0.85em; padding: 3px 6px; border: 1px solid var(--input-border); border-radius: 4px;
             text-align: center; background: var(--input-bg); color: var(--text); }
-#sim-seed:focus { outline: none; border-color: #1f77b4; box-shadow: 0 0 0 2px rgba(31,119,180,0.15); }
+#sim-seed:focus { outline: none; border-color: var(--tab-accent); box-shadow: 0 0 0 2px rgba(184,134,11,0.2); }
 
 /* Impulse controls (match sim styling) */
 #impulse-channel, #rank-kernel-select { padding: 4px 10px; font-size: 0.85em;
     border: 1px solid var(--input-border); border-radius: 5px;
     background: var(--input-bg); color: var(--text); }
 #impulse-channel:focus, #rank-kernel-select:focus {
-    outline: none; border-color: #1f77b4; box-shadow: 0 0 0 2px rgba(31,119,180,0.15); }
+    outline: none; border-color: var(--tab-accent); box-shadow: 0 0 0 2px rgba(184,134,11,0.2); }
 
 /* Guide tab cross-links */
-.guide-link { color: #1f77b4; text-decoration: none; font-weight: 600; cursor: pointer; }
+.guide-link { color: var(--tab-accent); text-decoration: none; font-weight: 600; cursor: pointer; }
 .guide-link:hover { text-decoration: underline; }
 
 /* Mobile responsive */
@@ -192,11 +205,11 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 }
 
 /* Dark mode toggle */
-.theme-toggle { position: fixed; top: 12px; right: 16px; z-index: 100;
-                background: var(--card); border: 1px solid var(--card-border); border-radius: 8px;
-                padding: 5px 8px; cursor: pointer; font-size: 1.1em; line-height: 1;
-                box-shadow: 0 1px 4px var(--card-shadow); transition: all 0.2s; }
-.theme-toggle:hover { transform: scale(1.1); }
+.theme-toggle { position: fixed; top: 14px; right: 18px; z-index: 100;
+                background: var(--card); border: 1px solid var(--card-border); border-radius: 10px;
+                padding: 6px 9px; cursor: pointer; font-size: 1.15em; line-height: 1;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px var(--card-shadow); transition: all 0.3s ease; }
+.theme-toggle:hover { transform: scale(1.08); }
 </style>
 <script>
 // Dark mode: check localStorage (shared with main site) or system preference
@@ -292,14 +305,14 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <label>x&#x2080; (initial state)</label>
     <div class="slider-row">
       <input type="range" id="sl-x0" min="-3" max="3" step="0.1" value="0">
-      <span class="val" id="val-x0">0.0</span>
+      <span class="val val-neutral" id="val-x0">0.0</span>
     </div>
   </div>
   <div class="slider-group">
     <label>&#x3C3; (state noise)</label>
     <div class="slider-row">
       <input type="range" id="sl-sigma" min="0.1" max="5" step="0.1" value="1">
-      <span class="val" id="val-sigma">1.0</span>
+      <span class="val val-neutral" id="val-sigma">1.0</span>
     </div>
   </div>
 </div>
@@ -308,14 +321,14 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
     <label>N (grid points)</label>
     <div class="slider-row">
       <input type="range" id="sl-N" min="10" max="160" step="5" value="40">
-      <span class="val" id="val-N">40</span>
+      <span class="val val-neutral" id="val-N">40</span>
     </div>
   </div>
   <div class="slider-group">
     <label>T (time horizon)</label>
     <div class="slider-row">
       <input type="range" id="sl-T" min="0.25" max="5" step="0.25" value="1">
-      <span class="val" id="val-T">1.00</span>
+      <span class="val val-neutral" id="val-T">1.00</span>
     </div>
   </div>
   <div class="slider-group">
@@ -1219,25 +1232,25 @@ function getThemeColors() {
     const s = getComputedStyle(document.documentElement);
     const isDark = document.documentElement.classList.contains('dark');
     return {
-        font: s.getPropertyValue('--plot-font').trim() || '#444',
-        grid: s.getPropertyValue('--plot-grid').trim() || '#e8eaed',
-        line: s.getPropertyValue('--plot-line').trim() || '#ccc',
-        annotation: isDark ? '#aaa' : '#777',
-        title: isDark ? '#bbb' : '#555',
-        legendBg: isDark ? 'rgba(42,43,46,0.9)' : 'rgba(255,255,255,0.8)',
-        legendBorder: isDark ? '#444' : '#e0e0e0',
-        neutral: isDark ? '#ccc' : '#333',
-        neutralLight: isDark ? '#888' : '#999',
+        font: s.getPropertyValue('--plot-font').trim() || '#3a3a52',
+        grid: s.getPropertyValue('--plot-grid').trim() || '#e8e3da',
+        line: s.getPropertyValue('--plot-line').trim() || '#d4cec3',
+        annotation: isDark ? '#9898ae' : '#52526a',
+        title: isDark ? '#b0a898' : '#3a3a52',
+        legendBg: isDark ? 'rgba(24,24,31,0.92)' : 'rgba(255,255,255,0.88)',
+        legendBorder: isDark ? '#36364a' : '#e2ddd4',
+        neutral: isDark ? '#c8c0b4' : '#2a2a40',
+        neutralLight: isDark ? '#7a7a8e' : '#8888a0',
     };
 }
 
 function getBaseLayout() {
     const c = getThemeColors();
     return {
-        font: { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', size: 12, color: c.font },
+        font: { family: '"DM Sans", -apple-system, BlinkMacSystemFont, sans-serif', size: 12, color: c.font },
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
-        hoverlabel: { font: { family: 'monospace', size: 11 } },
+        hoverlabel: { font: { family: '"IBM Plex Mono", monospace', size: 11 } },
     };
 }
 // Keep baseLayout as a getter for backwards compat in spread usage
@@ -1398,8 +1411,8 @@ function plotWedges(divId, data) {
         annotations,
         xaxis: {...styledAxes(2).xaxis, title: {text: 't', font: {size: 11}}},
         xaxis2: {...styledAxes(2).xaxis2, title: {text: 't', font: {size: 11}}},
-        shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: '#ccc', width: 1}, xref: 'x1', yref: 'y1'},
-                 {type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: '#ccc', width: 1}, xref: 'x2', yref: 'y2'}],
+        shapes: [{type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: getThemeColors().line, width: 1}, xref: 'x1', yref: 'y1'},
+                 {type: 'line', x0: 0, x1: tmax, y0: 0, y1: 0, line: {dash: 'dot', color: getThemeColors().line, width: 1}, xref: 'x2', yref: 'y2'}],
     }, plotCfg);
 }
 
@@ -1449,8 +1462,8 @@ function plotFKernel(divId, t, fData, title, spikeInfo) {
                 showticklabels: true,
                 tickfont: {size: 9},
                 anchor: yRef,
-                gridcolor: '#e8eaed', gridwidth: 1, zeroline: false,
-                linecolor: '#ccc', linewidth: 1,
+                gridcolor: getThemeColors().grid, gridwidth: 1, zeroline: false,
+                linecolor: getThemeColors().line, linewidth: 1,
             };
             layout[yAxisKey] = {
                 domain: yd,
@@ -1458,8 +1471,8 @@ function plotFKernel(divId, t, fData, title, spikeInfo) {
                 showticklabels: true,
                 tickfont: {size: 9},
                 anchor: xRef,
-                gridcolor: '#e8eaed', gridwidth: 1, zeroline: false,
-                linecolor: '#ccc', linewidth: 1,
+                gridcolor: getThemeColors().grid, gridwidth: 1, zeroline: false,
+                linecolor: getThemeColors().line, linewidth: 1,
             };
             // Detect and clip CE diagonal spikes (Dirac delta at u=s on own-obs channel)
             const ceOn = document.getElementById('cb-ce-mode').checked;
@@ -1656,7 +1669,7 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
     // Single row: state | controls | unresolved
     const traces = [
         {x: tSlice, y: X_col, name: 'State X(t,s)',
-         line: {width: 2.5, color: '#333'}, xaxis: 'x1', yaxis: 'y1'},
+         line: {width: 2.5, color: getThemeColors().neutral}, xaxis: 'x1', yaxis: 'y1'},
         {x: tSlice, y: resolved1, name: 'P1 resolved',
          line: {width: 1.5, color: '#1f77b4', dash: 'dash'}, xaxis: 'x1', yaxis: 'y1'},
         {x: tSlice, y: resolved2, name: 'P2 resolved',
@@ -1680,11 +1693,11 @@ function plotImpulsePhysical(stateDiv, ctrlDiv, fullData, channel, sIdx) {
                  font: {size: 10}, bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1},
         annotations: [
             {text: `State + resolved \u2014 ${chNames[channel]} shock at s=${sTime}`,
-             xref:'paper', yref:'paper', x:1/6, y:1.08, showarrow:false, font:{size: 12, color: '#777'}},
+             xref:'paper', yref:'paper', x:1/6, y:1.08, showarrow:false, font:{size: 12, color: getThemeColors().annotation}},
             {text: 'Primitive controls', xref:'paper', yref:'paper',
-             x:0.5, y:1.08, showarrow:false, font:{size: 12, color: '#777'}},
+             x:0.5, y:1.08, showarrow:false, font:{size: 12, color: getThemeColors().annotation}},
             {text: 'Unresolved state', xref:'paper', yref:'paper',
-             x:5/6, y:1.08, showarrow:false, font:{size: 12, color: '#777'}},
+             x:5/6, y:1.08, showarrow:false, font:{size: 12, color: getThemeColors().annotation}},
         ],
     };
     impPhysLayout.xaxis.title = {text: 't', font: {size: 11}};
@@ -1828,7 +1841,7 @@ function plotImpulsePlayerSlices(divId, fullData, lightData, fkData, playerNum, 
             }
             traces.push({
                 x: uVals, y: col,
-                mode: 'lines', line: {color: '#333', width: 2},
+                mode: 'lines', line: {color: getThemeColors().neutral, width: 2},
                 name: `t = T`, showlegend: r === 0,
                 xaxis: 'x' + (r + 1), yaxis: 'y' + (r + 1),
             });
@@ -1998,11 +2011,11 @@ function plotRankAnalysis(svdDivId, tableDivId, fullData, kernelName) {
 
     // Table
     let html = '<table style="border-collapse:collapse; width:100%;">';
-    html += '<tr style="border-bottom:2px solid #ccc;">' +
+    html += '<tr style="border-bottom:2px solid var(--border);">' +
             '<th style="text-align:left; padding:4px 12px;">Channel</th>' +
             '<th>\u03C3\u2081</th><th>Rank (99%)</th><th>Rank (99.9%)</th></tr>';
     for (const r of tableRows) {
-        html += `<tr style="border-bottom:1px solid #eee;">` +
+        html += `<tr style="border-bottom:1px solid var(--border-light);">` +
                 `<td style="padding:4px 12px; font-weight:600;">${r.ch}</td>` +
                 `<td style="text-align:center;">${r.sv1}</td>` +
                 `<td style="text-align:center;">${r.r99}</td>` +
@@ -2443,7 +2456,7 @@ function plotAllocationCosts(divId, ad) {
         height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: 'Cost', font: { size: 11 } } },
-        title: { text: 'Individual equilibrium costs', font: { size: 13, color: '#555' }, y: 0.97 },
+        title: { text: 'Individual equilibrium costs', font: { size: 13, color: getThemeColors().title }, y: 0.97 },
         legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
                   bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1 },
     }, plotCfg);
@@ -2453,16 +2466,16 @@ function plotAllocationEffort(divId, ad) {
     const f = ad.fractions;
     const traces = [
         { x: f, y: ad.results.map(r => r.effortEq), name: 'Equilibrium',
-          mode: 'lines+markers', line: { width: 2, color: '#2d3436' }, marker: { size: 5 } },
+          mode: 'lines+markers', line: { width: 2, color: getThemeColors().neutral }, marker: { size: 5 } },
         { x: [f[0], f[f.length-1]], y: [ad.effortPI, ad.effortPI], name: 'Full-info',
-          mode: 'lines', line: { width: 1, dash: 'dash', color: '#999' } },
+          mode: 'lines', line: { width: 1, dash: 'dash', color: getThemeColors().neutralLight } },
     ];
     Plotly.react(divId, traces, {
         ...baseLayout, ...styledAxes(1),
         height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: '$\\int(r_1\\bar{D}_1^2 + r_2\\bar{D}_2^2)\\,dt$', font: { size: 11 } } },
-        title: { text: 'Total effort-weighted control cost', font: { size: 13, color: '#555' }, y: 0.97 },
+        title: { text: 'Total effort-weighted control cost', font: { size: 13, color: getThemeColors().title }, y: 0.97 },
         legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
                   bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1 },
     }, plotCfg);
@@ -2476,7 +2489,7 @@ function plotAllocationControls(divId, ad) {
         { x: f, y: ad.results.map(r => r.avgD2), name: '$\\bar{D}^2$ eq.',
           mode: 'lines+markers', line: { width: 2, color: '#d62728' }, marker: { size: 4 } },
         { x: f, y: ad.results.map(r => r.avgX), name: '$\\bar{X}$ eq.',
-          mode: 'lines+markers', line: { width: 2, color: '#333' }, marker: { size: 4 } },
+          mode: 'lines+markers', line: { width: 2, color: getThemeColors().neutral }, marker: { size: 4 } },
         { x: [f[0], f[f.length-1]], y: [ad.avgD1pi, ad.avgD1pi], name: '$\\bar{D}^1$ CE',
           mode: 'lines', line: { width: 1, dash: 'dot', color: '#1f77b4' } },
         { x: [f[0], f[f.length-1]], y: [ad.avgD2pi, ad.avgD2pi], name: '$\\bar{D}^2$ CE',
@@ -2487,7 +2500,7 @@ function plotAllocationControls(divId, ad) {
         height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: 'Mean control / state', font: { size: 11 } } },
-        title: { text: 'Time-averaged mean controls and state', font: { size: 13, color: '#555' }, y: 0.97 },
+        title: { text: 'Time-averaged mean controls and state', font: { size: 13, color: getThemeColors().title }, y: 0.97 },
         legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
                   bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1 },
     }, plotCfg);
@@ -2506,7 +2519,7 @@ function plotAllocationWedges(divId, ad) {
         height: plotH(320), margin: { t: 45, b: 45, l: 55, r: 15 },
         xaxis: { ...styledAxes(1).xaxis, title: { text: 'Fraction to player 1', font: { size: 11 } } },
         yaxis: { ...styledAxes(1).yaxis, title: { text: '$\\max_t |\\bar{V}^i(t)|$', font: { size: 11 } } },
-        title: { text: 'Peak information wedge magnitude', font: { size: 13, color: '#555' }, y: 0.97 },
+        title: { text: 'Peak information wedge magnitude', font: { size: 13, color: getThemeColors().title }, y: 0.97 },
         legend: { x: 0.5, y: 1.0, xanchor: 'center', orientation: 'h', font: { size: 10 },
                   bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1 },
     }, plotCfg);
@@ -2756,12 +2769,12 @@ function renderTab(tab, p) {
                             `<span style="color:${passColor(err1)}; font-weight:600;">${passLabel(err1)}</span><br>` +
                             `Player 2: $\\|(F^2+\\Pi^2)^2 - (F^2+\\Pi^2)\\|_F / \\|F^2+\\Pi^2\\|_F$ = ${err2.toExponential(2)} ` +
                             `<span style="color:${passColor(err2)}; font-weight:600;">${passLabel(err2)}</span><br>` +
-                            `<span style="font-size:0.88em; color:#888;">${projDesc}</span>`;
+                            `<span style="font-size:0.88em; color:var(--text-faint);">${projDesc}</span>`;
                         if (typeof MathJax !== 'undefined' && MathJax.Hub) {
                             MathJax.Hub.Queue(['Typeset', MathJax.Hub, projEl]);
                         }
                     } else {
-                        projEl.innerHTML = '<em style="color:#999;">Filtration projection check requires F-kernel computation (click Kernels tab first or wait).</em>';
+                        projEl.innerHTML = '<em style="color:var(--text-faint);">Filtration projection check requires F-kernel computation (click Kernels tab first or wait).</em>';
                     }
                 }
                 break;
