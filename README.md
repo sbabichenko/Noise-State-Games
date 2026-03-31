@@ -28,10 +28,9 @@ C++ solver code). Sliders control all game parameters in real time:
 source /path/to/emsdk/emsdk_env.sh
 em++ -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","UTF8ToString"]' \
      -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME=SolverModule \
-     -s SINGLE_FILE_BINARY_ENCODE=0 \
      -I/path/to/eigen3 \
      wasm_solver.cpp lqg_solver.cpp -o solver.js
-python3 build_html.py   # copies interactive_template.html -> interactive.html (solver.js stays external)
+python3 build_html.py   # inlines solver.js into interactive_template.html
 ```
 
 ## Figure generation (native C++)
@@ -43,16 +42,6 @@ cmake .. && make -j$(nproc)
 cd .. && ./build/generate_figures   # writes CSV to data/
 python3 plot_figures.py             # renders Figures 3-12 as PDF
 ```
-
-If CMake cannot find Eigen (`Eigen3Config.cmake`), set one of:
-
-```bash
-cmake -S . -B build -DEigen3_DIR=/path/to/eigen/share/eigen3/cmake
-# or
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/prefix
-```
-
-On Debian/Ubuntu: `sudo apt-get install libeigen3-dev`.
 
 ## Project structure
 
@@ -80,12 +69,6 @@ Build & config
   CMakeLists.txt           CMake build configuration (C++17, Eigen3, OpenMP)
   data/                    generated CSV files (created by generate_figures)
 ```
-
-### `solve_interactive` output modes
-
-- `single`: full JSON including all kernels (larger payload; best for analysis/debugging).
-- `single_light`: compact JSON with residuals, bar paths, wedges, and costs (faster for UI loops).
-- `sweep`: per-`p2` comparative statics payload.
 
 ## Algorithm overview
 

@@ -5,15 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Eigen3 dependency
-find_package(Eigen3 QUIET NO_MODULE)
-if(NOT Eigen3_FOUND)
-    message(FATAL_ERROR
-        "Eigen3 not found.\n"
-        "Install Eigen 3.3+ and/or set one of:\n"
-        "  - CMAKE_PREFIX_PATH=<prefix containing Eigen3Config.cmake>\n"
-        "  - Eigen3_DIR=<dir containing Eigen3Config.cmake>\n"
-        "On Debian/Ubuntu: sudo apt-get install libeigen3-dev")
-endif()
+find_package(Eigen3 REQUIRED NO_MODULE)
 
 # OpenMP (optional — graceful fallback if unavailable)
 find_package(OpenMP)
