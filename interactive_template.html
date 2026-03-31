@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LQG Noise-State Game Explorer</title>
+<title>Noise-State Game Explorer</title>
 <script type="text/x-mathjax-config">
 MathJax.Hub.Config({
   tex2jax: {inlineMath: [['$','$']], displayMath: [['$$','$$']]},
@@ -16,19 +16,24 @@ MathJax.Hub.Config({
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
        background: #f5f6f8; color: #2d3436; -webkit-font-smoothing: antialiased; }
-.container { max-width: 1400px; margin: 0 auto; padding: 16px 24px; }
+.container { max-width: 1400px; margin: 0 auto; padding: 12px 28px; }
 
-h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.01em;
-     margin: 14px 0 8px; color: #1a1a2e; }
+h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.04em;
+     text-transform: uppercase; margin: 10px 0 6px; color: #5a6270;
+     font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }
 
 /* Parameter card */
-.param-card { background: #fff; border: 1px solid #e0e3e8; border-radius: 10px;
-              padding: 14px 20px 10px; margin-bottom: 8px;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.param-card { background: #fff; border: 1px solid #dce0e6; border-radius: 12px;
+              padding: 16px 22px 12px; margin-bottom: 10px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.02); }
 
 /* Sliders */
-.sliders { display: flex; gap: 24px; margin: 6px 0; flex-wrap: wrap; }
-.slider-group { flex: 1; min-width: 200px; }
+.sliders { display: flex; gap: 12px; margin: 4px 0; flex-wrap: wrap; }
+.slider-pair { display: flex; gap: 20px; flex: 1; min-width: 380px;
+               background: #f8f9fb; border-radius: 8px; padding: 10px 14px 8px; }
+.slider-pair-label { font-size: 0.68em; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: 0.08em; color: #9ca3af; margin-bottom: 6px; }
+.slider-group { flex: 1; min-width: 170px; }
 .slider-group label { font-size: 0.78em; font-weight: 600; display: block;
                       margin-bottom: 4px; color: #666; letter-spacing: 0.02em; }
 .slider-row { display: flex; align-items: center; gap: 10px; }
@@ -52,18 +57,21 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 .slider-row .val { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
                    font-size: 0.85em; min-width: 3.5em; text-align: right;
                    color: #1f77b4; font-weight: 600; }
+.slider-row .val-p2 { color: #d62728; }
 
 /* More-parameters toggle */
-.more-toggle { text-align: center; margin: 8px 0 4px; }
-.more-toggle button { background: none; border: 1px solid #d0d4da; border-radius: 6px;
-                       padding: 4px 18px; font-size: 0.78em; color: #888;
-                       cursor: pointer; transition: all 0.15s; letter-spacing: 0.02em; }
-.more-toggle button:hover { background: #f0f1f3; border-color: #b0b4ba; color: #555; }
+.more-toggle { text-align: center; margin: 6px 0 4px; }
+.more-toggle button { background: none; border: none; border-top: 1px solid #e8eaed;
+                       border-radius: 0; padding: 6px 18px; font-size: 0.75em; color: #9ca3af;
+                       cursor: pointer; transition: all 0.15s; letter-spacing: 0.06em;
+                       text-transform: uppercase; font-weight: 700; width: 100%; }
+.more-toggle button:hover { color: #6b7280; background: #f8f9fb; }
 
 /* Status strip */
-#status { text-align: center; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-          font-size: 0.73em; color: #8a9099; padding: 7px 16px; margin: 6px 0 2px;
-          background: #eef0f2; border-radius: 6px; letter-spacing: 0.01em; }
+#status { text-align: left; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+          font-size: 0.73em; color: #6b7280; padding: 7px 16px; margin: 8px 0 4px;
+          background: #eef0f3; border-radius: 6px; letter-spacing: 0.01em;
+          border-left: 3px solid #16a085; }
 
 /* Error detail panel */
 #error-panel { display: none; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
@@ -79,28 +87,32 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 
 /* Tab bar */
 .tab-bar { display: flex; gap: 0; border-bottom: 2px solid #e0e3e8;
-           margin-top: 10px; flex-wrap: wrap; }
-.tab-btn { padding: 10px 20px; font-size: 0.88em; font-weight: 600; cursor: pointer;
+           margin-top: 12px; flex-wrap: wrap; align-items: flex-end; }
+.tab-btn { padding: 9px 16px; font-size: 0.82em; font-weight: 600; cursor: pointer;
            background: none; border: none; border-bottom: 2.5px solid transparent;
-           color: #999; transition: all 0.15s; }
-.tab-btn:hover { color: #555; }
-.tab-btn.active { color: #1a1a2e; border-bottom-color: #1f77b4; }
+           color: #a0a7b0; transition: all 0.15s; }
+.tab-btn:hover { color: #555; background: #f8f9fb; }
+.tab-btn.active { color: #1a1a2e; border-bottom-color: #1f77b4; background: none; }
+.tab-sep { width: 1px; height: 18px; background: #dde1e7; margin: 0 4px;
+           align-self: center; flex-shrink: 0; }
 
 /* Content panels */
-.tab-panel { display: none; padding-top: 18px; }
+.tab-panel { display: none; padding-top: 20px; }
 .tab-panel.active { display: block; }
-.figure-block { margin-bottom: 32px; }
-.figure-caption { text-align: center; font-size: 0.82em; color: #6b7280; line-height: 1.5;
-                   max-width: 880px; margin: 6px auto 0; padding: 0 20px; }
+.figure-block { margin-bottom: 24px; }
+.figure-caption { text-align: left; font-size: 0.82em; color: #6b7280; line-height: 1.6;
+                   max-width: 880px; margin: 8px auto 0; padding: 8px 16px;
+                   background: #fafbfc; border-left: 3px solid #e0e3e8;
+                   border-radius: 0 4px 4px 0; }
 .plot { width: 100%; }
 #loading { text-align: center; padding: 50px; font-size: 1.15em; color: #aaa; }
 
 /* Subtabs */
-.subtab-btn { padding: 6px 16px; font-size: 0.82em; font-weight: 600; cursor: pointer;
-              background: none; border: none; border-bottom: 2px solid transparent;
-              color: #999; transition: all 0.15s; }
-.subtab-btn:hover { color: #555; }
-.subtab-btn.active { color: #1a1a2e; border-bottom-color: #1f77b4; }
+.subtab-btn { padding: 5px 14px; font-size: 0.78em; font-weight: 600; cursor: pointer;
+              background: #f0f1f4; border: none; border-radius: 5px;
+              color: #888; transition: all 0.15s; margin-right: 4px; margin-bottom: 6px; }
+.subtab-btn:hover { background: #e4e6ea; color: #555; }
+.subtab-btn.active { background: #1f77b4; color: #fff; }
 .subtab-panel { display: none; padding-top: 12px; }
 .subtab-panel.active { display: block; }
 
@@ -125,19 +137,11 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 /* Guide tab cross-links */
 .guide-link { color: #1f77b4; text-decoration: none; font-weight: 600; cursor: pointer; }
 .guide-link:hover { text-decoration: underline; }
-
-/* Allocation preset buttons */
-.alloc-preset { padding: 4px 14px; font-size: 0.78em; font-weight: 600;
-                cursor: pointer; background: #f5f6f8; color: #666;
-                border: 1px solid #d0d4da; border-radius: 5px;
-                transition: all 0.15s; }
-.alloc-preset:hover { background: #e8eaed; border-color: #b0b4ba; }
-.alloc-preset.active { background: #1f77b4; color: #fff; border-color: #1f77b4; }
 </style>
 </head>
 <body>
 <div class="container">
-<h1>Decentralized LQG Noise-State Game Explorer</h1>
+<h1>Noise-State Game Explorer</h1>
 <div id="loading">Loading solver (WASM)...</div>
 
 <div id="app" style="display:none">
@@ -145,18 +149,46 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 <div class="param-card">
 <!-- Primary sliders (always visible) -->
 <div class="sliders">
-  <div class="slider-group">
-    <label>p&#x2081; (player 1 root-precision)</label>
-    <div class="slider-row">
-      <input type="range" id="sl-p1" min="0.5" max="20" step="0.5" value="3">
-      <span class="val" id="val-p1">3.0</span>
+  <div class="slider-pair">
+    <div style="width:100%;">
+      <div class="slider-pair-label">Signal precision</div>
+      <div style="display:flex; gap:20px; flex-wrap:wrap;">
+        <div class="slider-group">
+          <label>p&#x2081; (player 1)</label>
+          <div class="slider-row">
+            <input type="range" id="sl-p1" min="0.5" max="20" step="0.5" value="3">
+            <span class="val" id="val-p1">3.0</span>
+          </div>
+        </div>
+        <div class="slider-group">
+          <label>p&#x2082; (player 2)</label>
+          <div class="slider-row">
+            <input type="range" id="sl-p2" min="0.5" max="20" step="0.5" value="3">
+            <span class="val val-p2" id="val-p2">3.0</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="slider-group">
-    <label>p&#x2082; (player 2 root-precision)</label>
-    <div class="slider-row">
-      <input type="range" id="sl-p2" min="0.5" max="20" step="0.5" value="3">
-      <span class="val" id="val-p2">3.0</span>
+  <div class="slider-pair">
+    <div style="width:100%;">
+      <div class="slider-pair-label">Control cost</div>
+      <div style="display:flex; gap:20px; flex-wrap:wrap;">
+        <div class="slider-group">
+          <label>r&#x2081; (player 1)</label>
+          <div class="slider-row">
+            <input type="range" id="sl-r1" min="0.01" max="1" step="0.01" value="0.1">
+            <span class="val" id="val-r1">0.10</span>
+          </div>
+        </div>
+        <div class="slider-group">
+          <label>r&#x2082; (player 2)</label>
+          <div class="slider-row">
+            <input type="range" id="sl-r2" min="0.01" max="1" step="0.01" value="0.1">
+            <span class="val val-p2" id="val-r2">0.10</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -170,20 +202,6 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 <div id="more-params" style="display:none">
 <div class="sliders">
   <div class="slider-group">
-    <label>r&#x2081; (player 1 control cost)</label>
-    <div class="slider-row">
-      <input type="range" id="sl-r1" min="0.01" max="1" step="0.01" value="0.1">
-      <span class="val" id="val-r1">0.10</span>
-    </div>
-  </div>
-  <div class="slider-group">
-    <label>r&#x2082; (player 2 control cost)</label>
-    <div class="slider-row">
-      <input type="range" id="sl-r2" min="0.01" max="1" step="0.01" value="0.1">
-      <span class="val" id="val-r2">0.10</span>
-    </div>
-  </div>
-  <div class="slider-group">
     <label>b&#x2081; (player 1 target)</label>
     <div class="slider-row">
       <input type="range" id="sl-b1" min="-3" max="3" step="0.1" value="1">
@@ -194,7 +212,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <label>b&#x2082; (player 2 target)</label>
     <div class="slider-row">
       <input type="range" id="sl-b2" min="-3" max="3" step="0.1" value="-1">
-      <span class="val" id="val-b2">-1.0</span>
+      <span class="val val-p2" id="val-b2">-1.0</span>
     </div>
   </div>
 </div>
@@ -231,12 +249,15 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="tab-model">Model</button>
   <button class="tab-btn" data-tab="tab-guide">Guide</button>
+  <span class="tab-sep"></span>
   <button class="tab-btn" data-tab="tab-equilibrium">Equilibrium</button>
   <button class="tab-btn" data-tab="tab-simulation">Simulation</button>
   <button class="tab-btn" data-tab="tab-kernels">Kernels</button>
   <button class="tab-btn" data-tab="tab-impulse">Impulse</button>
+  <span class="tab-sep"></span>
   <button class="tab-btn" data-tab="tab-statics">Statics</button>
   <button class="tab-btn" data-tab="tab-allocation">Allocation</button>
+  <span class="tab-sep"></span>
   <button class="tab-btn" data-tab="tab-diagnostics">Diagnostics</button>
 </div>
 
@@ -514,8 +535,8 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:2px 0;">
       <button id="sim-resample">Resample</button>
       <label style="font-size:0.82em; font-weight:600; color:#666;">
-        Paths: <input type="range" id="sim-npaths" min="1" max="30" value="5" style="vertical-align:middle; width:100px;">
-        <span id="sim-npaths-val">5</span>
+        Paths: <input type="range" id="sim-npaths" min="1" max="30" value="1" style="vertical-align:middle; width:100px;">
+        <span id="sim-npaths-val">1</span>
       </label>
       <label style="font-size:0.82em; font-weight:600; color:#666;">
         <input type="checkbox" id="sim-bands" checked style="vertical-align:middle;"> Show &#xB1;2&#x3C3; bands
@@ -555,7 +576,7 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     All kernel plots show three sub-panels for noise channels $W^0$ (system), $W^1$ (player 1 obs.),
     $W^2$ (player 2 obs.). Curves colored by evaluation time $t$ (purple $\to$ yellow = early $\to$ late).
   </p>
-  <div style="border-bottom:1px solid #ddd; margin-bottom:10px;">
+  <div style="display:flex; flex-wrap:wrap; gap:2px; margin-bottom:12px; padding:6px 0;">
     <button class="subtab-btn active" data-subtab="kern-state" data-group="kernels">State</button>
     <button class="subtab-btn" data-subtab="kern-feedback" data-group="kernels">Feedback</button>
     <button class="subtab-btn" data-subtab="kern-controls" data-group="kernels">Controls</button>
@@ -621,6 +642,14 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
   </div>
 
   <div id="kern-filtration" class="subtab-panel">
+    <div id="fkernel-spike-notice" style="display:none; font-size:0.82em; color:#6b7280;
+         background:#f0f7ff; border-left:3px solid #1f77b4; border-radius:0 4px 4px 0;
+         padding:8px 14px; margin-bottom:12px; max-width:880px; line-height:1.5;">
+      <strong>Note (CE mode):</strong> The discrete filtration kernel has a Dirac-delta singularity
+      on the own-observation diagonal at $u=s$ (the player perfectly resolves their own innovation).
+      <span id="fkernel-spike-detail"></span>
+      The plots below clip these points so the remaining structure is visible.
+    </div>
     <div class="figure-block">
       <div id="plot-F1" class="plot"></div>
       <div class="figure-caption">
@@ -684,28 +713,30 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
 
 <!-- Tab 2.5: Impulse Response -->
 <div id="tab-impulse" class="tab-panel">
-  <p style="font-size:0.92em; color:#555; max-width:880px; margin:0 auto 12px; line-height:1.6; text-align:center;">
+  <div class="figure-caption" style="margin-bottom:14px;">
     A unit shock hits noise channel $W^r$ at source time $s$. The panels below show how it
     propagates through the physical state, each player's controls, and their information sets.
-  </p>
-  <div style="display:flex; gap:24px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
-    <div>
-      <label style="font-weight:600; font-size:0.85em;">Shock source:</label>
-      <select id="impulse-channel" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
-        <option value="0">W&#x2070; (common noise)</option>
-        <option value="1">W&#xB9; (player 1 obs.)</option>
-        <option value="2">W&#xB2; (player 2 obs.)</option>
-      </select>
-    </div>
-    <div class="slider-group" style="min-width:250px; max-width:400px;">
-      <label style="font-weight:600; font-size:0.85em;">Shock time $s$</label>
-      <div class="slider-row">
-        <input type="range" id="impulse-s" min="0" max="39" step="1" value="0">
-        <span id="impulse-s-val" style="font-family:'SF Mono','Cascadia Code','Fira Code',monospace; font-size:0.85em; min-width:3.5em; text-align:right; color:#1f77b4; font-weight:600;">0.000</span>
+  </div>
+  <div class="param-card" style="margin-bottom:14px;">
+    <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap; padding:2px 0;">
+      <div>
+        <label style="font-weight:600; font-size:0.85em;">Shock source:</label>
+        <select id="impulse-channel" style="margin-left:5px; padding:3px 8px; font-size:0.9em;">
+          <option value="0">W&#x2070; (common noise)</option>
+          <option value="1">W&#xB9; (player 1 obs.)</option>
+          <option value="2">W&#xB2; (player 2 obs.)</option>
+        </select>
+      </div>
+      <div class="slider-group" style="min-width:250px; max-width:400px;">
+        <label style="font-weight:600; font-size:0.85em;">Shock time $s$</label>
+        <div class="slider-row">
+          <input type="range" id="impulse-s" min="0" max="39" step="1" value="0">
+          <span id="impulse-s-val" style="font-family:'SF Mono','Cascadia Code','Fira Code',monospace; font-size:0.85em; min-width:3.5em; text-align:right; color:#1f77b4; font-weight:600;">0.000</span>
+        </div>
       </div>
     </div>
   </div>
-  <div class="tab-bar" style="margin-top:0; border-bottom-width:1px;">
+  <div style="display:flex; flex-wrap:wrap; gap:2px; margin-bottom:12px; padding:6px 0;">
     <button class="subtab-btn active" data-subtab="imp-physical" data-group="impulse">Physical State</button>
     <button class="subtab-btn" data-subtab="imp-player1" data-group="impulse">Player 1</button>
     <button class="subtab-btn" data-subtab="imp-player2" data-group="impulse">Player 2</button>
@@ -790,12 +821,6 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
           <span class="val" id="val-Pbar">20</span>
         </div>
       </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <span style="font-size:0.82em; font-weight:600; color:#666;">Cost preset:</span>
-        <button class="alloc-preset" data-r1="0.05" data-r2="0.2">r&#x2081;=0.05, r&#x2082;=0.2</button>
-        <button class="alloc-preset" data-r1="0.08" data-r2="0.15">r&#x2081;=0.08, r&#x2082;=0.15</button>
-        <button class="alloc-preset" data-r1="0.1" data-r2="0.1">r&#x2081;=r&#x2082;=0.1</button>
-      </div>
     </div>
   </div>
   <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -837,11 +862,11 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
     </div>
   </div>
   <div id="diag-summary" style="max-width:700px; margin:20px auto; padding:14px 20px;
-       background:#fff; border:1px solid #e0e3e8; border-radius:8px; font-size:0.9em;
-       line-height:1.7; color:#555;"></div>
+       background:#fff; border:1px solid #dce0e6; border-radius:10px; font-size:0.9em;
+       line-height:1.7; color:#555; box-shadow:0 2px 8px rgba(0,0,0,0.06);"></div>
   <div id="diag-projection" style="max-width:700px; margin:20px auto; padding:14px 20px;
-       background:#fff; border:1px solid #e0e3e8; border-radius:8px; font-size:0.9em;
-       line-height:1.7; color:#555;"></div>
+       background:#fff; border:1px solid #dce0e6; border-radius:10px; font-size:0.9em;
+       line-height:1.7; color:#555; box-shadow:0 2px 8px rgba(0,0,0,0.06);"></div>
 </div>
 
 </div>
@@ -1244,8 +1269,9 @@ function plotWedges(divId, data) {
     }, plotCfg);
 }
 
-function plotFKernel(divId, t, fData, title) {
+function plotFKernel(divId, t, fData, title, spikeInfo) {
     // fData has keys "r0c0" through "r2c2", each an NxN array
+    // spikeInfo: optional array to collect {row, col, u, s, value} of clipped spikes
     const traces = [];
     const annotations = [];
     const viridis = makeViridis(N);
@@ -1301,13 +1327,39 @@ function plotFKernel(divId, t, fData, title) {
                 gridcolor: '#e8eaed', gridwidth: 1, zeroline: false,
                 linecolor: '#ccc', linewidth: 1,
             };
+            // Detect and clip CE diagonal spikes (Dirac delta at u=s on own-obs channel)
+            const ceOn = document.getElementById('cb-ce-mode').checked;
+            const isDiag = (row === col);
+            let clippedY = null;
+            if (ceOn && isDiag) {
+                // Find the spike threshold: values beyond 5x the non-diagonal-peak range
+                let maxAbs = 0;
+                for (let ui = 0; ui < N; ui++) {
+                    for (let si = 0; si < N; si++) {
+                        if (ui !== si) maxAbs = Math.max(maxAbs, Math.abs(z[ui][si]));
+                    }
+                }
+                const clipThresh = Math.max(maxAbs * 5, 1);
+                // Build clipped copies for rows where u=s spike exists
+                clippedY = {};
+                for (let ui = 0; ui < N; ui += step) {
+                    if (Math.abs(z[ui][ui]) > clipThresh) {
+                        const yClipped = z[ui].slice();
+                        if (spikeInfo) spikeInfo.push({row, col, u: ui, value: z[ui][ui]});
+                        yClipped[ui] = null; // null = gap in Plotly trace
+                        clippedY[ui] = yClipped;
+                    }
+                }
+            }
             for (let ui = 0; ui < N; ui += step) {
+                const yData = (clippedY && clippedY[ui]) || z[ui];
                 traces.push({
-                    x: t, y: z[ui],
+                    x: t, y: yData,
                     mode: 'lines', line: {color: viridis[ui], width: 1.2},
                     showlegend: false,
                     xaxis: xRef, yaxis: yRef,
                     hovertemplate: `u=${t[ui].toFixed(3)}<br>s=%{x:.3f}<br>val=%{y:.4g}`,
+                    connectgaps: false,
                 });
             }
             annotations.push({
@@ -2407,8 +2459,18 @@ function renderTab(tab, p) {
                 }
                 const fk = ensureFKernel(p);
                 if (fk) {
-                    plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$`);
-                    plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$`);
+                    const spikes = [];
+                    plotFKernel('plot-F1', fk.t, fk.F1, `Player 1 Filtration $F^1(T,u,s)$`, spikes);
+                    plotFKernel('plot-F2', fk.t, fk.F2, `Player 2 Filtration $F^2(T,u,s)$`, spikes);
+                    const noticeEl = document.getElementById('fkernel-spike-notice');
+                    if (spikes.length > 0) {
+                        const maxSpike = spikes.reduce((a, b) => Math.abs(a.value) > Math.abs(b.value) ? a : b);
+                        document.getElementById('fkernel-spike-detail').textContent =
+                            `Peak spike: ${maxSpike.value.toFixed(1)} (= -1/dt, diverges with N).`;
+                        noticeEl.style.display = 'block';
+                    } else {
+                        noticeEl.style.display = 'none';
+                    }
                 }
                 const selKernel = document.getElementById('rank-kernel-select').value;
                 plotRankAnalysis('plot-svd', 'rank-table', data, selKernel);
@@ -2495,7 +2557,7 @@ function renderTab(tab, p) {
                         `Final relative residual: ${finalResid}<br>` +
                         `Status: ${convergedStr}<br>` +
                         `Grid: N=${p.N}, T=${p.T}<br>` +
-                        `Equilibrium costs: J\u00B9 = ${data.J1.toFixed(6)}, J\u00B2 = ${data.J2.toFixed(6)}`;
+                        `Equilibrium costs: J\u00B9 = ${data.J1 != null ? data.J1.toFixed(6) : '?'}, J\u00B2 = ${data.J2 != null ? data.J2.toFixed(6) : '?'}`;
                 }
                 // Projection check: (F^i + Pi^i)^2 = F^i + Pi^i
                 const projEl = document.getElementById('diag-projection');
@@ -2616,7 +2678,7 @@ function updateActive() {
                     ? ` | resid=${lastResid.toExponential(2)}` : '';
                 statusEl.textContent =
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
-                    `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
+                    `${data.n_iters} iters | J\u00B9=${data.J1 != null ? data.J1.toFixed(4) : '?'} J\u00B2=${data.J2 != null ? data.J2.toFixed(4) : '?'} | ` +
                     `${totalMs.toFixed(0)}ms${ceTag}${finalResid}${warn}`;
                 statusEl.style.color = data.converged === false ? '#d62728' : '';
                 // Show detailed convergence warning panel if not converged
@@ -2767,15 +2829,6 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         dirty['tab-allocation'] = true;
         allocData = null;
         if (activeTab === 'tab-allocation') updateActive();
-    });
-    document.querySelectorAll('.alloc-preset').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.getElementById('sl-r1').value = this.dataset.r1;
-            document.getElementById('sl-r2').value = this.dataset.r2;
-            document.querySelectorAll('.alloc-preset').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            onSliderChange();
-        });
     });
 
     // Rank kernel selector — re-render the rank subtab
