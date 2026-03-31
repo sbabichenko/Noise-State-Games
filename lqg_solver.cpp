@@ -23,9 +23,10 @@ double g_b2 = B2_DEFAULT;
 double g_r1 = RHO;
 double g_r2 = RHO;
 double g_sigma = 1.0;
+double g_x0 = 0.0;
 
 SolverContext SolverContext::capture_current() {
-    return SolverContext{g_n, g_T, g_b1, g_b2, g_r1, g_r2, g_sigma};
+    return SolverContext{g_n, g_T, g_b1, g_b2, g_r1, g_r2, g_sigma, g_x0};
 }
 
 void SolverContext::apply() const {
@@ -35,6 +36,7 @@ void SolverContext::apply() const {
     g_r1 = r1;
     g_r2 = r2;
     g_sigma = sigma;
+    g_x0 = x0;
 }
 
 ScopedSolverContext::ScopedSolverContext(const SolverContext& next)
@@ -605,7 +607,7 @@ BarSolution solve_bar_equilibrium(
 
     for (int it = 1; it <= max_iters; ++it) {
         std::array<double, N_MAX> barX;
-        barX[0] = X0;
+        barX[0] = g_x0;
         for (int j = 0; j < g_n - 1; ++j)
             barX[j + 1] = barX[j] + g_dt * (barD1[j] + barD2[j]);
 
@@ -644,7 +646,7 @@ BarSolution solve_bar_equilibrium(
     }
 
     BarSolution sol;
-    sol.barX[0] = X0;
+    sol.barX[0] = g_x0;
     for (int j = 0; j < g_n - 1; ++j)
         sol.barX[j + 1] = sol.barX[j] + g_dt * (barD1[j] + barD2[j]);
     sol.barD1 = barD1;

@@ -202,7 +202,7 @@ int main() {
     std::array<double, N_MAX> barD1_pi, barX_pi;
     barD1_pi.fill(0.0);
     barX_pi.fill(0.0);
-    barX_pi[0] = X0;
+    barX_pi[0] = g_x0;
     for (int j = 0; j < g_n; ++j) {
         barD1_pi[j] = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - B1_DEFAULT);
         double barD2_pi_j = -(1.0 / RHO) * S_pi[j] * (barX_pi[j] - B2_DEFAULT);
@@ -549,7 +549,7 @@ int main() {
                 // Step 2: Forward simulate bar trajectory
                 std::array<double, N_MAX> barX_fi{};
                 std::array<double, N_MAX> barD1_fi{}, barD2_fi{};
-                barX_fi[0] = X0;
+                barX_fi[0] = g_x0;
                 for (int j = 0; j < g_n; ++j) {
                     barD1_fi[j] = -(S_fi1[j] / rcfg.r1) * barX_fi[j] - Q_fi1[j] / (2.0 * rcfg.r1);
                     barD2_fi[j] = -(S_fi2[j] / rcfg.r2) * barX_fi[j] - Q_fi2[j] / (2.0 * rcfg.r2);

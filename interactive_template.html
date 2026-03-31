@@ -289,6 +289,22 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 </div>
 <div class="sliders">
   <div class="slider-group">
+    <label>x&#x2080; (initial state)</label>
+    <div class="slider-row">
+      <input type="range" id="sl-x0" min="-3" max="3" step="0.1" value="0">
+      <span class="val" id="val-x0">0.0</span>
+    </div>
+  </div>
+  <div class="slider-group">
+    <label>&#x3C3; (state noise)</label>
+    <div class="slider-row">
+      <input type="range" id="sl-sigma" min="0.1" max="5" step="0.1" value="1">
+      <span class="val" id="val-sigma">1.0</span>
+    </div>
+  </div>
+</div>
+<div class="sliders">
+  <div class="slider-group">
     <label>N (grid points)</label>
     <div class="slider-row">
       <input type="range" id="sl-N" min="10" max="160" step="5" value="40">
@@ -345,8 +361,8 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">State dynamics</h3>
     <p>The state evolves as</p>
-    $$dX_t = \bigl(D_t^1 + D_t^2\bigr)\,dt + dW_t^0, \qquad X_0 = 0,$$
-    <p>where $W^0$ is common noise observed by neither player.</p>
+    $$dX_t = \bigl(D_t^1 + D_t^2\bigr)\,dt + \sigma\,dW_t^0, \qquad X_0 = x_0,$$
+    <p>where $W^0$ is common noise observed by neither player, $\sigma$ is the state diffusion coefficient, and $x_0$ is the initial state.</p>
 
     <h3 style="margin:18px 0 6px; font-size:1.1em;">Private signals</h3>
     <p>Player $i$ continuously observes a private signal</p>
@@ -973,7 +989,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmSetCeMode, wasmMalloc, wasmFree, wasmFullKernelCount;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmSetCeMode, wasmSetSigma, wasmSetX0, wasmMalloc, wasmFree, wasmFullKernelCount;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -2017,13 +2033,15 @@ function getParams() {
         b2: parseFloat(document.getElementById('sl-b2').value),
         r1: parseFloat(document.getElementById('sl-r1').value),
         r2: parseFloat(document.getElementById('sl-r2').value),
+        x0: parseFloat(document.getElementById('sl-x0').value),
+        sigma: parseFloat(document.getElementById('sl-sigma').value),
         N: parseInt(document.getElementById('sl-N').value),
         T: parseFloat(document.getElementById('sl-T').value),
     };
 }
 
 function paramsToHash(p, tab) {
-    const defaults = {p1:3, p2:3, r1:0.1, r2:0.1, b1:1, b2:-1, N:40, T:1};
+    const defaults = {p1:3, p2:3, r1:0.1, r2:0.1, b1:1, b2:-1, x0:0, sigma:1, N:40, T:1};
     const parts = [];
     for (const [k, v] of Object.entries(p)) {
         if (v !== defaults[k]) parts.push(k + '=' + v);
@@ -2051,11 +2069,13 @@ function updateLabels() {
     document.getElementById('val-b2').textContent = p.b2.toFixed(1);
     document.getElementById('val-r1').textContent = p.r1.toFixed(2);
     document.getElementById('val-r2').textContent = p.r2.toFixed(2);
+    document.getElementById('val-x0').textContent = p.x0.toFixed(1);
+    document.getElementById('val-sigma').textContent = p.sigma.toFixed(1);
     document.getElementById('val-N').textContent = p.N;
     document.getElementById('val-T').textContent = p.T.toFixed(2);
     const liveEl = document.getElementById('model-params-live');
     if (liveEl) {
-        liveEl.textContent = `Current: p\u2081=${p.p1} p\u2082=${p.p2} r\u2081=${p.r1} r\u2082=${p.r2} b\u2081=${p.b1} b\u2082=${p.b2} T=${p.T} N=${p.N}`;
+        liveEl.textContent = `Current: p\u2081=${p.p1} p\u2082=${p.p2} r\u2081=${p.r1} r\u2082=${p.r2} b\u2081=${p.b1} b\u2082=${p.b2} x\u2080=${p.x0} \u03C3=${p.sigma} T=${p.T} N=${p.N}`;
     }
 }
 
@@ -2068,13 +2088,15 @@ function applyGrid(p) {
         N = p.N;
         console.log(`[grid] N: ${prevN}\u2192${p.N}, T: ${prevT}\u2192${p.T}`);
     }
+    if (wasmSetSigma) wasmSetSigma(p.sigma);
+    if (wasmSetX0) wasmSetX0(p.x0);
 }
 
 // Invalidate all cached data when any parameter changes.
 function invalidateIfChanged(p) {
     applyGrid(p);
     const ceOn = document.getElementById('cb-ce-mode').checked;
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},ce=${ceOn}`;
+    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},${p.x0},${p.sigma},ce=${ceOn}`;
     // Also invalidate if previous solve failed (lightData is null with matching key)
     if (key !== lastParamsKey || !lightData) {
         lightData = null;
@@ -2793,7 +2815,7 @@ function updateActive() {
                 const finalResid = lastResid != null && typeof lastResid === 'number' && isFinite(lastResid)
                     ? ` | resid=${lastResid.toExponential(2)}` : '';
                 statusEl.textContent =
-                    `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
+                    `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} x\u2080=${p.x0} \u03C3=${p.sigma} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1 != null ? data.J1.toFixed(4) : '?'} J\u00B2=${data.J2 != null ? data.J2.toFixed(4) : '?'} | ` +
                     `${totalMs.toFixed(0)}ms${ceTag}${finalResid}${warn}`;
                 statusEl.style.color = data.converged === false ? '#d62728' : '';
@@ -2862,19 +2884,23 @@ SolverModule().then(mod => {
     solveSweep = mod.cwrap('solve_sweep', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']);
     solveFKernelBin = mod.cwrap('solve_f_kernel_bin', 'number', ['number', 'number', 'number', 'number', 'number', 'number']);
 wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
+    wasmSetSigma = mod.cwrap('wasm_set_sigma', null, ['number']);
+    wasmSetX0 = mod.cwrap('wasm_set_x0', null, ['number']);
     wasmMalloc = mod._malloc;
     wasmFree = mod._free;
     try { wasmFullKernelCount = mod.cwrap('full_kernel_count', 'number', []); } catch(e) {}
 
     // Set initial grid and CE mode
     wasmSetGrid(40, 1.0);
+    wasmSetSigma(1.0);
+    wasmSetX0(0.0);
     wasmSetCeMode = mod.cwrap('wasm_set_ce_mode', null, ['number']);
     wasmSetCeMode(1);  // CE mode on by default
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('app').style.display = 'block';
 
-    for (const id of ['sl-p1', 'sl-p2', 'sl-b1', 'sl-b2', 'sl-r1', 'sl-r2', 'sl-N', 'sl-T']) {
+    for (const id of ['sl-p1', 'sl-p2', 'sl-b1', 'sl-b2', 'sl-r1', 'sl-r2', 'sl-x0', 'sl-sigma', 'sl-N', 'sl-T']) {
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
 
@@ -2973,7 +2999,7 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
         }
         // Restore slider values
         const sliderMap = {p1:'sl-p1', p2:'sl-p2', r1:'sl-r1', r2:'sl-r2',
-                           b1:'sl-b1', b2:'sl-b2', N:'sl-N', T:'sl-T'};
+                           b1:'sl-b1', b2:'sl-b2', x0:'sl-x0', sigma:'sl-sigma', N:'sl-N', T:'sl-T'};
         for (const [k, v] of Object.entries(hashParams)) {
             const el = document.getElementById(sliderMap[k]);
             if (el && !isNaN(v)) el.value = v;

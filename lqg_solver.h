@@ -31,7 +31,7 @@ void set_grid(int n, double T);
 
 // ---------- default constants ----------
 constexpr double RHO = 0.1;
-constexpr double X0 = 0.0;
+extern double g_x0;  // initial state (default 0.0)
 constexpr double TERMINAL_STATE_WEIGHT = 0.0;
 constexpr double B1_DEFAULT = 1.0;
 constexpr double B2_DEFAULT = -1.0;
@@ -59,6 +59,7 @@ struct SolverContext {
     double r1;
     double r2;
     double sigma;
+    double x0;
 
     static SolverContext capture_current();
     void apply() const;

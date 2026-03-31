@@ -50,7 +50,7 @@ static void compute_perfect_info(double b1, double b2,
     S_pi[g_n - 1] = TERMINAL_STATE_WEIGHT;
     for (int j = g_n - 2; j >= 0; --j)
         S_pi[j] = S_pi[j + 1] + g_dt * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
-    barX_pi[0] = X0;
+    barX_pi[0] = g_x0;
     for (int j = 0; j < g_n; ++j) {
         barD1_pi[j] = -(1.0 / g_r1) * S_pi[j] * (barX_pi[j] - b1);
         barD2_pi[j] = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
@@ -71,6 +71,7 @@ static bool g_use_ce = false;
 
 static struct SolveCache {
     double p1, p2, b1, b2, r1, r2;
+    double sigma, x0;
     int n; double T;
     bool valid;
     bool ce_mode;
@@ -98,7 +99,8 @@ static bool cache_matches(double p1, double p2, double b1, double b2, double r1,
            g_cache.b1 == b1 && g_cache.b2 == b2 &&
            g_cache.r1 == r1 && g_cache.r2 == r2 &&
            g_cache.n == g_n && g_cache.T == g_T &&
-           g_cache.ce_mode == g_use_ce;
+           g_cache.ce_mode == g_use_ce &&
+           g_cache.sigma == g_sigma && g_cache.x0 == g_x0;
 }
 
 // Run the full solve pipeline if not cached. After this, g_cache holds all results.
@@ -182,6 +184,7 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     g_cache.r1 = r1; g_cache.r2 = r2;
     g_cache.n = g_n; g_cache.T = g_T;
     g_cache.ce_mode = g_use_ce;
+    g_cache.sigma = g_sigma; g_cache.x0 = g_x0;
     g_cache.valid = true;
     g_cache.failed_stage.clear();
     // f_valid already false from top of function
@@ -269,6 +272,24 @@ void wasm_set_grid(int n, double T) {
     set_grid(n, T);
     g_cache.valid = false;
     g_cache.f_valid = false;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_set_sigma(double sigma) {
+    if (sigma != g_sigma) {
+        g_sigma = sigma;
+        g_cache.valid = false;
+        g_cache.f_valid = false;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_set_x0(double x0) {
+    if (x0 != g_x0) {
+        g_x0 = x0;
+        g_cache.valid = false;
+        g_cache.f_valid = false;
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE

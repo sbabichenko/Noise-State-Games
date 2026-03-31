@@ -51,7 +51,7 @@ static void compute_perfect_info(double b1, double b2,
     for (int j = g_n - 2; j >= 0; --j)
         S_pi[j] = S_pi[j + 1] + g_dt * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
 
-    barX_pi[0] = X0;
+    barX_pi[0] = g_x0;
     for (int j = 0; j < g_n; ++j) {
         barD1_pi[j] = -(1.0 / g_r1) * S_pi[j] * (barX_pi[j] - b1);
         barD2_pi[j] = -(1.0 / g_r2) * S_pi[j] * (barX_pi[j] - b2);
