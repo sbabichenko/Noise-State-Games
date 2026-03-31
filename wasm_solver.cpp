@@ -111,6 +111,13 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     g_cache.last_error.clear();
     g_cache.failed_stage.clear();
 
+    // Resize cached Kernel2D members to current g_n.
+    // After set_grid changes g_n, these may still be sized for the old grid.
+    g_cache.Vkernel1.resize();
+    g_cache.Vkernel2.resize();
+    g_cache.barHk1.resize();
+    g_cache.barHk2.resize();
+
     SolverContext solve_ctx = SolverContext::capture_current();
     solve_ctx.b1 = b1;
     solve_ctx.b2 = b2;

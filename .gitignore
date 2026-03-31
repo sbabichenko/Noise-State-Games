@@ -3,4 +3,5 @@ data/
 __pycache__/
 *.pyc
 solver.js
+solver.wasm
 test_ce_picard

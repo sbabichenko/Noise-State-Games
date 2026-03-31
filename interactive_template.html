@@ -2610,8 +2610,10 @@ function updateActive() {
             if (data) {
                 const warn = data.converged === false ? ' | NOT CONVERGED' : '';
                 const ceTag = data.ce_mode ? ' | CE' : '';
-                const finalResid = data.residuals && data.residuals.length > 0
-                    ? ` | resid=${data.residuals[data.residuals.length - 1].toExponential(2)}` : '';
+                const lastResid = data.residuals && data.residuals.length > 0
+                    ? data.residuals[data.residuals.length - 1] : null;
+                const finalResid = lastResid != null && typeof lastResid === 'number' && isFinite(lastResid)
+                    ? ` | resid=${lastResid.toExponential(2)}` : '';
                 statusEl.textContent =
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
