@@ -914,9 +914,11 @@ function makeViridis(n) {
 function showError(stage, error, params) {
     const panel = document.getElementById('error-panel');
     const timestamp = new Date().toLocaleTimeString();
+    const reqN = params ? (params.N || N) : N;
     const paramStr = params
-        ? `p\u2081=${params.p1} p\u2082=${params.p2} b\u2081=${params.b1} b\u2082=${params.b2} r\u2081=${params.r1} r\u2082=${params.r2} N=${params.N || N} T=${params.T || currentT}`
+        ? `p\u2081=${params.p1} p\u2082=${params.p2} b\u2081=${params.b1} b\u2082=${params.b2} r\u2081=${params.r1} r\u2082=${params.r2} N=${reqN} T=${params.T || currentT}`
         : '';
+    const gridInfo = `JS global N=${N}, currentN=${currentN}, currentT=${currentT}`;
     const stack = error && error.stack
         ? error.stack.split('\n').slice(0, 6).join('\n')
         : '';
@@ -925,10 +927,11 @@ function showError(stage, error, params) {
         `<div class="error-header">Solver Error [${timestamp}]</div>` +
         `<div class="error-stage">Stage: ${stage}</div>` +
         (paramStr ? `<div class="error-params">Params: ${paramStr}</div>` : '') +
+        `<div class="error-params">Grid state: ${gridInfo}</div>` +
         `<div>Message: ${error ? (error.message || String(error)) : 'unknown'}</div>` +
         (stack ? `<div class="error-stack">Stack trace:\n${stack}</div>` : '');
     panel.style.display = 'block';
-    console.error(`[${stage}]`, error);
+    console.error(`[${stage}]`, error, `| grid: ${gridInfo}`);
 }
 
 function showConvergenceWarning(data, params) {
@@ -996,11 +999,19 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         // Binary transfer: returns pointer to kernels × 3 channels × N×N doubles
         // After recompilation, WASM outputs 7 kernels (X, D1, D2, calD1, calD2, Xtilde1, Xtilde2).
         // Detect count via wasm_full_kernel_count if available, otherwise assume 5 (old WASM).
+        const nBefore = N;
         const ptr = solveFullBin(p1, p2, b1, b2, r1, r2);
         const n = N;
+        if (n !== nBefore) {
+            console.warn(`[callFull] N changed during WASM call: ${nBefore}\u2192${n}`);
+        }
         const block = n * n;
         const numKernels = (typeof wasmFullKernelCount === 'function') ? wasmFullKernelCount() : 5;
         const total = numKernels * 3 * block;
+        console.log(`[callFull] N=${n}, numKernels=${numKernels}, total_doubles=${total}, ptr=${ptr}, heap_byte_len=${Module.HEAPF64.buffer.byteLength}`);
+        if (ptr + total * 8 > Module.HEAPF64.buffer.byteLength) {
+            throw new Error(`Buffer overrun: ptr=${ptr}, need=${total * 8} bytes, heap=${Module.HEAPF64.buffer.byteLength}`);
+        }
         // Re-read HEAPF64 after WASM call in case memory grew
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
@@ -1008,7 +1019,7 @@ function callFull(p1, p2, b1, b2, r1, r2) {
     if (numKernels >= 7) kernelNames.push('Xtilde1', 'Xtilde2');
     if (numKernels >= 9) kernelNames.push('Vkernel1', 'Vkernel2');
     if (numKernels >= 11) kernelNames.push('A_store1', 'A_store2');
-    const result = {t};
+    const result = {t, _debug: {N: n, numKernels, total, ptr}};
     let offset = 0;
     for (const name of kernelNames) {
         const kernel = {};
@@ -1056,6 +1067,10 @@ function callFKernel(p1, p2, b1, b2, r1, r2) {
         const n = N;
         const block = n * n;
         const total = 2 * 9 * block;
+        console.log(`[callFKernel] N=${n}, total_doubles=${total}, ptr=${ptr}, heap_byte_len=${Module.HEAPF64.buffer.byteLength}`);
+        if (ptr + total * 8 > Module.HEAPF64.buffer.byteLength) {
+            throw new Error(`Buffer overrun: ptr=${ptr}, need=${total * 8} bytes, heap=${Module.HEAPF64.buffer.byteLength}`);
+        }
         // ptr is byte offset; HEAPF64 is indexed by float64 offset
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
@@ -1878,10 +1893,12 @@ function updateLabels() {
 
 function applyGrid(p) {
     if (p.N !== currentN || p.T !== currentT) {
+        const prevN = currentN, prevT = currentT;
         wasmSetGrid(p.N, p.T);
         currentN = p.N;
         currentT = p.T;
         N = p.N;
+        console.log(`[grid] N: ${prevN}\u2192${p.N}, T: ${prevT}\u2192${p.T}`);
     }
 }
 
