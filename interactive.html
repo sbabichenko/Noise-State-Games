@@ -2249,7 +2249,7 @@ function plotSimState(divId, t, paths, bands, lightData, showBands) {
     const barX = lightData.barX;
 
     // Mean path (dashed)
-    traces.push({ x: t, y: barX, mode: 'lines', line: { color: '#333', dash: 'dash', width: 2 },
+    traces.push({ x: t, y: barX, mode: 'lines', line: { color: getThemeColors().neutral, dash: 'dash', width: 2 },
                   name: 'Mean X\u0304(t)', legendgroup: 'mean' });
 
     // ±2σ bands for X
@@ -2284,7 +2284,7 @@ function plotSimState(divId, t, paths, bands, lightData, showBands) {
         yaxis: { ...styledAxes(1).yaxis, title: '' },
         margin: { t: 40, b: 40, l: 50, r: 20 },
         legend: { orientation: 'h', y: -0.15, font: {size: 10},
-                  bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1 },
+                  bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1 },
         height: 380
     }, plotCfg);
 }
@@ -2331,7 +2331,7 @@ function plotSimControls(divId, t, paths, bands, lightData, showBands) {
         yaxis: { ...styledAxes(1).yaxis, title: '' },
         margin: { t: 40, b: 40, l: 50, r: 20 },
         legend: { orientation: 'h', y: -0.15, font: {size: 10},
-                  bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1 },
+                  bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1 },
         height: 380
     }, plotCfg);
 }
@@ -2379,7 +2379,7 @@ function plotSimFilterError(divId, t, paths, bands, showBands) {
         yaxis: { ...styledAxes(1).yaxis, title: '' },
         margin: { t: 40, b: 40, l: 50, r: 20 },
         legend: { orientation: 'h', y: -0.15, font: {size: 10},
-                  bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#e0e0e0', borderwidth: 1 },
+                  bgcolor: getThemeColors().legendBg, bordercolor: getThemeColors().legendBorder, borderwidth: 1 },
         height: 380
     }, plotCfg);
 }
