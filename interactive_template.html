@@ -201,13 +201,6 @@ h1 { text-align: center; font-size: 1.4em; font-weight: 700; letter-spacing: -0.
       <span class="val" id="val-T">1.00</span>
     </div>
   </div>
-  <div class="slider-group">
-    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-      <input type="checkbox" id="cb-ce-mode" checked style="width:16px; height:16px;">
-      Exact discrete CE
-      <span style="font-size:0.82em; color:#888;">(uses discrete conditional expectation in Picard loop and for F kernel)</span>
-    </label>
-  </div>
 </div>
 </div>
 </div>
@@ -864,7 +857,7 @@ document.addEventListener('click', function(e) {
 
 // --- WASM solver interface ---
 let Module = null;
-let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmSetCeMode, wasmMalloc, wasmFree, wasmFullKernelCount;
+let solveLight, solveFullBin, solveSweep, solveFKernelBin, wasmSetGrid, wasmMalloc, wasmFree, wasmFullKernelCount;
 
 let N = 40;
 const SWEEP_P2 = [0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20];
@@ -904,7 +897,6 @@ function callLight(p1, p2, b1, b2, r1, r2) {
         return JSON.parse(json);
     } catch (e) {
         console.error('callLight failed:', e);
-        document.getElementById('status').textContent = 'Solver error: ' + e.message;
         return null;
     }
 }
@@ -919,7 +911,6 @@ function callFull(p1, p2, b1, b2, r1, r2) {
         const block = n * n;
         const numKernels = (typeof wasmFullKernelCount === 'function') ? wasmFullKernelCount() : 5;
         const total = numKernels * 3 * block;
-        // Re-read HEAPF64 after WASM call in case memory grew
         const arr = new Float64Array(Module.HEAPF64.buffer, ptr, total);
         const t = Array.from({length: n}, (_, i) => i * currentT / (n - 1));
     const kernelNames = ['X', 'D1', 'D2', 'calD1', 'calD2'];
@@ -951,7 +942,6 @@ function callSweep(p1, b1, b2, r1, r2, p2Arr) {
     try {
         const n = p2Arr.length;
         const buf = wasmMalloc(n * 8);
-        // Re-read HEAPF64 after malloc (memory may have grown)
         const view = new Float64Array(Module.HEAPF64.buffer, buf, n);
         for (let i = 0; i < n; i++) view[i] = p2Arr[i];
         const ptr = solveSweep(p1, b1, b2, r1, r2, buf, n);
@@ -1803,10 +1793,8 @@ function applyGrid(p) {
 // Invalidate all cached data when any parameter changes.
 function invalidateIfChanged(p) {
     applyGrid(p);
-    const ceOn = document.getElementById('cb-ce-mode').checked;
-    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2},ce=${ceOn}`;
-    // Also invalidate if previous solve failed (lightData is null with matching key)
-    if (key !== lastParamsKey || !lightData) {
+    const key = `${p.N},${p.T},${p.p1},${p.p2},${p.b1},${p.b2},${p.r1},${p.r2}`;
+    if (key !== lastParamsKey) {
         lightData = null;
         fullData = null;
         sweepData = null;
@@ -2382,13 +2370,9 @@ function renderTab(tab, p) {
                     const convergedStr = data.converged === false
                         ? '<span style="color:#d62728; font-weight:600;">NOT CONVERGED</span>'
                         : '<span style="color:#2d9e2d; font-weight:600;">Converged</span>';
-                    const ceStr = data.ce_mode
-                        ? '<span style="color:#1f77b4; font-weight:600;">Exact discrete CE</span>'
-                        : 'Volterra kernel (standard)';
                     summaryEl.innerHTML =
                         `<strong>Solver summary</strong><br>` +
                         `Method: Anderson-accelerated Picard iteration on the best-response map D \u2192 G(D)<br>` +
-                        `Filter: ${ceStr}<br>` +
                         `Iterations: ${data.n_iters}<br>` +
                         `Final relative residual: ${finalResid}<br>` +
                         `Status: ${convergedStr}<br>` +
@@ -2440,19 +2424,17 @@ function renderTab(tab, p) {
                         const err2 = checkProjection(fk.F2, obsIdx2, 'F\u00B2+\u03A0\u00B2');
                         const passColor = e => e < 1e-3 ? '#2d9e2d' : (e < 1e-1 ? '#e67e22' : '#d62728');
                         const passLabel = e => e < 1e-3 ? 'PASS' : (e < 1e-1 ? 'MARGINAL' : 'FAIL');
-                        const ceMode = light && light.ce_mode;
-                        const projTitle = ceMode ? 'Exact discrete CE projection' : 'Filtration projection check';
-                        const projDesc = ceMode
-                            ? 'The exact discrete conditional expectation $M^i = H^T(HH^T)^{-1}H$ is an orthogonal projection by construction. The F kernel is extracted as $F^i = (M^i - \\Pi^i\\delta) / \\Delta t$.'
-                            : 'The filtration kernel $F^i(T,u,s) + \\Pi^i \\delta(u{=}s)$ should be an orthogonal projection (idempotent) in $L^2([0,T]; \\mathbb{R}^3)$, representing the conditional expectation operator in noise-state coordinates.';
                         projEl.innerHTML =
-                            `<strong>${projTitle}</strong> &mdash; ` +
+                            `<strong>Filtration projection check</strong> &mdash; ` +
                             `$(F^i + \\Pi^i)^2 = F^i + \\Pi^i$ at $t = T$<br>` +
                             `Player 1: $\\|(F^1+\\Pi^1)^2 - (F^1+\\Pi^1)\\|_F / \\|F^1+\\Pi^1\\|_F$ = ${err1.toExponential(2)} ` +
                             `<span style="color:${passColor(err1)}; font-weight:600;">${passLabel(err1)}</span><br>` +
                             `Player 2: $\\|(F^2+\\Pi^2)^2 - (F^2+\\Pi^2)\\|_F / \\|F^2+\\Pi^2\\|_F$ = ${err2.toExponential(2)} ` +
                             `<span style="color:${passColor(err2)}; font-weight:600;">${passLabel(err2)}</span><br>` +
-                            `<span style="font-size:0.88em; color:#888;">${projDesc}</span>`;
+                            `<span style="font-size:0.88em; color:#888;">` +
+                            `The filtration kernel $F^i(T,u,s) + \\Pi^i \\delta(u{=}s)$ should be an orthogonal ` +
+                            `projection (idempotent) in $L^2([0,T]; \\mathbb{R}^3)$, representing the conditional ` +
+                            `expectation operator in noise-state coordinates.</span>`;
                         if (typeof MathJax !== 'undefined' && MathJax.Hub) {
                             MathJax.Hub.Queue(['Typeset', MathJax.Hub, projEl]);
                         }
@@ -2471,58 +2453,42 @@ function renderTab(tab, p) {
     }
 }
 
-function resetSolverState() {
-    // Nuclear reset: wipe all caches, re-init WASM grid and CE mode
-    lightData = null; fullData = null; sweepData = null; fKernelData = null;
-    allocData = null; lastParamsKey = '';
-    for (const k in dirty) dirty[k] = true;
-    const p = getParams();
-    wasmSetGrid(p.N, p.T);
-    currentN = p.N; currentT = p.T; N = p.N;
-    wasmSetCeMode(document.getElementById('cb-ce-mode').checked ? 1 : 0);
-}
-
 function updateActive() {
     // Prevent concurrent solver calls — queue for after current finishes
     if (solving) { pendingUpdate = true; return; }
     solving = true;
 
     const statusEl = document.getElementById('status');
-    const p = getParams();
-    const hint = p.N >= 100 ? ` (N=${p.N}, may take a few seconds...)` : '';
-    statusEl.textContent = 'Computing...' + hint;
-    statusEl.style.color = '';
+    statusEl.textContent = 'Computing...';
 
-    // Yield to browser to show status before blocking on WASM
+    // Yield to browser to show "Computing..." before blocking on WASM
     setTimeout(() => {
-        // Re-read params after yield — slider may have moved
+        // Read params here (not before yield) so we always solve with latest slider values
         const p = getParams();
         try {
             const t0 = performance.now();
+
+            // Only render the active tab (solver calls are cached, so this is cheap if params unchanged)
             renderTab(activeTab, p);
+
             const totalMs = performance.now() - t0;
 
-            if (pendingUpdate) return;
-
+            // Update status line with light-solve info (cheap — cached)
             const data = ensureLight(p);
             if (data) {
                 const warn = data.converged === false ? ' | NOT CONVERGED' : '';
-                const ceTag = data.ce_mode ? ' | CE' : '';
                 statusEl.textContent =
                     `N=${p.N} T=${p.T} p\u2081=${p.p1} p\u2082=${p.p2} b\u2081=${p.b1} b\u2082=${p.b2} r\u2081=${p.r1} r\u2082=${p.r2} | ` +
                     `${data.n_iters} iters | J\u00B9=${data.J1.toFixed(4)} J\u00B2=${data.J2.toFixed(4)} | ` +
-                    `${totalMs.toFixed(0)}ms${ceTag}${warn}`;
+                    `${totalMs.toFixed(0)}ms${warn}`;
                 statusEl.style.color = data.converged === false ? '#d62728' : '';
             } else {
-                statusEl.textContent = `Solver returned no data — retrying on next change`;
-                statusEl.style.color = '#e67e22';
-                resetSolverState();
+                statusEl.textContent = `Solver failed for N=${p.N}, T=${p.T}`;
+                statusEl.style.color = '#d62728';
             }
         } catch (e) {
             console.error('updateActive failed:', e);
-            statusEl.textContent = `Error: ${e.message} — state reset, try again`;
-            statusEl.style.color = '#d62728';
-            resetSolverState();
+            statusEl.textContent = `Error: ${e.message}`;
         } finally {
             solving = false;
             // If slider moved while we were solving, re-run with latest values
@@ -2549,7 +2515,7 @@ function onSliderChange() {
         pendingUpdate = true;
     }
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(updateActive, 250);
+    debounceTimer = setTimeout(updateActive, 150);
 }
 
 function onTabSwitch(tab) {
@@ -2572,10 +2538,8 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     wasmFree = mod._free;
     try { wasmFullKernelCount = mod.cwrap('full_kernel_count', 'number', []); } catch(e) {}
 
-    // Set initial grid and CE mode
+    // Set initial grid
     wasmSetGrid(40, 1.0);
-    wasmSetCeMode = mod.cwrap('wasm_set_ce_mode', null, ['number']);
-    wasmSetCeMode(1);  // CE mode on by default
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -2583,12 +2547,6 @@ wasmSetGrid = mod.cwrap('wasm_set_grid', null, ['number', 'number']);
     for (const id of ['sl-p1', 'sl-p2', 'sl-b1', 'sl-b2', 'sl-r1', 'sl-r2', 'sl-N', 'sl-T']) {
         document.getElementById(id).addEventListener('input', onSliderChange);
     }
-
-    // CE mode toggle (wasmSetCeMode already initialized above)
-    document.getElementById('cb-ce-mode').addEventListener('change', function() {
-        wasmSetCeMode(this.checked ? 1 : 0);
-        onSliderChange();
-    });
 
     // Generic subtab switching (works for both impulse and kernel subtabs)
     document.addEventListener('click', function(e) {

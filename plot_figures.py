@@ -346,145 +346,92 @@ fig.savefig(f'{FIGDIR}/fig12_costs_private_vs_pooled.pdf')
 plt.close(fig)
 
 # ============================================================
-# FIGURE 14: Precision decomposition (2x3 grid)
+# FIGURE 14: Mean control energy & wedge decomposition
 # ============================================================
-print("Figure 14: Precision decomposition ...")
+print("Figure 14: Mean control energy & wedges ...")
 PBAR = 20.0
 df14 = pd.read_csv(f'{DATA_DIR}/fig13_precision_allocation.csv')
 
 # --- Panel layout: 2 rows x 3 cols ---
-# Row 1: Asymmetric r (r1=0.05, r2=0.2)
+# Row 1: Asymmetric r (r1=0.05, r2=0.2) — the "starving" story
+#   (a) Individual efforts barD1², barD2² for eq vs CE
+#   (b) Total destructive effort eq vs CE
+#   (c) Wedges V1, V2
 # Row 2: Symmetric r (r1=0.1, r2=0.1)
-#   Col (a): Individual equilibrium costs J1, J2
-#   Col (b): Total destructive effort eq vs CE
-#   Col (c): Mean controls & mean state
+#   (a) Individual efforts
+#   (b) Total destructive effort
+#   (c) Wedges V1, V2
 
 r_cases = [
-    ('r0.05_0.2', 'Asymmetric costs'),
-    ('r0.1_0.1',  'Symmetric costs'),
-]
-row_annotations = [
-    r'Asymmetric costs ($r_1=0.05,\; r_2=0.2$)',
-    r'Symmetric costs ($r_1 = r_2 = 0.1$)',
+    ('r0.05_0.2', r'Asymmetric $r_1\!=\!0.05,\; r_2\!=\!0.2$'),
+    ('r0.1_0.1',  r'Symmetric $r_1\!=\!r_2\!=\!0.1$'),
 ]
 
-fig, axes = plt.subplots(2, 3, figsize=(15, 9.5),
-                         gridspec_kw={'hspace': 0.35, 'wspace': 0.30})
+fig, axes = plt.subplots(2, 3, figsize=(17, 9))
 
-# Collect data per row for consistent y-limits within columns
-col_ylims = [{}, {}, {}]  # min/max per column
-
-for row, (rc_key, rc_short) in enumerate(r_cases):
+for row, (rc_key, rc_label) in enumerate(r_cases):
     sub = df14[(df14['config'] == 'competitive') & (df14['r_config'] == rc_key)].sort_values('p1_root')
     p1_frac = sub['p1_prec'].values / PBAR
+
+    # (a) Individual efforts (weighted by r_i)
+    ax = axes[row, 0]
     r1_vals = sub['r1'].values
     r2_vals = sub['r2'].values
-
-    # ── Col (a): Individual equilibrium costs J1, J2 ──
-    ax = axes[row, 0]
-    ax.plot(p1_frac, sub['J1_eq'].values, lw=2.0, color='C0',
-            label=r'$J^1$ (equilibrium)')
-    ax.plot(p1_frac, sub['J2_eq'].values, lw=2.0, color='C3',
-            label=r'$J^2$ (equilibrium)')
-    ax.plot(p1_frac, sub['J1_fi'].values, lw=1.5, ls='--', color='C0', alpha=0.6,
-            label=r'$J^1$ (full info)')
-    ax.plot(p1_frac, sub['J2_fi'].values, lw=1.5, ls='--', color='C3', alpha=0.6,
-            label=r'$J^2$ (full info)')
-    ax.set_ylabel('Equilibrium cost', fontsize=12)
-    ax.set_title(f'Individual costs', fontsize=13)
+    ax.plot(p1_frac, r1_vals * sub['barD1sq_eq'].values, lw=2.2, color='C0',
+            label=r'$r_1\!\int \bar{D}_1^2\, dt$ (eq)')
+    ax.plot(p1_frac, r2_vals * sub['barD2sq_eq'].values, lw=2.2, color='C3',
+            label=r'$r_2\!\int \bar{D}_2^2\, dt$ (eq)')
+    ax.plot(p1_frac, r1_vals * sub['barD1sq_fi'].values, lw=1.8, ls='--', color='C0', alpha=0.6,
+            label=r'$r_1\!\int \bar{D}_1^2\, dt$ (full info)')
+    ax.plot(p1_frac, r2_vals * sub['barD2sq_fi'].values, lw=1.8, ls='--', color='C3', alpha=0.6,
+            label=r'$r_2\!\int \bar{D}_2^2\, dt$ (full info)')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'Mean control cost', fontsize=12)
+    ax.set_title(f'Individual efforts — {rc_label}', fontsize=10)
+    ax.legend(fontsize=8, loc='best')
     ax.grid(alpha=0.3)
     ax.set_ylim(bottom=0)
-    for spine in ('top', 'right'):
-        ax.spines[spine].set_visible(False)
-    ax.tick_params(labelsize=11)
-    # Track y-limits
-    ymax_a = max(sub['J1_eq'].max(), sub['J2_eq'].max(),
-                 sub['J1_fi'].max(), sub['J2_fi'].max()) * 1.08
-    col_ylims[0][row] = (0, ymax_a)
 
-    # ── Col (b): Total destructive effort ──
+    # (b) Total destructive effort (weighted by r_i)
     ax = axes[row, 1]
     total_eq = r1_vals * sub['barD1sq_eq'].values + r2_vals * sub['barD2sq_eq'].values
     total_fi = r1_vals * sub['barD1sq_fi'].values + r2_vals * sub['barD2sq_fi'].values
-    ax.plot(p1_frac, total_eq, lw=2.0, color='C0', label='Equilibrium')
-    ax.plot(p1_frac, total_fi, lw=1.5, ls='--', color='C1', alpha=0.8, label='Full info')
-    ax.fill_between(p1_frac, total_eq, total_fi, alpha=0.27, color='C1')
-    ax.set_ylabel('Total destructive effort', fontsize=12)
-    ax.set_title(f'Total destructive effort', fontsize=13)
+    ax.plot(p1_frac, total_eq, lw=2.5, color='C0', label='Equilibrium')
+    ax.plot(p1_frac, total_fi, lw=2.0, ls='--', color='C1', alpha=0.8, label='Full info')
+    ax.fill_between(p1_frac, total_eq, total_fi, alpha=0.12, color='C1')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'$\int (r_1 \bar{D}_1^2 + r_2 \bar{D}_2^2)\, dt$', fontsize=12)
+    ax.set_title(f'Total destructive cost — {rc_label}', fontsize=10)
+    ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
     ax.set_ylim(bottom=0)
-    for spine in ('top', 'right'):
-        ax.spines[spine].set_visible(False)
-    ax.tick_params(labelsize=11)
-    ymax_b = max(total_eq.max(), total_fi.max()) * 1.08
-    col_ylims[1][row] = (0, ymax_b)
 
-    # ── Col (c): Mean controls & mean state ──
+    # (c) Mean controls & mean state: eq (solid) vs full-info (dotted)
     ax = axes[row, 2]
-    ax.plot(p1_frac, sub['barD1_avg_eq'].values, lw=2.0, color='C0',
+    ax.plot(p1_frac, sub['barD1_avg_eq'].values, lw=2.2, color='C0',
             label=r'$\bar{D}_1$ (eq)')
-    ax.plot(p1_frac, sub['barD2_avg_eq'].values, lw=2.0, color='C3',
+    ax.plot(p1_frac, sub['barD2_avg_eq'].values, lw=2.2, color='C3',
             label=r'$\bar{D}_2$ (eq)')
     ax.plot(p1_frac, sub['barD1_avg_fi'].values, lw=1.5, ls=':', color='C0',
             label=r'$\bar{D}_1$ (CE)')
     ax.plot(p1_frac, sub['barD2_avg_fi'].values, lw=1.5, ls=':', color='C3',
             label=r'$\bar{D}_2$ (CE)')
+    ax.axhline(0, color='gray', lw=0.5, ls=':')
+    ax.set_xlabel(r'$P^1 / \bar{P}$', fontsize=12)
+    ax.set_ylabel(r'$\int \bar{D}_i\, dt$', fontsize=12)
     ax.plot(p1_frac, sub['barX_avg_eq'].values, lw=2.0, color='k',
             label=r'$\bar{X}$ (eq)')
     ax.plot(p1_frac, sub['barX_avg_fi'].values, lw=1.5, ls=':', color='k',
             label=r'$\bar{X}$ (CE)')
-    ax.axhline(0, color='gray', lw=0.5, ls=':')
-    ax.set_ylabel('Mean control / state', fontsize=12)
-    ax.set_title(f'Mean controls and state', fontsize=13)
+    ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
-    for spine in ('top', 'right'):
-        ax.spines[spine].set_visible(False)
-    ax.tick_params(labelsize=11)
+    ax.set_title(f'Mean controls & state — {rc_label}', fontsize=10)
 
-    # x-axis labels: bottom row only
-    if row == 1:
-        for col in range(3):
-            axes[row, col].set_xlabel('Fraction of precision to player 1', fontsize=12)
-    else:
-        for col in range(3):
-            axes[row, col].set_xlabel('')
-            axes[row, col].tick_params(axis='x', labelbottom=False)
-
-# ── Consistent y-limits within each column ──
-for col_idx in range(2):  # columns 0 and 1 (non-negative data)
-    ymax = max(col_ylims[col_idx][0][1], col_ylims[col_idx][1][1])
-    for row_idx in range(2):
-        axes[row_idx, col_idx].set_ylim(0, ymax)
-
-# ── Row annotations on left margin ──
-for row_idx, ann_text in enumerate(row_annotations):
-    axes[row_idx, 0].annotate(
-        ann_text, xy=(0, 0.5), xytext=(-0.35, 0.5),
-        xycoords='axes fraction', textcoords='axes fraction',
-        fontsize=12, rotation=90, va='center', ha='center',
-        fontstyle='italic')
-
-# ── Shared legends (one per column, placed between/below rows) ──
-# Col (a): shared legend below row 1
-handles_a, labels_a = axes[0, 0].get_legend_handles_labels()
-fig.legend(handles_a, labels_a, loc='lower center',
-           bbox_to_anchor=(0.185, -0.01), ncol=2, fontsize=11,
-           frameon=True, edgecolor='0.8')
-
-# Col (b): shared legend below row 1
-handles_b, labels_b = axes[0, 1].get_legend_handles_labels()
-fig.legend(handles_b, labels_b, loc='lower center',
-           bbox_to_anchor=(0.5, -0.01), ncol=2, fontsize=11,
-           frameon=True, edgecolor='0.8')
-
-# Col (c): shared legend below row 1
-handles_c, labels_c = axes[0, 2].get_legend_handles_labels()
-fig.legend(handles_c, labels_c, loc='lower center',
-           bbox_to_anchor=(0.815, -0.01), ncol=3, fontsize=11,
-           frameon=True, edgecolor='0.8')
-
-fig.savefig(f'{FIGDIR}/fig13_precision_decomposition.pdf',
-            bbox_inches='tight')
+fig.suptitle(r'Competitive targets ($\theta_1\!=\!1,\;\theta_2\!=\!{-}1$): '
+             r'$P^1\!+\!P^2\!=\!\bar{P}\!=\!%g$, $\sigma\!=\!0.5$' % PBAR,
+             fontsize=14, y=1.01)
+fig.tight_layout()
+fig.savefig(f'{FIGDIR}/fig_control_energy_wedges.pdf')
 plt.close(fig)
 
 

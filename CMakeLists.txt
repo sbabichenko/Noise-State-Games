@@ -38,23 +38,3 @@ add_executable(benchmark
 )
 target_link_libraries(benchmark PRIVATE Eigen3::Eigen)
 target_compile_options(benchmark PRIVATE -O3 -march=native -Wall -Wextra)
-
-add_executable(test_exact_ce
-    test_exact_ce.cpp
-    lqg_solver.cpp
-)
-target_link_libraries(test_exact_ce PRIVATE Eigen3::Eigen)
-target_compile_options(test_exact_ce PRIVATE -O3 -march=native -Wall -Wextra)
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(test_exact_ce PRIVATE OpenMP::OpenMP_CXX)
-endif()
-
-add_executable(test_ce_picard
-    test_ce_picard.cpp
-    lqg_solver.cpp
-)
-target_link_libraries(test_ce_picard PRIVATE Eigen3::Eigen)
-target_compile_options(test_ce_picard PRIVATE -O3 -march=native -Wall -Wextra)
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(test_ce_picard PRIVATE OpenMP::OpenMP_CXX)
-endif()
