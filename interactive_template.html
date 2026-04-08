@@ -177,6 +177,17 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 .guide-link { color: #1f77b4; text-decoration: none; font-weight: 600; cursor: pointer; }
 .guide-link:hover { text-decoration: underline; }
 
+/* Tab-level explanation blocks */
+.tab-explainer { max-width: 880px; margin: 0 auto 18px; padding: 14px 18px;
+                 background: var(--notice-bg); border: 1px solid var(--border-light);
+                 border-radius: 8px; font-size: 0.88em; line-height: 1.65;
+                 color: var(--text); transition: background 0.2s, border-color 0.2s; }
+.tab-explainer p { margin: 0 0 8px; }
+.tab-explainer p:last-child { margin-bottom: 0; }
+.tab-explainer .explainer-heading { font-weight: 700; font-size: 0.95em; margin-bottom: 6px;
+                                     color: var(--text); letter-spacing: 0.01em; }
+.tab-explainer .explainer-muted { font-size: 0.92em; color: var(--text-muted); font-style: italic; }
+
 /* Mobile responsive */
 @media (max-width: 768px) {
   .container { padding: 8px 12px; }
@@ -188,6 +199,7 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
   .tab-sep { display: none; }
   .subtab-btn { padding: 4px 10px; font-size: 0.72em; }
   .figure-caption { padding: 6px 10px; font-size: 0.78em; }
+  .tab-explainer { padding: 10px 12px; font-size: 0.82em; margin-bottom: 12px; }
   .theme-toggle { top: 8px; right: 8px; padding: 4px 6px; font-size: 0.95em; }
 }
 
@@ -868,6 +880,36 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Tab 4: Comparative Statics -->
 <div id="tab-statics" class="tab-panel">
+  <div class="tab-explainer">
+    <div class="explainer-heading">What this tab shows</div>
+    <p>
+      These plots sweep player&nbsp;2's observation precision $p_2$ while holding all other
+      parameters fixed, revealing how the equilibrium responds to one-sided changes in
+      information quality.
+    </p>
+    <p>
+      <strong>Costs</strong> (top): solid curves are equilibrium costs under private information;
+      dashed curves are the pooled-information benchmark (common filtration, no strategic friction).
+      The gap between them reflects two distinct effects: the direct cost of having less
+      information, and the additional distortion from bilateral belief manipulation.
+    </p>
+    <p>
+      <strong>Mean controls</strong> (middle): the time paths $\bar{D}^1(t)$ and $\bar{D}^2(t)$
+      color-coded by $p_2$. The dashed gray line is the perfect-information Riccati solution,
+      which is independent of precision. As $p_2$ grows, the controls approach this benchmark
+      but never coincide with it &mdash; the information wedge distorts the mean channel
+      even when both players are well-informed.
+    </p>
+    <p>
+      <strong>Wedges</strong> (bottom): the information wedges $\bar{V}^1(t)$ and $\bar{V}^2(t)$
+      across the sweep. Higher opponent precision amplifies the wedge, since a better-informed
+      opponent reacts more sharply to drift perturbations.
+    </p>
+    <p class="explainer-muted">
+      See the <a href="#" class="guide-link" data-target="tab-guide">Guide</a> for the
+      full derivation of the information wedge.
+    </p>
+  </div>
   <div class="figure-block">
     <div id="plot-costs" class="plot"></div>
     <div class="figure-caption">
@@ -899,6 +941,37 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Tab: Allocation -->
 <div id="tab-allocation" class="tab-panel">
+  <div class="tab-explainer">
+    <div class="explainer-heading">What this tab shows</div>
+    <p>
+      A principal allocates a fixed precision budget $p_1^2 + p_2^2 = \bar{P}$ between the
+      two players. The horizontal axis is the fraction of the budget assigned to player&nbsp;1.
+      This directly tests the paper's headline result (Section&nbsp;2.5): under competition with
+      asymmetric effort costs, the optimal design concentrates all precision on the efficient player.
+    </p>
+    <p>
+      <strong>Costs</strong> (top-left): individual equilibrium costs (solid) versus the
+      full-information benchmark (dashed), which is independent of the precision split.
+      <strong>Effort</strong> (top-right): total effort-weighted control cost &mdash; the key
+      diagnostic for <em>information starvation</em>. When the inefficient player is starved of
+      signal access, their ability to exert mean control collapses, which in turn reduces the
+      efficient player's incentive to manipulate beliefs, collapsing bilateral waste.
+    </p>
+    <p>
+      <strong>Controls</strong> (bottom-left): time-averaged mean controls (solid) versus
+      the certainty-equivalent (CE) benchmark (dotted). The CE benchmark is invariant to the
+      precision split &mdash; it depends only on costs and targets, not on who observes what.
+      The gap between solid and dotted lines directly visualizes <em>separation failure</em>
+      (Proposition&nbsp;4.6): the equilibrium policy rule itself depends on the information
+      structure through the wedge.
+      <strong>Wedges</strong> (bottom-right): peak information wedge magnitude across the split.
+    </p>
+    <p class="explainer-muted">
+      Adjust the $\bar{P}$ slider to change the total budget. See the
+      <a href="#" class="guide-link" data-target="tab-guide">Guide</a> for further details
+      on information starvation and separation failure.
+    </p>
+  </div>
   <div class="param-card" style="margin-bottom:14px;">
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:2px 0;">
       <div class="slider-group" style="min-width:150px; max-width:100%;">
