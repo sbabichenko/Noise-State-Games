@@ -334,37 +334,6 @@ ProjectionPair exact_discrete_CE(const EquilibriumResult& eq);
 std::unique_ptr<FSlice> compute_ce_F_slice_at_T(
     const Kernel2D& X, int obs_idx, double obs_gain, const Mat3& Pi);
 
-// ---------- costate S/R decomposition ----------
-//
-// Decomposes the kernel costate Hx(t,r) = S(t)·X(t,r) + R(t,r) where:
-//   S(t) is the scalar Riccati projection (least-squares fit)
-//   R(t,r) is the residual kernel (orthogonal to X in the least-squares sense)
-// Similarly decomposes the information wedge V(t,r) = V_S(t)·X(t,r) + V_R(t,r).
-//
-// S satisfies a modified Riccati equation driven by V_S; R satisfies a linear
-// backward system.  The CE benchmark corresponds to V_S = 0, R = 0.
-
-struct CostateDecomposition {
-    std::array<double, N_MAX> S;     // scalar Riccati projection per time step
-    Kernel2D R;                       // residual kernel: Hx - S·X
-    std::array<double, N_MAX> V_S;   // scalar wedge projection per time step
-    Kernel2D V_R;                     // residual wedge: V - V_S·X
-    double R_frac;                    // ||R|| / ||Hx||: fraction NOT captured by S
-    double V_R_frac;                  // ||V_R|| / ||V||: fraction NOT captured by V_S
-};
-
-// Extract S/R decomposition from converged backward pass output.
-CostateDecomposition decompose_costate(
-    const Kernel2D& Hx, const Kernel2D& X, const Kernel2D& Vkernel);
-
-// Backward pass that also outputs the S/R decomposition.
-void backward_kernels_sr(
-    const Kernel2D& X, const Kernel2D& Xtildek,
-    const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
-    double terminal_state_weight,
-    Kernel2D& Hx, Kernel2D& Vkernel,
-    CostateDecomposition& decomp);
-
 // ---------- utility ----------
 inline std::array<double, N_MAX> make_constant_prec(double val) {
     std::array<double, N_MAX> a;
