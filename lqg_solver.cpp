@@ -829,6 +829,58 @@ EquilibriumResult solve_equilibrium_warm(
                                   verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
 }
 
+// --- solve_equilibrium_sr: Riccati warm-started Picard iteration ---
+//
+// Uses the perfect-info scalar Riccati S_pi to initialize D, giving
+// Anderson acceleration a much better starting point than D=0.
+// Falls back to standard cold start if the warm start doesn't converge.
+
+EquilibriumResult solve_equilibrium_sr(
+    double p1_val, double p2_val, bool verbose,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2) {
+
+    // Perfect-info scalar Riccati
+    std::array<double, N_MAX> S_pi;
+    S_pi.fill(0.0);
+    S_pi[g_n - 1] = TERMINAL_STATE_WEIGHT;
+    for (int j = g_n - 2; j >= 0; --j)
+        S_pi[j] = S_pi[j + 1]
+            + g_dt * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
+
+    // Initialize D from S_pi applied to the uncontrolled state kernel (sigma·E0).
+    // Damped by cost asymmetry: when r1 ≈ r2, the joint Riccati S_pi is a good
+    // approximation to both players' equilibrium S, so we use the full warm start.
+    // When costs are very asymmetric, S_pi doesn't approximate either player's S
+    // well, so we damp toward D=0 to avoid misleading Anderson acceleration.
+    double r_ratio = std::min(g_r1, g_r2) / std::max(g_r1, g_r2);  // in (0,1]
+    double damp = std::sqrt(r_ratio);  // 1.0 for symmetric, ~0.5 for 4:1 ratio
+
+    Kernel2D D1, D2;
+    Vec3 sigE0 = g_sigma * E0();
+    for (int j = 0; j < g_n; ++j)
+        for (int s = 0; s <= j; ++s) {
+            D1[j][s] = -damp * (S_pi[j] / g_r1) * sigE0;
+            D2[j][s] = -damp * (S_pi[j] / g_r2) * sigE0;
+        }
+
+    auto result = solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
+                                          verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+
+    // Fallback: if warm start didn't converge, retry from cold start
+    if (!result.residuals.empty() && result.residuals.back() >= PICARD_TOL) {
+        if (verbose)
+            std::cout << "  [SR] Warm start did not converge; retrying cold start\n";
+        Kernel2D D1z, D2z;
+        D1z.setZero();
+        D2z.setZero();
+        result = solve_equilibrium_core(p1_val, p2_val, std::move(D1z), std::move(D2z),
+                                         verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+    }
+
+    return result;
+}
+
 // --- solve_equilibrium_ce: Picard iteration with discrete CE projection ---
 
 EquilibriumResult solve_equilibrium_ce(
