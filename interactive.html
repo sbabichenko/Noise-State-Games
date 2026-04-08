@@ -545,6 +545,46 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
       single additive correction to the costate.
     </p>
 
+    <h3 style="margin:22px 0 6px; font-size:1.15em;">Costate decomposition and separation failure</h3>
+    <p>
+      The costate kernel $H^i_x(t,r)$ admits a decomposition into a
+      deterministic scalar part and a kernel residual:
+    </p>
+    $$H^i_x(t,r) \;=\; S(t)\,X(t,r) \;+\; R^i(t,r)$$
+    <p>
+      where $S(t)$ satisfies a <em>modified Riccati equation</em>
+    </p>
+    $$\dot{S} + S\!A + A^\top\!S \;-\; S\,G^{-1}_{DD,i}\,S \;+\; G_{XX,i} \;+\; V^i_S(t) \;=\; 0,
+      \qquad S(T) = G_{XX,i}(T),$$
+    <p>
+      and $V^i_S(t)$ is the wedge's contribution to the scalar Riccati block.
+      Without the wedge ($V^i_S = 0$), this collapses to the standard
+      perfect-information Riccati &mdash; the certainty-equivalent (CE) benchmark
+      shown as dotted lines on the
+      <a href="#" class="guide-link" data-target="tab-equilibrium">Equilibrium</a>
+      and <a href="#" class="guide-link" data-target="tab-allocation">Allocation</a> tabs.
+    </p>
+    <p>
+      The residual kernel $R^k(t,u)$ satisfies a coupled backward system
+    </p>
+    $$\dot{R}^k(t,u) \;=\; -D^k_t(u)^\top S(t) \;+\; X_t(u)^\top
+      \sum_{j\neq i}\int p_j^2\,\widetilde{X}^j_t(z)\,R^j(t,z)\,dz,$$
+    <p>
+      which is <em>linear</em> in $R$ &mdash; the quadratic Riccati nonlinearity
+      is fully absorbed into $S$. The $S$ and $R$ blocks together form a coupled
+      deterministic system: both depend on precision and opponents' strategies
+      through $V^i_S$ and $\widetilde{X}^{-i}$, and both iterate inside the
+      Picard fixed-point loop.
+    </p>
+    <p>
+      This decomposition explains the CE gap visible on the Allocation tab:
+      the CE benchmark sets $V^i_S = 0$ and $R = 0$, so the feedback gain
+      $D^i = -(1/r_i)\,S_{\mathrm{CE}}\,X$ depends only on costs and targets.
+      In equilibrium, $V^i_S \neq 0$ and $R \neq 0$, so the policy rule itself
+      depends on who observes what &mdash; <em>separation failure</em>
+      (Proposition&nbsp;4.6).
+    </p>
+
     <h3 style="margin:22px 0 6px; font-size:1.15em;">Comparative statics</h3>
     <p style="font-style:italic; color:var(--text-muted); margin-bottom:6px;">
       <a href="#" class="guide-link" data-target="tab-statics">Statics</a> tab.
