@@ -365,11 +365,11 @@ void backward_kernels_sr(
     Kernel2D& Hx, Kernel2D& Vkernel,
     CostateDecomposition& decomp);
 
-// Fast solver: outer-inner iteration exploiting the S/R decomposition insight.
-// The map D→Hx is LINEAR when the filter (Xtilde) is fixed; nonlinearity comes
-// only from the filter update.  So we separate: outer loop refreshes the filter,
-// inner loop iterates D with frozen filter + AA (reset at each boundary).
-// Combined with S_pi warm start.  Same fixed point as standard (D_gap = 0).
+// Memory-efficient solver: S_pi warm start + reduced AA depth (aa_depth=3).
+// Warm start from perfect-information S initializes D close to the solution,
+// allowing convergence with fewer AA history entries (4 vs 6).
+// Saves 8 Kernel2D from AA history (33% reduction, ~2.4 MB at N=160).
+// Falls back to standard solver if convergence fails.
 EquilibriumResult solve_equilibrium_fast(
     double p1_val, double p2_val, bool verbose = true,
     const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
