@@ -833,13 +833,13 @@ EquilibriumResult solve_equilibrium_warm(
                                   verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
 }
 
-// --- solve_equilibrium_fast: memory-efficient solver via S/R decomposition ---
+// --- solve_equilibrium_fast: memory-efficient Picard solver ---
 //
-// Uses the costate decomposition Hx = S·X + R to reduce memory:
-//   - S_pi warm start reduces iterations needed, allowing smaller AA depth
-//   - AA_M reduced from 5 to 2 (AA history: 12 Kernel2D → saves 12 Kernel2D)
-//   - Memory savings: 230 KB at N=40, 3.6 MB at N=160
+// Uses S_pi warm start from the costate decomposition Hx = S·X + R:
+//   - Pure Picard iteration (no Anderson acceleration)
+//   - No AA history buffer needed (saves 24 Kernel2D = ~7.2 MB at N=160)
 //   - Same fixed point as standard solver (D_gap = 0)
+//   - Falls back to standard AA solver if Picard doesn't converge
 
 EquilibriumResult solve_equilibrium_fast(
     double p1_val, double p2_val, bool verbose,
@@ -865,12 +865,12 @@ EquilibriumResult solve_equilibrium_fast(
             D2[j][s] = -damp * (S_pi[j] / g_r2) * sigE0;
         }
 
-    // Reduced AA depth: warm start means we're already close to the solution,
-    // so fewer historical entries suffice for AA extrapolation.
+    // Pure Picard iteration (no Anderson acceleration).
+    // S_pi warm start places us close enough that plain relaxation converges,
+    // and we avoid all AA history memory (saves 24 Kernel2D = ~460 KB at N=40).
     auto result = solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
                                           verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2,
-                                          FORWARD_INNER_ITERS, /*use_aa=*/true,
-                                          /*aa_depth=*/3);
+                                          FORWARD_INNER_ITERS, /*use_aa=*/false);
 
     // Fallback to standard solver if warm start + reduced AA doesn't converge
     if (!result.residuals.empty() && result.residuals.back() >= PICARD_TOL) {

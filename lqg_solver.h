@@ -365,11 +365,11 @@ void backward_kernels_sr(
     Kernel2D& Hx, Kernel2D& Vkernel,
     CostateDecomposition& decomp);
 
-// Memory-efficient solver: S_pi warm start + reduced AA depth (aa_depth=3).
-// Warm start from perfect-information S initializes D close to the solution,
-// allowing convergence with fewer AA history entries (4 vs 6).
-// Saves 8 Kernel2D from AA history (33% reduction, ~2.4 MB at N=160).
-// Falls back to standard solver if convergence fails.
+// Memory-efficient solver: S_pi warm start + pure Picard iteration (no AA).
+// Warm start from perfect-information Riccati S initializes D close to the
+// solution so plain relaxation converges without Anderson acceleration.
+// Eliminates entire AA history buffer (24 Kernel2D, ~7.2 MB at N=160).
+// Falls back to standard AA solver if Picard doesn't converge.
 EquilibriumResult solve_equilibrium_fast(
     double p1_val, double p2_val, bool verbose = true,
     const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
