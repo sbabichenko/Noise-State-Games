@@ -73,7 +73,7 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
 static void compute_filter_kernels(
     const Kernel2D& X, const Mat3& Pi, int obs_index,
     double obs_gain_val, int filter_iters, double relax,
-    Kernel2D& Xtilde, Kernel2D& A_store) {
+    Kernel2D& Xtilde, Kernel2D* A_store = nullptr) {
 
     Mat3 I_minus_Pi = Mat3::Identity() - Pi;
     Vec3 e_i = Vec3::Zero();
@@ -86,7 +86,7 @@ static void compute_filter_kernels(
     for (int j = 0; j < g_n; ++j) {
         if (j == 0) {
             Xtilde[0][0] = I_minus_Pi * X[0][0];
-            A_store[0][0].setZero();
+            if (A_store) (*A_store)[0][0].setZero();
             continue;
         }
 
@@ -135,9 +135,11 @@ static void compute_filter_kernels(
         for (int s = 0; s <= j; ++s)
             Xtilde[j][s] *= scale;
 
-        double dt_prec = g_dt * prec;
-        for (int s = 0; s < j; ++s)
-            A_store[j][s] = dt_prec * Xtilde[j][s];
+        if (A_store) {
+            double dt_prec = g_dt * prec;
+            for (int s = 0; s < j; ++s)
+                (*A_store)[j][s] = dt_prec * Xtilde[j][s];
+        }
     }
 }
 
@@ -147,13 +149,16 @@ static void compute_filter_kernels(
 // decomposed into border_gt, border_lt, and interior sums.
 
 void primitive_control_kernel(
-    const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
+    const Kernel2D& D, const Kernel2D& Xtilde,
     double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD) {
 
     Vec3 e_i = Vec3::Zero();
     e_i(obs_index) = 1.0;
     double g = obs_gain_val;
     double DT_g = g_dt * g;
+    // A_store[k][s] = (g_dt*g²)*Xtilde[k][s]; original used g_dt*sum(partial_d*A_store)
+    // = g_dt²*g² * sum(partial_d*Xtilde). So coefficient for ia is g_dt²*g².
+    double dt2_prec = g_dt * g_dt * g * g;
 
     for (int j = 0; j < g_n; ++j) {
         if (j == 0) {
@@ -186,10 +191,11 @@ void primitive_control_kernel(
             // border_gt + interior merged over k = s+1..j
             Vec3 bg = Vec3::Zero(), ia = Vec3::Zero();
             for (int k = s + 1; k <= j; ++k) {
-                bg += D_obs[k] * Xtilde[k][s];
-                ia += partial_d_k[k] * A_store[k][s];
+                Vec3 Xtks = Xtilde[k][s];
+                bg += D_obs[k] * Xtks;
+                ia += partial_d_k[k] * Xtks;  // A_store = dt_prec * Xtilde
             }
-            acc += DT_g * bg + g_dt * ia;
+            acc += DT_g * bg + dt2_prec * ia;
             acc += DT_g * partial_d_k[s] * e_i;  // border_lt
 
             calD[j][s] = acc;
@@ -417,20 +423,20 @@ void forward_environment(
             #pragma omp section
             compute_filter_kernels(env.X, Pi_1, obs_idx_1, obs_gain1,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.Xtilde1, env.A_store1);
+                                   env.Xtilde1);
             #pragma omp section
             compute_filter_kernels(env.X, Pi_2, obs_idx_2, obs_gain2,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.Xtilde2, env.A_store2);
+                                   env.Xtilde2);
         }
 
         #pragma omp parallel sections
         {
             #pragma omp section
-            primitive_control_kernel(D1, env.Xtilde1, env.A_store1,
+            primitive_control_kernel(D1, env.Xtilde1,
                                      obs_gain1, obs_idx_1, Pi_1, calD1_new);
             #pragma omp section
-            primitive_control_kernel(D2, env.Xtilde2, env.A_store2,
+            primitive_control_kernel(D2, env.Xtilde2,
                                      obs_gain2, obs_idx_2, Pi_2, calD2_new);
         }
 
@@ -861,14 +867,27 @@ static EquilibriumResult solve_equilibrium_core(
     }
 
     // Convergence check breaks before Anderson update, so env matches D1/D2
+    // Derive A_store from existing Xtilde for external use (materialize_F, etc.)
+    {
+        double dt_prec1 = g_dt * p1_val * p1_val;
+        double dt_prec2 = g_dt * p2_val * p2_val;
+        env.A_store1[0][0].setZero();
+        env.A_store2[0][0].setZero();
+        for (int j = 1; j < g_n; ++j)
+            for (int s = 0; s < j; ++s) {
+                env.A_store1[j][s] = dt_prec1 * env.Xtilde1[j][s];
+                env.A_store2[j][s] = dt_prec2 * env.Xtilde2[j][s];
+            }
+    }
+
     Kernel2D calD1, calD2;
     #pragma omp parallel sections
     {
         #pragma omp section
-        primitive_control_kernel(D1, env.Xtilde1, env.A_store1,
+        primitive_control_kernel(D1, env.Xtilde1,
                                  p1_val, obs_idx_1, Pi_1, calD1);
         #pragma omp section
-        primitive_control_kernel(D2, env.Xtilde2, env.A_store2,
+        primitive_control_kernel(D2, env.Xtilde2,
                                  p2_val, obs_idx_2, Pi_2, calD2);
     }
 
@@ -1130,7 +1149,7 @@ EquilibriumResult solve_equilibrium_ce(
         {
             compute_filter_kernels(env.X, Pi_1, obs_idx_1, p1_val,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   Hx1, env.A_store1);
+                                   Hx1, &env.A_store1);
             compute_ce_filter_and_calD(env.X, D1, obs_idx_1, p1_val,
                                         env.Xtilde1, calD1);
         }
@@ -1138,7 +1157,7 @@ EquilibriumResult solve_equilibrium_ce(
         {
             compute_filter_kernels(env.X, Pi_2, obs_idx_2, p2_val,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   Hx2, env.A_store2);
+                                   Hx2, &env.A_store2);
             compute_ce_filter_and_calD(env.X, D2, obs_idx_2, p2_val,
                                         env.Xtilde2, calD2);
         }

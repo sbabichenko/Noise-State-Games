@@ -4,6 +4,13 @@ project(NoiseStateGames LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable link-time optimization for cross-TU inlining
+include(CheckIPOSupported)
+check_ipo_supported(RESULT IPO_SUPPORTED)
+if(IPO_SUPPORTED)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
+
 # Eigen3 dependency
 find_package(Eigen3 REQUIRED NO_MODULE)
 

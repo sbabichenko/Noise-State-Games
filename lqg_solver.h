@@ -198,7 +198,7 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
                             Kernel2D& X);
 
 void primitive_control_kernel(
-    const Kernel2D& D, const Kernel2D& Xtilde, const Kernel2D& A_store,
+    const Kernel2D& D, const Kernel2D& Xtilde,
     double obs_gain_val, int obs_index, const Mat3& Pi, Kernel2D& calD);
 
 void forward_environment(
