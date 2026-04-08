@@ -11,6 +11,10 @@ if(IPO_SUPPORTED)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
+# Common compile flags for all targets
+add_compile_options(-O3 -march=native -Wall -Wextra)
+add_compile_definitions(NDEBUG)
+
 # Eigen3 dependency
 find_package(Eigen3 REQUIRED NO_MODULE)
 
@@ -23,7 +27,6 @@ add_executable(generate_figures
 )
 
 target_link_libraries(generate_figures PRIVATE Eigen3::Eigen)
-target_compile_options(generate_figures PRIVATE -O3 -march=native -Wall -Wextra)
 
 if(OpenMP_CXX_FOUND)
     target_link_libraries(generate_figures PRIVATE OpenMP::OpenMP_CXX)
@@ -34,7 +37,6 @@ add_executable(solve_interactive
     lqg_solver.cpp
 )
 target_link_libraries(solve_interactive PRIVATE Eigen3::Eigen)
-target_compile_options(solve_interactive PRIVATE -O3 -march=native -Wall -Wextra)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(solve_interactive PRIVATE OpenMP::OpenMP_CXX)
 endif()
@@ -44,14 +46,12 @@ add_executable(benchmark
     lqg_solver.cpp
 )
 target_link_libraries(benchmark PRIVATE Eigen3::Eigen)
-target_compile_options(benchmark PRIVATE -O3 -march=native -Wall -Wextra)
 
 add_executable(test_exact_ce
     test_exact_ce.cpp
     lqg_solver.cpp
 )
 target_link_libraries(test_exact_ce PRIVATE Eigen3::Eigen)
-target_compile_options(test_exact_ce PRIVATE -O3 -march=native -Wall -Wextra)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(test_exact_ce PRIVATE OpenMP::OpenMP_CXX)
 endif()
@@ -61,7 +61,6 @@ add_executable(test_ce_picard
     lqg_solver.cpp
 )
 target_link_libraries(test_ce_picard PRIVATE Eigen3::Eigen)
-target_compile_options(test_ce_picard PRIVATE -O3 -march=native -Wall -Wextra)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(test_ce_picard PRIVATE OpenMP::OpenMP_CXX)
 endif()
@@ -71,7 +70,6 @@ add_executable(test_sr_decomp
     lqg_solver.cpp
 )
 target_link_libraries(test_sr_decomp PRIVATE Eigen3::Eigen)
-target_compile_options(test_sr_decomp PRIVATE -O3 -march=native -Wall -Wextra)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(test_sr_decomp PRIVATE OpenMP::OpenMP_CXX)
 endif()
