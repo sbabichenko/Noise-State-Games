@@ -365,9 +365,11 @@ void backward_kernels_sr(
     Kernel2D& Hx, Kernel2D& Vkernel,
     CostateDecomposition& decomp);
 
-// Fast solver: S_pi warm start + reduced forward inner iterations (1 vs 2).
-// ~1.5x faster than standard but D kernels differ ~5-12% due to less-resolved
-// filter coupling.  Converges to its own self-consistent equilibrium.
+// Fast solver: outer-inner iteration exploiting the S/R decomposition insight.
+// The map D→Hx is LINEAR when the filter (Xtilde) is fixed; nonlinearity comes
+// only from the filter update.  So we separate: outer loop refreshes the filter,
+// inner loop iterates D with frozen filter + AA (reset at each boundary).
+// Combined with S_pi warm start.  Same fixed point as standard (D_gap = 0).
 EquilibriumResult solve_equilibrium_fast(
     double p1_val, double p2_val, bool verbose = true,
     const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,

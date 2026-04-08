@@ -678,7 +678,8 @@ static EquilibriumResult solve_equilibrium_core(
     Kernel2D D1, Kernel2D D2, bool verbose,
     const Mat3& Pi_1, int obs_idx_1,
     const Mat3& Pi_2, int obs_idx_2,
-    int fwd_inner_iters = FORWARD_INNER_ITERS) {
+    int fwd_inner_iters = FORWARD_INNER_ITERS,
+    bool use_aa = true) {
 
     std::vector<double> residuals;
     auto prec1 = make_constant_prec(p1_val * p1_val);
@@ -735,62 +736,63 @@ static EquilibriumResult solve_equilibrium_core(
             break;
         }
 
-        // --- Anderson acceleration ---
-        int m = std::min(stored, AA_M);
+        // --- D update: Anderson acceleration or plain Picard ---
+        if (use_aa) {
+            int m = std::min(stored, AA_M);
+            if (m >= 1) {
+                Eigen::VectorXd Ffi(m);
+                for (int i = 0; i < m; ++i) {
+                    int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
+                    Ffi(i) = kernel_dot(cur.f1, cur.f2, hist[idx].f1, hist[idx].f2);
+                }
+                Eigen::MatrixXd H(m, m);
+                Eigen::VectorXd rhs(m);
+                for (int i = 0; i < m; ++i) {
+                    rhs(i) = norm_f - Ffi(i);
+                    for (int j = 0; j <= i; ++j) {
+                        int ii = (stored - 1 - i + AA_STORE) % AA_STORE;
+                        int jj = (stored - 1 - j + AA_STORE) % AA_STORE;
+                        double fifj = kernel_dot(hist[ii].f1, hist[ii].f2, hist[jj].f1, hist[jj].f2);
+                        H(i, j) = H(j, i) = norm_f - Ffi(i) - Ffi(j) + fifj;
+                    }
+                }
+                for (int i = 0; i < m; ++i)
+                    H(i, i) += AA_REG * (1.0 + H(i, i));
+                Eigen::VectorXd gamma = H.ldlt().solve(rhs);
 
-        if (m >= 1) {
-            // Build Gram matrix: H[i][j] = <dF_i, dF_j> where dF_i = F_curr - f_hist[i]
-            // Expanded as <F,F> - <F,f_j> - <f_i,F> + <f_i,f_j>
-            Eigen::VectorXd Ffi(m);
-            for (int i = 0; i < m; ++i) {
-                int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
-                Ffi(i) = kernel_dot(cur.f1, cur.f2, hist[idx].f1, hist[idx].f2);
-            }
-
-            Eigen::MatrixXd H(m, m);
-            Eigen::VectorXd rhs(m);
-            for (int i = 0; i < m; ++i) {
-                rhs(i) = norm_f - Ffi(i);
-                for (int j = 0; j <= i; ++j) {
-                    int ii = (stored - 1 - i + AA_STORE) % AA_STORE;
-                    int jj = (stored - 1 - j + AA_STORE) % AA_STORE;
-                    double fifj = kernel_dot(hist[ii].f1, hist[ii].f2, hist[jj].f1, hist[jj].f2);
-                    H(i, j) = H(j, i) = norm_f - Ffi(i) - Ffi(j) + fifj;
+                std::array<const Vec3*, AA_M> g1p, g2p;
+                std::array<double, AA_M> gam;
+                for (int i = 0; i < m; ++i) {
+                    int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
+                    g1p[i] = hist[idx].g1.data.data();
+                    g2p[i] = hist[idx].g2.data.data();
+                    gam[i] = gamma(i);
+                }
+                const Vec3* cg1 = cur.g1.data.data();
+                const Vec3* cg2 = cur.g2.data.data();
+                for (int i = 0; i < TRI; ++i) {
+                    Vec3 d1_aa = cg1[i], d2_aa = cg2[i];
+                    for (int k = 0; k < m; ++k) {
+                        d1_aa -= gam[k] * (cg1[i] - g1p[k][i]);
+                        d2_aa -= gam[k] * (cg2[i] - g2p[k][i]);
+                    }
+                    D1.data[i] = (1.0 - AA_BETA) * D1.data[i] + AA_BETA * d1_aa;
+                    D2.data[i] = (1.0 - AA_BETA) * D2.data[i] + AA_BETA * d2_aa;
+                }
+            } else {
+                for (int i = 0; i < TRI; ++i) {
+                    D1.data[i] += PICARD_RELAX * cur.f1.data[i];
+                    D2.data[i] += PICARD_RELAX * cur.f2.data[i];
                 }
             }
-            for (int i = 0; i < m; ++i)
-                H(i, i) += AA_REG * (1.0 + H(i, i));
-
-            Eigen::VectorXd gamma = H.ldlt().solve(rhs);
-
-            // Mix: D_aa = G - sum_i gamma_i * (G - g_hist[i]),  D = (1-beta)*D + beta*D_aa
-            std::array<const Vec3*, AA_M> g1p, g2p;
-            std::array<double, AA_M> gam;
-            for (int i = 0; i < m; ++i) {
-                int idx = (stored - 1 - i + AA_STORE) % AA_STORE;
-                g1p[i] = hist[idx].g1.data.data();
-                g2p[i] = hist[idx].g2.data.data();
-                gam[i] = gamma(i);
-            }
-            const Vec3* cg1 = cur.g1.data.data();
-            const Vec3* cg2 = cur.g2.data.data();
-            for (int i = 0; i < TRI; ++i) {
-                Vec3 d1_aa = cg1[i], d2_aa = cg2[i];
-                for (int k = 0; k < m; ++k) {
-                    d1_aa -= gam[k] * (cg1[i] - g1p[k][i]);
-                    d2_aa -= gam[k] * (cg2[i] - g2p[k][i]);
-                }
-                D1.data[i] = (1.0 - AA_BETA) * D1.data[i] + AA_BETA * d1_aa;
-                D2.data[i] = (1.0 - AA_BETA) * D2.data[i] + AA_BETA * d2_aa;
-            }
+            stored++;
         } else {
-            // First iteration: simple Picard relaxation
+            // Plain Picard relaxation (no Anderson acceleration)
             for (int i = 0; i < TRI; ++i) {
                 D1.data[i] += PICARD_RELAX * cur.f1.data[i];
                 D2.data[i] += PICARD_RELAX * cur.f2.data[i];
             }
         }
-        stored++;
     }
 
     // Convergence check breaks before Anderson update, so env matches D1/D2
@@ -830,12 +832,11 @@ EquilibriumResult solve_equilibrium_warm(
                                   verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
 }
 
-// --- solve_equilibrium_fast: warm start + reduced inner iterations ---
+// --- solve_equilibrium_fast: S_pi warm start + plain Picard (no AA) ---
 //
-// ~1.5x faster than standard. Uses S_pi warm start AND 1 forward inner
-// iteration (vs 2).  The equilibrium is self-consistent (converged) but D
-// kernels differ ~5-12% from the standard solver due to less-resolved
-// Xtilde ↔ X coupling within the forward pass.
+// Tests whether plain Picard relaxation (without Anderson acceleration)
+// converges more robustly across parameter ranges.  AA sometimes causes
+// oscillation in asymmetric cases; plain Picard is monotonically stable.
 
 EquilibriumResult solve_equilibrium_fast(
     double p1_val, double p2_val, bool verbose,
@@ -861,12 +862,20 @@ EquilibriumResult solve_equilibrium_fast(
             D2[j][s] = -damp * (S_pi[j] / g_r2) * sigE0;
         }
 
-    // Use 1 forward inner iteration instead of 2 — halves filter cost per step.
-    constexpr int FAST_INNER_ITERS = 1;
+    // Plain Picard: no AA, just relaxation
+    auto result = solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
+                                          verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2,
+                                          FORWARD_INNER_ITERS, /*use_aa=*/false);
 
-    return solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
-                                  verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2,
-                                  FAST_INNER_ITERS);
+    // Fallback to standard solver (with AA) if plain Picard doesn't converge
+    if (!result.residuals.empty() && result.residuals.back() >= PICARD_TOL) {
+        if (verbose)
+            std::cout << "  [fast/noAA] Did not converge; falling back to standard\n";
+        return solve_equilibrium(p1_val, p2_val, verbose,
+                                 Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+    }
+
+    return result;
 }
 
 // --- solve_equilibrium_sr: Riccati warm-started Picard iteration ---

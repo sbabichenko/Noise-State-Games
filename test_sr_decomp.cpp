@@ -42,6 +42,7 @@ int main() {
         {40,  8.0, 8.0, RHO,  RHO,  "high precision"},
         {40,  1.0, 1.0, RHO,  RHO,  "low precision"},
         {40, 10.0, 1.0, 0.05, 0.3,  "extreme asymmetry"},
+        {40, 20.0, 1.0, RHO,  RHO,  "extreme prec"},
     };
 
     bool all_pass = true;
@@ -173,7 +174,7 @@ int main() {
         bool sr_conv  = !eq_sr.residuals.empty()  && eq_sr.residuals.back()  < PICARD_TOL;
         bool fst_conv = !eq_fst.residuals.empty() && eq_fst.residuals.back() < PICARD_TOL;
         bool sr_close  = sr_gap  < 0.05;
-        bool fst_close = fst_gap < 0.15;  // fast solver trades accuracy for speed
+        bool fst_close = fst_gap < 0.05;
         if (!sr_close || !fst_close) all_pass = false;
 
         double sr_speedup  = ms_std / std::max(0.01, ms_sr);
