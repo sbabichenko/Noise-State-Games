@@ -90,23 +90,26 @@ static void compute_filter_kernels(
             continue;
         }
 
+        // Pre-extract row pointer to avoid repeated triangular index math
+        const Vec3* X_j = &X[j][0];
+
         // c_k = dot(Xtilde[k][0..k], X[j][0..k]),  partial_c_k = same but excluding u=k
         std::array<double, N_MAX> c_k, partial_c_k;
         for (int k = 0; k < j; ++k) {
             double acc = 0.0;
+            const Vec3* Xt_k = &Xtilde[k][0];
             for (int u = 0; u < k; ++u)
-                acc += Xtilde[k][u].dot(X[j][u]);
+                acc += Xt_k[u].dot(X_j[u]);
             partial_c_k[k] = acc;
-            c_k[k] = acc + Xtilde[k][k].dot(X[j][k]);
+            c_k[k] = acc + Xt_k[k].dot(X_j[k]);
         }
 
         // coeff_a[z] = g * X[j][z](obs_index)  (for gamma_a accumulation)
         std::array<double, N_MAX> coeff_a;
         for (int z = 0; z < j; ++z)
-            coeff_a[z] = g * X[j][z](obs_index);
+            coeff_a[z] = g * X_j[z](obs_index);
 
-        // Per-s: accumulate correction in one pass over k
-        std::array<Vec3, N_MAX> correction;
+        // Compute Xtilde[j][s] = (I-Pi)*X[j][s] - correction[s] in one fused pass
         for (int s = 0; s < j; ++s) {
             Vec3 q_upper = Vec3::Zero();
             Vec3 ga_acc = Vec3::Zero();
@@ -117,14 +120,11 @@ static void compute_filter_kernels(
                 ga_acc += coeff_a[k] * Xtks;
             }
 
-            Vec3 gamma_a_s = g_dt * ga_acc;
-            correction[s] = dt2_prec * (c_k[s] * Xtilde[s][s] + q_upper) + gamma_a_s;
+            Xtilde[j][s] = I_minus_Pi * X_j[s]
+                - dt2_prec * (c_k[s] * Xtilde[s][s] + q_upper)
+                - g_dt * ga_acc;
         }
-
-        // Xtilde = (I-Pi)*X - correction
-        for (int s = 0; s < j; ++s)
-            Xtilde[j][s] = I_minus_Pi * X[j][s] - correction[s];
-        Xtilde[j][j] = I_minus_Pi * X[j][j];
+        Xtilde[j][j] = I_minus_Pi * X_j[j];
 
         // --- Closed-form Kalman gain (replaces iterative relaxation) ---
         double sigma_minus = 0.0;
@@ -161,23 +161,27 @@ void primitive_control_kernel(
             continue;
         }
 
+        // Pre-extract row pointer to avoid repeated triangular index math
+        const Vec3* D_j = &D[j][0];
+
         // partial_d_k = sum_{u<k} dot(Xtilde[k][u], D[j][u])
         std::array<double, N_MAX> partial_d_k;
         partial_d_k[0] = 0.0;
         for (int k = 1; k <= j; ++k) {
             double acc = 0.0;
+            const Vec3* Xt_k = &Xtilde[k][0];
             for (int u = 0; u < k; ++u)
-                acc += Xtilde[k][u].dot(D[j][u]);
+                acc += Xt_k[u].dot(D_j[u]);
             partial_d_k[k] = acc;
         }
 
         // D_obs[u] = D[j][u](obs_index) for border_gt
         std::array<double, N_MAX> D_obs;
         for (int u = 0; u <= j; ++u)
-            D_obs[u] = D[j][u](obs_index);
+            D_obs[u] = D_j[u](obs_index);
 
         for (int s = 0; s < j; ++s) {
-            Vec3 acc = Pi * D[j][s];
+            Vec3 acc = Pi * D_j[s];
 
             // border_gt + interior merged over k = s+1..j
             Vec3 bg = Vec3::Zero(), ia = Vec3::Zero();
@@ -192,7 +196,7 @@ void primitive_control_kernel(
         }
 
         // s = j: only border_lt contributes
-        calD[j][j] = Pi * D[j][j] + DT_g * partial_d_k[j] * e_i;
+        calD[j][j] = Pi * D_j[j] + DT_g * partial_d_k[j] * e_i;
     }
 }
 
@@ -309,6 +313,19 @@ static void compute_ce_filter_and_calD(
 // Replaces compute_filter_kernels + primitive_control_kernel with
 // the exact discrete conditional expectation at each time step.
 
+// Thread-local reusable buffers for forward_environment_ce.
+struct FwdEnvCEBufs {
+    Kernel2D calD1, calD2, calD1_new, calD2_new, X_new;
+    int n_alloc = 0;
+    void ensure(int n) {
+        if (n_alloc == n) return;
+        n_alloc = n;
+        calD1.resize(); calD2.resize();
+        calD1_new.resize(); calD2_new.resize(); X_new.resize();
+    }
+};
+static thread_local FwdEnvCEBufs s_fwd_ce_bufs;
+
 static void forward_environment_ce(
     const Kernel2D& D1, const Kernel2D& D2,
     double obs_gain1, double obs_gain2,
@@ -317,41 +334,57 @@ static void forward_environment_ce(
     const Mat3& Pi_2, int obs_idx_2,
     EnvironmentResult& env) {
 
-    // Initial calD from Pi*D (same seed as standard forward_environment)
-    // Temporaries declared once outside the inner loop to avoid
-    // repeated Kernel2D construction (~300KB each at N=160).
-    Kernel2D calD1, calD2, X, calD1_new, calD2_new, X_new;
-    for (int j = 0; j < g_n; ++j)
-        for (int s = 0; s <= j; ++s) {
-            calD1[j][s] = Pi_1 * D1[j][s];
-            calD2[j][s] = Pi_2 * D2[j][s];
-        }
+    s_fwd_ce_bufs.ensure(g_n);
+    auto& calD1 = s_fwd_ce_bufs.calD1;
+    auto& calD2 = s_fwd_ce_bufs.calD2;
+    auto& calD1_new = s_fwd_ce_bufs.calD1_new;
+    auto& calD2_new = s_fwd_ce_bufs.calD2_new;
+    auto& X_new = s_fwd_ce_bufs.X_new;
 
-    state_kernel_from_calD(calD1, calD2, X);
+    const int TRI = g_n * (g_n + 1) / 2;
+    for (int i = 0; i < TRI; ++i) {
+        calD1.data[i] = Pi_1 * D1.data[i];
+        calD2.data[i] = Pi_2 * D2.data[i];
+    }
+
+    env.X.resize();
+    state_kernel_from_calD(calD1, calD2, env.X);
 
     for (int it = 0; it < inner_iters; ++it) {
         #pragma omp parallel sections
         {
             #pragma omp section
-            compute_ce_filter_and_calD(X, D1, obs_idx_1, obs_gain1,
+            compute_ce_filter_and_calD(env.X, D1, obs_idx_1, obs_gain1,
                                         env.Xtilde1, calD1_new);
             #pragma omp section
-            compute_ce_filter_and_calD(X, D2, obs_idx_2, obs_gain2,
+            compute_ce_filter_and_calD(env.X, D2, obs_idx_2, obs_gain2,
                                         env.Xtilde2, calD2_new);
         }
 
         state_kernel_from_calD(calD1_new, calD2_new, X_new);
-        for (int t = 0; t < g_n; ++t)
-            for (int s = 0; s <= t; ++s)
-                X[t][s] = 0.6 * X_new[t][s] + 0.4 * X[t][s];
+        for (int i = 0; i < TRI; ++i)
+            env.X.data[i] = 0.6 * X_new.data[i] + 0.4 * env.X.data[i];
     }
 
-    env.X = X;
     env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
     env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
 }
 
 // --- forward_environment ---
+
+// Thread-local reusable buffers for forward_environment to avoid
+// repeated Kernel2D heap allocation across Picard iterations.
+struct FwdEnvBufs {
+    Kernel2D calD1, calD2, calD1_new, calD2_new, X_new;
+    int n_alloc = 0;
+    void ensure(int n) {
+        if (n_alloc == n) return;
+        n_alloc = n;
+        calD1.resize(); calD2.resize();
+        calD1_new.resize(); calD2_new.resize(); X_new.resize();
+    }
+};
+static thread_local FwdEnvBufs s_fwd_bufs;
 
 void forward_environment(
     const Kernel2D& D1, const Kernel2D& D2,
@@ -361,26 +394,32 @@ void forward_environment(
     const Mat3& Pi_2, int obs_idx_2,
     EnvironmentResult& env) {
 
-    Kernel2D calD1, calD2;
-    for (int j = 0; j < g_n; ++j)
-        for (int s = 0; s <= j; ++s) {
-            calD1[j][s] = Pi_1 * D1[j][s];
-            calD2[j][s] = Pi_2 * D2[j][s];
-        }
+    s_fwd_bufs.ensure(g_n);
+    auto& calD1 = s_fwd_bufs.calD1;
+    auto& calD2 = s_fwd_bufs.calD2;
+    auto& calD1_new = s_fwd_bufs.calD1_new;
+    auto& calD2_new = s_fwd_bufs.calD2_new;
+    auto& X_new = s_fwd_bufs.X_new;
 
-    Kernel2D X;
-    state_kernel_from_calD(calD1, calD2, X);
+    const int TRI = g_n * (g_n + 1) / 2;
+    for (int i = 0; i < TRI; ++i) {
+        calD1.data[i] = Pi_1 * D1.data[i];
+        calD2.data[i] = Pi_2 * D2.data[i];
+    }
 
-    Kernel2D calD1_new, calD2_new, X_new;
+    // Work directly in env.X to avoid final copy
+    env.X.resize();
+    state_kernel_from_calD(calD1, calD2, env.X);
+
     for (int it = 0; it < inner_iters; ++it) {
         #pragma omp parallel sections
         {
             #pragma omp section
-            compute_filter_kernels(X, Pi_1, obs_idx_1, obs_gain1,
+            compute_filter_kernels(env.X, Pi_1, obs_idx_1, obs_gain1,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
                                    env.Xtilde1, env.A_store1);
             #pragma omp section
-            compute_filter_kernels(X, Pi_2, obs_idx_2, obs_gain2,
+            compute_filter_kernels(env.X, Pi_2, obs_idx_2, obs_gain2,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
                                    env.Xtilde2, env.A_store2);
         }
@@ -396,12 +435,10 @@ void forward_environment(
         }
 
         state_kernel_from_calD(calD1_new, calD2_new, X_new);
-        for (int t = 0; t < g_n; ++t)
-            for (int s = 0; s <= t; ++s)
-                X[t][s] = 0.6 * X_new[t][s] + 0.4 * X[t][s];
+        for (int i = 0; i < TRI; ++i)
+            env.X.data[i] = 0.6 * X_new.data[i] + 0.4 * env.X.data[i];
     }
 
-    env.X = X;
     env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
     env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
 }
@@ -445,34 +482,39 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
         Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
 
     ensure_hk_buffers();
-    // Only zero the portion we'll use (g_n rows × g_n cols)
-    for (int z = 0; z < g_n; ++z)
-        for (int r = 0; r < g_n; ++r)
-            (*s_hk_buf0)(z, r).setZero();
+    for (auto& m : s_hk_buf0->data) m.setZero();
     HkSlice* cur = s_hk_buf0.get();
     HkSlice* nxt = s_hk_buf1.get();
 
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;  // t+1
-        double Pk = prec_k[tp];
+        const double dt_Pk = g_dt * prec_k[tp];
 
-        // W[r] = g_dt * Pk * sum_z Hk[tp][z][r]^T * Xtilde[tp][z]
+        // Precompute Xtilde row pointer for tp
+        const Vec3* Xt_tp = &Xtildek[tp][0];
+
+        // W[r] = dt_Pk * sum_z Hk[tp][z][r]^T * Xtilde[tp][z]
         std::array<Vec3, N_MAX> W;
         for (int r = 0; r <= j; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z <= tp; ++z)
-                acc += (*cur)(z, r).transpose() * Xtildek[tp][z];
-            W[r] = g_dt * Pk * acc;
+                acc += (*cur)(z, r).transpose() * Xt_tp[z];
+            W[r] = dt_Pk * acc;
         }
 
+        // Precompute row pointers for tp
+        const Vec3* Hx_tp = &Hx[tp][0];
+        const Vec3* X_tp = &X[tp][0];
+        const Vec3* Dk_tp = &Dk[tp][0];
+
         for (int r = 0; r <= j; ++r)
-            Hx[j][r] = Hx[tp][r] + g_dt * (X[tp][r] + W[r]);
+            Hx[j][r] = Hx_tp[r] + g_dt * (X_tp[r] + W[r]);
 
         for (int z = 0; z <= j; ++z)
             for (int r = 0; r <= j; ++r)
                 (*nxt)(z, r) = (*cur)(z, r)
-                    + g_dt * (Dk[tp][r] * Hx[tp][z].transpose()
-                          - X[tp][z] * W[r].transpose());
+                    + g_dt * (Dk_tp[r] * Hx_tp[z].transpose()
+                          - X_tp[z] * W[r].transpose());
 
         std::swap(cur, nxt);
     }
@@ -491,36 +533,38 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
         Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
 
     ensure_hk_buffers();
-    for (int z = 0; z < g_n; ++z)
-        for (int r = 0; r < g_n; ++r)
-            (*s_hk_buf0)(z, r).setZero();
+    for (auto& m : s_hk_buf0->data) m.setZero();
     HkSlice* cur = s_hk_buf0.get();
     HkSlice* nxt = s_hk_buf1.get();
 
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;
-        double Pk = prec_k[tp];
+        const double dt_Pk = g_dt * prec_k[tp];
+        const Vec3* Xt_tp = &Xtildek[tp][0];
 
         std::array<Vec3, N_MAX> W;
         for (int r = 0; r <= j; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z <= tp; ++z)
-                acc += (*cur)(z, r).transpose() * Xtildek[tp][z];
-            W[r] = g_dt * Pk * acc;
+                acc += (*cur)(z, r).transpose() * Xt_tp[z];
+            W[r] = dt_Pk * acc;
         }
 
-        // Store W[r] = V^i(t_{j+1}, r) into Vkernel
         for (int r = 0; r <= j; ++r)
             Vkernel[tp][r] = W[r];
 
+        const Vec3* Hx_tp = &Hx[tp][0];
+        const Vec3* X_tp = &X[tp][0];
+        const Vec3* Dk_tp = &Dk[tp][0];
+
         for (int r = 0; r <= j; ++r)
-            Hx[j][r] = Hx[tp][r] + g_dt * (X[tp][r] + W[r]);
+            Hx[j][r] = Hx_tp[r] + g_dt * (X_tp[r] + W[r]);
 
         for (int z = 0; z <= j; ++z)
             for (int r = 0; r <= j; ++r)
                 (*nxt)(z, r) = (*cur)(z, r)
-                    + g_dt * (Dk[tp][r] * Hx[tp][z].transpose()
-                          - X[tp][z] * W[r].transpose());
+                    + g_dt * (Dk_tp[r] * Hx_tp[z].transpose()
+                          - X_tp[z] * W[r].transpose());
 
         std::swap(cur, nxt);
     }
@@ -686,23 +730,28 @@ static EquilibriumResult solve_equilibrium_core(
     auto prec1 = make_constant_prec(p1_val * p1_val);
     auto prec2 = make_constant_prec(p2_val * p2_val);
     EnvironmentResult env;
+    const int TRI = g_n * (g_n + 1) / 2;
+    const double neg_inv_r1 = -(1.0 / g_r1);
+    const double neg_inv_r2 = -(1.0 / g_r2);
 
-    // Anderson acceleration (AA) state
-    const int aa_m = aa_depth;
-    const int aa_store = aa_m + 1;  // +1 so write slot doesn't collide with reads
+    // Pre-allocate loop temporaries once (avoid per-iteration heap alloc)
+    Kernel2D Hx1, Hx2;
+
+    // Anderson acceleration (AA) state — only allocated when needed
     constexpr double AA_REG = 1e-12;
     constexpr double AA_BETA = 0.6;
-    const int TRI = g_n * (g_n + 1) / 2;
-
+    const int aa_m = use_aa ? aa_depth : 0;
+    const int aa_store = aa_m + 1;
     struct AAEntry { Kernel2D f1, f2, g1, g2; };
-    std::vector<AAEntry> hist(aa_store);
+    std::vector<AAEntry> hist(use_aa ? aa_store : 0);
+    // Picard path: single-entry residual buffer (no g1/g2 needed)
+    Kernel2D picard_f1, picard_f2;
     int stored = 0;
 
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
         forward_environment(D1, D2, p1_val, p2_val, fwd_inner_iters,
                             Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
-        Kernel2D Hx1, Hx2;
         #pragma omp parallel sections
         {
             #pragma omp section
@@ -711,34 +760,30 @@ static EquilibriumResult solve_equilibrium_core(
             backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2);
         }
 
-        // Compute G = -(1/r_k)*Hx and residual F = G - D
-        const double neg_inv_r1 = -(1.0 / g_r1);
-        const double neg_inv_r2 = -(1.0 / g_r2);
-        auto& cur = hist[stored % aa_store];
+        // Compute residual and update D
         double norm_f = 0.0, norm_g = 0.0;
-        for (int i = 0; i < TRI; ++i) {
-            cur.g1.data[i] = neg_inv_r1 * Hx1.data[i];
-            cur.g2.data[i] = neg_inv_r2 * Hx2.data[i];
-            cur.f1.data[i] = cur.g1.data[i] - D1.data[i];
-            cur.f2.data[i] = cur.g2.data[i] - D2.data[i];
-            norm_f += cur.f1.data[i].squaredNorm() + cur.f2.data[i].squaredNorm();
-            norm_g += cur.g1.data[i].squaredNorm() + cur.g2.data[i].squaredNorm();
-        }
 
-        double err = std::sqrt(norm_f) / std::max(1.0, std::sqrt(norm_g));
-        residuals.push_back(err);
-        if (!std::isfinite(err)) break;
-
-        if (verbose && (it <= 5 || it % 50 == 0))
-            std::cout << "  it=" << it << "  resid=" << err << std::endl;
-        if (err < PICARD_TOL) {
-            if (verbose)
-                std::cout << "  Converged at iteration " << it << std::endl;
-            break;
-        }
-
-        // --- D update: Anderson acceleration or plain Picard ---
         if (use_aa) {
+            auto& cur = hist[stored % aa_store];
+            for (int i = 0; i < TRI; ++i) {
+                cur.g1.data[i] = neg_inv_r1 * Hx1.data[i];
+                cur.g2.data[i] = neg_inv_r2 * Hx2.data[i];
+                cur.f1.data[i] = cur.g1.data[i] - D1.data[i];
+                cur.f2.data[i] = cur.g2.data[i] - D2.data[i];
+                norm_f += cur.f1.data[i].squaredNorm() + cur.f2.data[i].squaredNorm();
+                norm_g += cur.g1.data[i].squaredNorm() + cur.g2.data[i].squaredNorm();
+            }
+
+            double err = std::sqrt(norm_f) / std::max(1.0, std::sqrt(norm_g));
+            residuals.push_back(err);
+            if (!std::isfinite(err)) break;
+            if (verbose && (it <= 5 || it % 50 == 0))
+                std::cout << "  it=" << it << "  resid=" << err << std::endl;
+            if (err < PICARD_TOL) {
+                if (verbose) std::cout << "  Converged at iteration " << it << std::endl;
+                break;
+            }
+
             int m = std::min(stored, aa_m);
             if (m >= 1) {
                 Eigen::VectorXd Ffi(m);
@@ -788,10 +833,29 @@ static EquilibriumResult solve_equilibrium_core(
             }
             stored++;
         } else {
-            // Plain Picard relaxation (no Anderson acceleration)
+            // Picard: compute residual directly, no g1/g2 storage needed
             for (int i = 0; i < TRI; ++i) {
-                D1.data[i] += PICARD_RELAX * cur.f1.data[i];
-                D2.data[i] += PICARD_RELAX * cur.f2.data[i];
+                Vec3 g1i = neg_inv_r1 * Hx1.data[i];
+                Vec3 g2i = neg_inv_r2 * Hx2.data[i];
+                picard_f1.data[i] = g1i - D1.data[i];
+                picard_f2.data[i] = g2i - D2.data[i];
+                norm_f += picard_f1.data[i].squaredNorm() + picard_f2.data[i].squaredNorm();
+                norm_g += g1i.squaredNorm() + g2i.squaredNorm();
+            }
+
+            double err = std::sqrt(norm_f) / std::max(1.0, std::sqrt(norm_g));
+            residuals.push_back(err);
+            if (!std::isfinite(err)) break;
+            if (verbose && (it <= 5 || it % 50 == 0))
+                std::cout << "  it=" << it << "  resid=" << err << std::endl;
+            if (err < PICARD_TOL) {
+                if (verbose) std::cout << "  Converged at iteration " << it << std::endl;
+                break;
+            }
+
+            for (int i = 0; i < TRI; ++i) {
+                D1.data[i] += PICARD_RELAX * picard_f1.data[i];
+                D2.data[i] += PICARD_RELAX * picard_f2.data[i];
             }
         }
     }
