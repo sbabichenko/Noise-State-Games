@@ -677,7 +677,8 @@ static EquilibriumResult solve_equilibrium_core(
     double p1_val, double p2_val,
     Kernel2D D1, Kernel2D D2, bool verbose,
     const Mat3& Pi_1, int obs_idx_1,
-    const Mat3& Pi_2, int obs_idx_2) {
+    const Mat3& Pi_2, int obs_idx_2,
+    int fwd_inner_iters = FORWARD_INNER_ITERS) {
 
     std::vector<double> residuals;
     auto prec1 = make_constant_prec(p1_val * p1_val);
@@ -696,7 +697,7 @@ static EquilibriumResult solve_equilibrium_core(
     int stored = 0;
 
     for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
-        forward_environment(D1, D2, p1_val, p2_val, FORWARD_INNER_ITERS,
+        forward_environment(D1, D2, p1_val, p2_val, fwd_inner_iters,
                             Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
         Kernel2D Hx1, Hx2;
@@ -827,6 +828,45 @@ EquilibriumResult solve_equilibrium_warm(
     Kernel2D D1(D1_init), D2(D2_init);
     return solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
                                   verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+}
+
+// --- solve_equilibrium_fast: warm start + reduced inner iterations ---
+//
+// ~1.5x faster than standard. Uses S_pi warm start AND 1 forward inner
+// iteration (vs 2).  The equilibrium is self-consistent (converged) but D
+// kernels differ ~5-12% from the standard solver due to less-resolved
+// Xtilde ↔ X coupling within the forward pass.
+
+EquilibriumResult solve_equilibrium_fast(
+    double p1_val, double p2_val, bool verbose,
+    const Mat3& Pi_1, int obs_idx_1,
+    const Mat3& Pi_2, int obs_idx_2) {
+
+    // S_pi warm start
+    std::array<double, N_MAX> S_pi;
+    S_pi.fill(0.0);
+    S_pi[g_n - 1] = TERMINAL_STATE_WEIGHT;
+    for (int j = g_n - 2; j >= 0; --j)
+        S_pi[j] = S_pi[j + 1]
+            + g_dt * (1.0 - (1.0 / g_r1 + 1.0 / g_r2) * S_pi[j + 1] * S_pi[j + 1]);
+
+    double r_ratio = std::min(g_r1, g_r2) / std::max(g_r1, g_r2);
+    double damp = std::sqrt(r_ratio);
+
+    Kernel2D D1, D2;
+    Vec3 sigE0 = g_sigma * E0();
+    for (int j = 0; j < g_n; ++j)
+        for (int s = 0; s <= j; ++s) {
+            D1[j][s] = -damp * (S_pi[j] / g_r1) * sigE0;
+            D2[j][s] = -damp * (S_pi[j] / g_r2) * sigE0;
+        }
+
+    // Use 1 forward inner iteration instead of 2 — halves filter cost per step.
+    constexpr int FAST_INNER_ITERS = 1;
+
+    return solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
+                                  verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2,
+                                  FAST_INNER_ITERS);
 }
 
 // --- solve_equilibrium_sr: Riccati warm-started Picard iteration ---

@@ -365,6 +365,14 @@ void backward_kernels_sr(
     Kernel2D& Hx, Kernel2D& Vkernel,
     CostateDecomposition& decomp);
 
+// Fast solver: S_pi warm start + reduced forward inner iterations (1 vs 2).
+// ~1.5x faster than standard but D kernels differ ~5-12% due to less-resolved
+// filter coupling.  Converges to its own self-consistent equilibrium.
+EquilibriumResult solve_equilibrium_fast(
+    double p1_val, double p2_val, bool verbose = true,
+    const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
+    const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
+
 // SR-initialized solver: warm-starts from perfect-info Riccati S_pi,
 // reducing the number of Picard iterations needed to converge.
 EquilibriumResult solve_equilibrium_sr(

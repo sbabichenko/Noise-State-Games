@@ -109,10 +109,14 @@ int main() {
 
     // ========== Part 2: Performance benchmark ==========
     std::printf("\n========== Part 2: Performance Benchmark ==========\n\n");
-    std::printf("%-24s  %6s  %6s  %8s  %6s  %8s  %8s  %s\n",
-                "test", "std_it", "sr_it", "std_ms", "sr_ms", "speedup", "D_gap", "status");
-    std::printf("%-24s  %6s  %6s  %8s  %6s  %8s  %8s  %s\n",
-                "----", "------", "-----", "------", "-----", "-------", "-----", "------");
+    std::printf("%-24s  %6s  %6s  %6s  %8s  %7s  %7s  %7s  %7s  %8s  %8s  %s\n",
+                "test", "std_it", "sr_it", "fst_it",
+                "std_ms", "sr_ms", "fst_ms",
+                "sr_spd", "fst_spd", "sr_gap", "fst_gap", "status");
+    std::printf("%-24s  %6s  %6s  %6s  %8s  %7s  %7s  %7s  %7s  %8s  %8s  %s\n",
+                "----", "------", "-----", "------",
+                "------", "------", "------",
+                "------", "------", "------", "------", "------");
 
     for (auto& tc : cases) {
         SolverContext ctx{};
@@ -148,19 +152,39 @@ int main() {
         }
         double ms_sr = ms_sr_total / 3.0;
 
+        // Fast solver (average of 3 runs)
+        double ms_fst_total = 0.0;
+        int it_fst = 0;
+        EquilibriumResult eq_fst;
+        for (int run = 0; run < 3; ++run) {
+            auto t0 = Clock::now();
+            eq_fst = solve_equilibrium_fast(tc.p1, tc.p2, false);
+            auto t1 = Clock::now();
+            ms_fst_total += std::chrono::duration<double, std::milli>(t1 - t0).count();
+            it_fst = static_cast<int>(eq_fst.residuals.size());
+        }
+        double ms_fst = ms_fst_total / 3.0;
+
         // Compare solutions
-        double gap = kernel_gap(eq_std.D1, eq_std.D2, eq_sr.D1, eq_sr.D2);
+        double sr_gap = kernel_gap(eq_std.D1, eq_std.D2, eq_sr.D1, eq_sr.D2);
+        double fst_gap = kernel_gap(eq_std.D1, eq_std.D2, eq_fst.D1, eq_fst.D2);
 
         bool std_conv = !eq_std.residuals.empty() && eq_std.residuals.back() < PICARD_TOL;
         bool sr_conv  = !eq_sr.residuals.empty()  && eq_sr.residuals.back()  < PICARD_TOL;
-        bool solutions_close = gap < 0.05;  // Allow some tolerance since different paths
-        if (!solutions_close) all_pass = false;
+        bool fst_conv = !eq_fst.residuals.empty() && eq_fst.residuals.back() < PICARD_TOL;
+        bool sr_close  = sr_gap  < 0.05;
+        bool fst_close = fst_gap < 0.15;  // fast solver trades accuracy for speed
+        if (!sr_close || !fst_close) all_pass = false;
 
-        double speedup = ms_std / std::max(0.01, ms_sr);
-        std::printf("%-24s  %6d  %6d  %7.1fms  %5.1fms  %7.2fx  %8.5f  %s/%s%s\n",
-                    tc.desc, it_std, it_sr, ms_std, ms_sr, speedup, gap,
-                    std_conv ? "yes" : "NO", sr_conv ? "yes" : "NO",
-                    solutions_close ? "" : " D_GAP!");
+        double sr_speedup  = ms_std / std::max(0.01, ms_sr);
+        double fst_speedup = ms_std / std::max(0.01, ms_fst);
+        std::printf("%-24s  %6d  %6d  %6d  %7.1fms  %6.1fms  %6.1fms  %6.2fx  %6.2fx  %8.5f  %8.5f  %s/%s/%s%s%s\n",
+                    tc.desc, it_std, it_sr, it_fst,
+                    ms_std, ms_sr, ms_fst,
+                    sr_speedup, fst_speedup,
+                    sr_gap, fst_gap,
+                    std_conv ? "y" : "N", sr_conv ? "y" : "N", fst_conv ? "y" : "N",
+                    sr_close ? "" : " SR_GAP!", fst_close ? "" : " FST_GAP!");
     }
 
     std::printf("\n=== %s ===\n", all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
