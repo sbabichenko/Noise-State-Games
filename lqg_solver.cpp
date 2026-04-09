@@ -743,9 +743,25 @@ static EquilibriumResult solve_equilibrium_core(
     // Pre-allocate loop temporaries once (avoid per-iteration heap alloc)
     Kernel2D Hx1, Hx2;
 
-    // Anderson acceleration (AA) state — only allocated when needed
+    // Adaptive relaxation: the Picard operator's spectral radius grows as
+    // ~1/min(r1,r2), so the maximum stable relaxation shrinks for extreme
+    // cost asymmetry. We start with a heuristic estimate and halve when
+    // the residual grows for consecutive iterations.
+    double min_r = std::min(g_r1, g_r2);
+    double relax = std::min(PICARD_RELAX, 0.42 / (1.0 + 0.2 / min_r));
+    double prev_err = 1e30;
+    int grow_count = 0;           // consecutive iterations where residual grew
+    int backoff_count = 0;        // total number of backoffs
+    constexpr int GROW_LIMIT = 2; // halve relax after this many
+    constexpr double RELAX_MIN = 0.005;
+
+    // Anderson acceleration (AA) state — only allocated when needed.
+    // AA extrapolation can destabilize for high spectral radius (extreme cost
+    // asymmetry). When adaptive backoff triggers, we disable AA and fall back
+    // to plain Picard which is always stable at sufficiently small alpha.
     constexpr double AA_REG = 1e-12;
-    constexpr double AA_BETA = 0.6;
+    double aa_beta = std::min(0.6, 4.0 * relax); // AA mixing tracks relaxation
+    bool aa_active = use_aa; // can be disabled dynamically by adaptive backoff
     const int aa_m = use_aa ? aa_depth : 0;
     const int aa_store = aa_m + 1;
     struct AAEntry { Kernel2D f1, f2, g1, g2; };
@@ -784,13 +800,43 @@ static EquilibriumResult solve_equilibrium_core(
             residuals.push_back(err);
             if (!std::isfinite(err)) break;
             if (verbose && (it <= 5 || it % 50 == 0))
-                std::cout << "  it=" << it << "  resid=" << err << std::endl;
+                std::cout << "  it=" << it << "  resid=" << err
+                          << "  relax=" << relax << std::endl;
             if (err < PICARD_TOL) {
                 if (verbose) std::cout << "  Converged at iteration " << it << std::endl;
                 break;
             }
 
-            int m = std::min(stored, aa_m);
+            // Adaptive relaxation: back off when residual grows
+            if (err >= prev_err) {
+                if (++grow_count >= GROW_LIMIT) {
+                    ++backoff_count;
+                    if (aa_active && backoff_count >= 2) {
+                        // AA extrapolation is destabilizing — switch to plain
+                        // Picard which is always stable at small enough alpha.
+                        // Reset D to zero so we don't carry over chaotic AA state.
+                        aa_active = false;
+                        relax = std::min(PICARD_RELAX, 0.42 / (1.0 + 0.2 / min_r));
+                        D1.setZero();
+                        D2.setZero();
+                        prev_err = 1e30;
+                        if (verbose)
+                            std::cout << "  [adaptive] AA disabled, cold restart, relax=" << relax << std::endl;
+                    } else if (relax > RELAX_MIN) {
+                        relax = std::max(RELAX_MIN, relax * 0.5);
+                        aa_beta = std::min(aa_beta, 2.0 * relax);
+                        stored = 0;  // reset AA history after relaxation change
+                        if (verbose)
+                            std::cout << "  [adaptive] relax -> " << relax << std::endl;
+                    }
+                    grow_count = 0;
+                }
+            } else {
+                grow_count = 0;
+            }
+            prev_err = err;
+
+            int m = aa_active ? std::min(stored, aa_m) : 0;
             if (m >= 1) {
                 Eigen::VectorXd Ffi(m);
                 for (int i = 0; i < m; ++i) {
@@ -828,16 +874,16 @@ static EquilibriumResult solve_equilibrium_core(
                         d1_aa -= gam[k] * (cg1[i] - g1p[k][i]);
                         d2_aa -= gam[k] * (cg2[i] - g2p[k][i]);
                     }
-                    D1.data[i] = (1.0 - AA_BETA) * D1.data[i] + AA_BETA * d1_aa;
-                    D2.data[i] = (1.0 - AA_BETA) * D2.data[i] + AA_BETA * d2_aa;
+                    D1.data[i] = (1.0 - aa_beta) * D1.data[i] + aa_beta * d1_aa;
+                    D2.data[i] = (1.0 - aa_beta) * D2.data[i] + aa_beta * d2_aa;
                 }
             } else {
                 for (int i = 0; i < TRI; ++i) {
-                    D1.data[i] += PICARD_RELAX * cur.f1.data[i];
-                    D2.data[i] += PICARD_RELAX * cur.f2.data[i];
+                    D1.data[i] += relax * cur.f1.data[i];
+                    D2.data[i] += relax * cur.f2.data[i];
                 }
             }
-            stored++;
+            if (aa_active) stored++;
         } else {
             // Picard: compute residual directly, no g1/g2 storage needed
             for (int i = 0; i < TRI; ++i) {
@@ -853,15 +899,29 @@ static EquilibriumResult solve_equilibrium_core(
             residuals.push_back(err);
             if (!std::isfinite(err)) break;
             if (verbose && (it <= 5 || it % 50 == 0))
-                std::cout << "  it=" << it << "  resid=" << err << std::endl;
+                std::cout << "  it=" << it << "  resid=" << err
+                          << "  relax=" << relax << std::endl;
             if (err < PICARD_TOL) {
                 if (verbose) std::cout << "  Converged at iteration " << it << std::endl;
                 break;
             }
 
+            // Adaptive relaxation: back off when residual grows
+            if (err >= prev_err) {
+                if (++grow_count >= GROW_LIMIT && relax > RELAX_MIN) {
+                    relax = std::max(RELAX_MIN, relax * 0.5);
+                    grow_count = 0;
+                    if (verbose)
+                        std::cout << "  [adaptive] relax -> " << relax << std::endl;
+                }
+            } else {
+                grow_count = 0;
+            }
+            prev_err = err;
+
             for (int i = 0; i < TRI; ++i) {
-                D1.data[i] += PICARD_RELAX * picard_f1.data[i];
-                D2.data[i] += PICARD_RELAX * picard_f2.data[i];
+                D1.data[i] += relax * picard_f1.data[i];
+                D2.data[i] += relax * picard_f2.data[i];
             }
         }
     }
@@ -955,8 +1015,11 @@ EquilibriumResult solve_equilibrium_fast(
                                           verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2,
                                           FORWARD_INNER_ITERS, /*use_aa=*/false);
 
-    // Fallback to standard solver if warm start + reduced AA doesn't converge
-    if (!result.residuals.empty() && result.residuals.back() >= PICARD_TOL) {
+    // Fallback to standard solver if warm start didn't converge or diverged.
+    // Note: NaN >= x is false in IEEE 754, so check !isfinite explicitly.
+    if (!result.residuals.empty() &&
+        (!std::isfinite(result.residuals.back()) ||
+         result.residuals.back() >= PICARD_TOL)) {
         if (verbose)
             std::cout << "  [fast] Did not converge; falling back to standard\n";
         return solve_equilibrium(p1_val, p2_val, verbose,
@@ -1004,8 +1067,10 @@ EquilibriumResult solve_equilibrium_sr(
     auto result = solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
                                           verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
 
-    // Fallback: if warm start didn't converge, retry from cold start
-    if (!result.residuals.empty() && result.residuals.back() >= PICARD_TOL) {
+    // Fallback: if warm start didn't converge or diverged, retry from cold start
+    if (!result.residuals.empty() &&
+        (!std::isfinite(result.residuals.back()) ||
+         result.residuals.back() >= PICARD_TOL)) {
         if (verbose)
             std::cout << "  [SR] Warm start did not converge; retrying cold start\n";
         Kernel2D D1z, D2z;
