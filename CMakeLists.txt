@@ -65,6 +65,15 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(test_ce_picard PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
+add_executable(bench_sweep
+    bench_sweep.cpp
+    lqg_solver.cpp
+)
+target_link_libraries(bench_sweep PRIVATE Eigen3::Eigen)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bench_sweep PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 add_executable(test_sr_decomp
     test_sr_decomp.cpp
     lqg_solver.cpp
