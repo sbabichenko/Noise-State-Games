@@ -76,11 +76,10 @@ static struct SolveCache {
     bool valid;
     bool ce_mode;
 
-    // Previous converged D kernels for warm-starting when parameters change.
-    // Kept separately so they survive cache invalidation.
+    // Survive cache invalidation — warm-start next solve from last converged D.
     Kernel2D prev_D1, prev_D2;
     bool has_prev;
-    int prev_n;  // grid size of prev_D — only warm-start if grid matches
+    int prev_n;
 
     EquilibriumResult eq;
     Kernel2D Vkernel1, Vkernel2;  // kernel information wedges V^i(t,r)
@@ -135,35 +134,28 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
 
     try {
 
-    // Solve equilibrium (standard or CE mode).
-    // Strategy: try warm-start from previous converged solution first (when
-    // the user drags a slider, the previous D is usually a good initial guess).
-    // Fall back to cold-start if warm-start fails or no previous solution exists.
+    // Try warm-start from previous converged D (good guess when user drags a
+    // slider). Cap iterations to avoid burning the full budget on a bad guess.
+    // Fall back to cold-start if warm-start doesn't converge.
     g_cache.failed_stage = g_use_ce ? "solve_equilibrium_ce" : "solve_equilibrium";
 
     bool converged = false;
 
-    // Try warm-start if we have a previous solution at the same grid size
     if (g_cache.has_prev && g_cache.prev_n == g_n && !g_use_ce) {
         g_cache.eq = solve_equilibrium_warm(p1, p2,
-                                             g_cache.prev_D1, g_cache.prev_D2, false);
-        converged = !g_cache.eq.residuals.empty() &&
-                    std::isfinite(g_cache.eq.residuals.back()) &&
-                    g_cache.eq.residuals.back() < PICARD_TOL;
+                                             g_cache.prev_D1, g_cache.prev_D2, false,
+                                             Pi1(), 1, Pi2(), 2, 200);
+        converged = g_cache.eq.is_converged();
     }
 
-    // Cold-start fallback
     if (!converged) {
         if (g_use_ce)
             g_cache.eq = solve_equilibrium_ce(p1, p2, false);
         else
             g_cache.eq = solve_equilibrium(p1, p2, false);
-        converged = !g_cache.eq.residuals.empty() &&
-                    std::isfinite(g_cache.eq.residuals.back()) &&
-                    g_cache.eq.residuals.back() < PICARD_TOL;
+        converged = g_cache.eq.is_converged();
     }
 
-    // Save converged D for future warm-starts
     if (converged) {
         g_cache.prev_D1 = g_cache.eq.D1;
         g_cache.prev_D2 = g_cache.eq.D2;
@@ -281,10 +273,7 @@ static void serialize_light() {
     out(","); out_array("barX_pi", g_cache.barX_pi.data(), g_n);
     out(",\"J1\":"); out_val(g_cache.costs.J1);
     out(",\"J2\":"); out_val(g_cache.costs.J2);
-    // Convergence flag: true if final residual < tolerance
-    bool converged = !eq.residuals.empty() &&
-        std::isfinite(eq.residuals.back()) && eq.residuals.back() < PICARD_TOL;
-    out(",\"converged\":%s", converged ? "true" : "false");
+    out(",\"converged\":%s", eq.is_converged() ? "true" : "false");
     out(",\"p1\":%.6g,\"p2\":%.6g,\"b1\":%.6g,\"b2\":%.6g",
         g_cache.p1, g_cache.p2, g_cache.b1, g_cache.b2);
     out(",\"obs_gain1\":%.6g,\"obs_idx1\":%d,\"obs_gain2\":%.6g,\"obs_idx2\":%d",

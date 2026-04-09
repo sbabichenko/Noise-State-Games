@@ -730,7 +730,8 @@ static EquilibriumResult solve_equilibrium_core(
     const Mat3& Pi_2, int obs_idx_2,
     int fwd_inner_iters = FORWARD_INNER_ITERS,
     bool use_aa = true,
-    int aa_depth = 5) {
+    int aa_depth = 5,
+    int max_iters = MAX_PICARD_ITERS) {
 
     std::vector<double> residuals;
     auto prec1 = make_constant_prec(p1_val * p1_val);
@@ -770,7 +771,7 @@ static EquilibriumResult solve_equilibrium_core(
     Kernel2D picard_f1, picard_f2;
     int stored = 0;
 
-    for (int it = 1; it <= MAX_PICARD_ITERS; ++it) {
+    for (int it = 1; it <= max_iters; ++it) {
         forward_environment(D1, D2, p1_val, p2_val, fwd_inner_iters,
                             Pi_1, obs_idx_1, Pi_2, obs_idx_2, env);
 
@@ -970,10 +971,12 @@ EquilibriumResult solve_equilibrium_warm(
     const Kernel2D& D1_init, const Kernel2D& D2_init,
     bool verbose,
     const Mat3& Pi_1, int obs_idx_1,
-    const Mat3& Pi_2, int obs_idx_2) {
+    const Mat3& Pi_2, int obs_idx_2,
+    int max_iters) {
     Kernel2D D1(D1_init), D2(D2_init);
     return solve_equilibrium_core(p1_val, p2_val, std::move(D1), std::move(D2),
-                                  verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2);
+                                  verbose, Pi_1, obs_idx_1, Pi_2, obs_idx_2,
+                                  FORWARD_INNER_ITERS, true, 5, max_iters);
 }
 
 // --- solve_equilibrium_fast: memory-efficient Picard solver ---

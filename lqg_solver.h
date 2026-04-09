@@ -243,6 +243,11 @@ struct EquilibriumResult {
     EnvironmentResult env;
     Kernel2D calD1, calD2;  // primitive control kernels (computed once after convergence)
     std::vector<double> residuals;
+
+    bool is_converged() const {
+        return !residuals.empty() && std::isfinite(residuals.back())
+            && residuals.back() < PICARD_TOL;
+    }
 };
 
 EquilibriumResult solve_equilibrium(
@@ -262,7 +267,8 @@ EquilibriumResult solve_equilibrium_warm(
     const Kernel2D& D1_init, const Kernel2D& D2_init,
     bool verbose = true,
     const Mat3& Pi_1 = Pi1(), int obs_idx_1 = 1,
-    const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2);
+    const Mat3& Pi_2 = Pi2(), int obs_idx_2 = 2,
+    int max_iters = MAX_PICARD_ITERS);
 
 // ---------- cost computation ----------
 struct CostPair {
