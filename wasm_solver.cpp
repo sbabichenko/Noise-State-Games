@@ -76,6 +76,12 @@ static struct SolveCache {
     bool valid;
     bool ce_mode;
 
+    // Previous converged D kernels for warm-starting when parameters change.
+    // Kept separately so they survive cache invalidation.
+    Kernel2D prev_D1, prev_D2;
+    bool has_prev;
+    int prev_n;  // grid size of prev_D — only warm-start if grid matches
+
     EquilibriumResult eq;
     Kernel2D Vkernel1, Vkernel2;  // kernel information wedges V^i(t,r)
     BarSolution bar;
@@ -129,12 +135,41 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
 
     try {
 
-    // Solve equilibrium (standard or CE mode)
+    // Solve equilibrium (standard or CE mode).
+    // Strategy: try warm-start from previous converged solution first (when
+    // the user drags a slider, the previous D is usually a good initial guess).
+    // Fall back to cold-start if warm-start fails or no previous solution exists.
     g_cache.failed_stage = g_use_ce ? "solve_equilibrium_ce" : "solve_equilibrium";
-    if (g_use_ce)
-        g_cache.eq = solve_equilibrium_ce(p1, p2, false);
-    else
-        g_cache.eq = solve_equilibrium(p1, p2, false);
+
+    bool converged = false;
+
+    // Try warm-start if we have a previous solution at the same grid size
+    if (g_cache.has_prev && g_cache.prev_n == g_n && !g_use_ce) {
+        g_cache.eq = solve_equilibrium_warm(p1, p2,
+                                             g_cache.prev_D1, g_cache.prev_D2, false);
+        converged = !g_cache.eq.residuals.empty() &&
+                    std::isfinite(g_cache.eq.residuals.back()) &&
+                    g_cache.eq.residuals.back() < PICARD_TOL;
+    }
+
+    // Cold-start fallback
+    if (!converged) {
+        if (g_use_ce)
+            g_cache.eq = solve_equilibrium_ce(p1, p2, false);
+        else
+            g_cache.eq = solve_equilibrium(p1, p2, false);
+        converged = !g_cache.eq.residuals.empty() &&
+                    std::isfinite(g_cache.eq.residuals.back()) &&
+                    g_cache.eq.residuals.back() < PICARD_TOL;
+    }
+
+    // Save converged D for future warm-starts
+    if (converged) {
+        g_cache.prev_D1 = g_cache.eq.D1;
+        g_cache.prev_D2 = g_cache.eq.D2;
+        g_cache.has_prev = true;
+        g_cache.prev_n = g_n;
+    }
 
     // Compute kernel information wedges V^i(t,r)
     g_cache.failed_stage = "backward_kernels (V wedges)";
