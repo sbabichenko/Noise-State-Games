@@ -169,9 +169,9 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     auto prec2_eq = make_constant_prec(p2 * p2);
     Kernel2D Hx1_tmp, Hx2_tmp;
     backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
-                     prec2_eq, 0.0, Hx1_tmp, g_cache.Vkernel1);
+                     prec2_eq, 0.0, Hx1_tmp, g_cache.Vkernel1, &g_cache.eq.env.scale2);
     backward_kernels(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
-                     prec1_eq, 0.0, Hx2_tmp, g_cache.Vkernel2);
+                     prec1_eq, 0.0, Hx2_tmp, g_cache.Vkernel2, &g_cache.eq.env.scale1);
 
     // Bar solution, costs, wedges
     g_cache.failed_stage = "solve_bar_equilibrium";
@@ -186,9 +186,9 @@ static void ensure_solve(double p1, double p2, double b1, double b2, double r1, 
     auto prec1_arr = make_constant_prec(p1 * p1);
     auto prec2_arr = make_constant_prec(p2 * p2);
     auto bba1 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde2, g_cache.eq.D2,
-                                       g_cache.bar.barX, b1, prec2_arr, 0.0);
+                                       g_cache.bar.barX, b1, prec2_arr, 0.0, &g_cache.eq.env.scale2);
     auto bba2 = backward_bar_adjoints(g_cache.eq.env.X, g_cache.eq.env.Xtilde1, g_cache.eq.D1,
-                                       g_cache.bar.barX, b2, prec1_arr, 0.0);
+                                       g_cache.bar.barX, b2, prec1_arr, 0.0, &g_cache.eq.env.scale1);
     g_cache.barHk1 = std::move(bba1.barHk);
     g_cache.barHk2 = std::move(bba2.barHk);
 
@@ -440,9 +440,9 @@ const char* solve_sweep(double p1, double b1, double b2, double r1, double r2,
         auto prec2_arr = make_constant_prec(p2 * p2);
         auto prec1_arr = make_constant_prec(p1 * p1);
         auto bba1 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde2, eq.D2,
-                                           bar.barX, b1, prec2_arr, 0.0);
+                                           bar.barX, b1, prec2_arr, 0.0, &eq.env.scale2);
         auto bba2 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde1, eq.D1,
-                                           bar.barX, b2, prec1_arr, 0.0);
+                                           bar.barX, b2, prec1_arr, 0.0, &eq.env.scale1);
         std::array<double, N_MAX> V1_arr, V2_arr;
         for (int j = 0; j < g_n; ++j) {
             double V1 = 0.0, V2 = 0.0;
@@ -500,9 +500,9 @@ const char* solve_sweep_point(double p1, double p2, double b1, double b2, double
     auto prec2_arr = make_constant_prec(p2 * p2);
     auto prec1_arr = make_constant_prec(p1 * p1);
     auto bba1 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde2, eq.D2,
-                                       bar.barX, b1, prec2_arr, 0.0);
+                                       bar.barX, b1, prec2_arr, 0.0, &eq.env.scale2);
     auto bba2 = backward_bar_adjoints(eq.env.X, eq.env.Xtilde1, eq.D1,
-                                       bar.barX, b2, prec1_arr, 0.0);
+                                       bar.barX, b2, prec1_arr, 0.0, &eq.env.scale1);
     std::array<double, N_MAX> V1_arr, V2_arr;
     for (int j = 0; j < g_n; ++j) {
         double V1 = 0.0, V2 = 0.0;

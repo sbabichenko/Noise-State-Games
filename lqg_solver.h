@@ -177,6 +177,10 @@ struct EnvironmentResult {
     // Observation parameters (needed for F materialization)
     double obs_gain1, obs_gain2;
     int obs_idx1, obs_idx2;
+    // Per-timestep discrete Kalman gain scale: 1 / (1 + dt*p²*σ_minus[j]).
+    // Cached so the backward adjoint can price manipulation consistently
+    // with the finite-dt filter update (not the continuous linearization).
+    std::array<double, N_MAX> scale1, scale2;
 };
 
 // ---------- bar solution ----------
@@ -209,28 +213,37 @@ void forward_environment(
     const Mat3& Pi_2, int obs_idx_2,
     EnvironmentResult& env);
 
+// Optional scale_k: per-timestep discrete Kalman gain 1/(1+dt·p²·σ).
+// When supplied, the manipulation term is attenuated to match the finite-dt
+// filter update. Pass nullptr for the (incorrect at moderate dt) continuous
+// linearization.
+
 // Hk-free version: uses internal ping-pong buffers instead of 36MB Kernel3D
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
-                      Kernel2D& Hx);
+                      Kernel2D& Hx,
+                      const std::array<double, N_MAX>* scale_k = nullptr);
 
 // Version that also outputs the kernel information wedge V^i(t,r)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
-                      Kernel2D& Hx, Kernel2D& Vkernel);
+                      Kernel2D& Hx, Kernel2D& Vkernel,
+                      const std::array<double, N_MAX>* scale_k = nullptr);
 
 // Legacy version that also fills Hk (only needed for figure output)
 void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk, const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
-                      Kernel2D& Hx, Kernel3D& Hk);
+                      Kernel2D& Hx, Kernel3D& Hk,
+                      const std::array<double, N_MAX>* scale_k = nullptr);
 
 BackwardBarResult backward_bar_adjoints(
     const Kernel2D& X, const Kernel2D& Xtildek, const Kernel2D& Dk,
     const std::array<double, N_MAX>& barX, double b,
-    const std::array<double, N_MAX>& prec_k, double terminal_weight);
+    const std::array<double, N_MAX>& prec_k, double terminal_weight,
+    const std::array<double, N_MAX>* scale_k = nullptr);
 
 BarSolution solve_bar_equilibrium(
     const EnvironmentResult& env, const Kernel2D& D1, const Kernel2D& D2,

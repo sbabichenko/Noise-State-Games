@@ -73,7 +73,8 @@ void state_kernel_from_calD(const Kernel2D& calD1, const Kernel2D& calD2,
 static void compute_filter_kernels(
     const Kernel2D& X, const Mat3& Pi, int obs_index,
     double obs_gain_val, int filter_iters, double relax,
-    Kernel2D& Xtilde, Kernel2D* A_store = nullptr) {
+    Kernel2D& Xtilde, Kernel2D* A_store = nullptr,
+    std::array<double, N_MAX>* scale_out = nullptr) {
 
     Mat3 I_minus_Pi = Mat3::Identity() - Pi;
     Vec3 e_i = Vec3::Zero();
@@ -87,6 +88,7 @@ static void compute_filter_kernels(
         if (j == 0) {
             Xtilde[0][0] = I_minus_Pi * X[0][0];
             if (A_store) (*A_store)[0][0].setZero();
+            if (scale_out) (*scale_out)[0] = 1.0;
             continue;
         }
 
@@ -140,6 +142,7 @@ static void compute_filter_kernels(
             for (int s = 0; s < j; ++s)
                 (*A_store)[j][s] = dt_prec * Xtilde[j][s];
         }
+        if (scale_out) (*scale_out)[j] = scale;
     }
 }
 
@@ -374,6 +377,8 @@ static void forward_environment_ce(
 
     env.obs_gain1 = obs_gain1; env.obs_gain2 = obs_gain2;
     env.obs_idx1 = obs_idx_1; env.obs_idx2 = obs_idx_2;
+    // CE mode uses exact discrete projection; no Kalman-gain attenuation.
+    env.scale1.fill(1.0); env.scale2.fill(1.0);
 }
 
 // --- forward_environment ---
@@ -423,11 +428,11 @@ void forward_environment(
             #pragma omp section
             compute_filter_kernels(env.X, Pi_1, obs_idx_1, obs_gain1,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.Xtilde1);
+                                   env.Xtilde1, nullptr, &env.scale1);
             #pragma omp section
             compute_filter_kernels(env.X, Pi_2, obs_idx_2, obs_gain2,
                                    FILTER_INNER_ITERS, FILTER_RELAX,
-                                   env.Xtilde2);
+                                   env.Xtilde2, nullptr, &env.scale2);
         }
 
         #pragma omp parallel sections
@@ -482,7 +487,8 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
                       const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
-                      Kernel2D& Hx) {
+                      Kernel2D& Hx,
+                      const std::array<double, N_MAX>* scale_k) {
     Hx.setZero();
     for (int s = 0; s < g_n; ++s)
         Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
@@ -494,7 +500,11 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
 
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;  // t+1
-        const double dt_Pk = g_dt * prec_k[tp];
+        // Attenuate manipulation pricing by the discrete Kalman gain so it
+        // matches the actual forward filter sensitivity (not the continuous
+        // linearization). Defaults to 1.0 when scale_k is not provided.
+        const double scale_tp = scale_k ? (*scale_k)[tp] : 1.0;
+        const double dt_Pk = g_dt * prec_k[tp] * scale_tp;
 
         // Precompute Xtilde row pointer for tp
         const Vec3* Xt_tp = &Xtildek[tp][0];
@@ -532,7 +542,8 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
                       const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
-                      Kernel2D& Hx, Kernel2D& Vkernel) {
+                      Kernel2D& Hx, Kernel2D& Vkernel,
+                      const std::array<double, N_MAX>* scale_k) {
     Hx.setZero();
     Vkernel.setZero();
     for (int s = 0; s < g_n; ++s)
@@ -545,7 +556,8 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
 
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;
-        const double dt_Pk = g_dt * prec_k[tp];
+        const double scale_tp = scale_k ? (*scale_k)[tp] : 1.0;
+        const double dt_Pk = g_dt * prec_k[tp] * scale_tp;
         const Vec3* Xt_tp = &Xtildek[tp][0];
 
         std::array<Vec3, N_MAX> W;
@@ -581,7 +593,8 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
                       const Kernel2D& Dk,
                       const std::array<double, N_MAX>& prec_k,
                       double terminal_state_weight,
-                      Kernel2D& Hx, Kernel3D& Hk) {
+                      Kernel2D& Hx, Kernel3D& Hk,
+                      const std::array<double, N_MAX>* scale_k) {
     Hx.setZero();
     for (int s = 0; s < g_n; ++s)
         Hx[g_n - 1][s] = -terminal_state_weight * X[g_n - 1][s];
@@ -593,13 +606,14 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;
         double Pk = prec_k[tp];
+        const double scale_tp = scale_k ? (*scale_k)[tp] : 1.0;
 
         std::array<Vec3, N_MAX> W;
         for (int r = 0; r <= j; ++r) {
             Vec3 acc = Vec3::Zero();
             for (int z = 0; z <= tp; ++z)
                 acc += Hk[tp][z][r].transpose() * Xtildek[tp][z];
-            W[r] = g_dt * Pk * acc;
+            W[r] = g_dt * Pk * scale_tp * acc;
         }
 
         for (int r = 0; r <= j; ++r)
@@ -618,7 +632,8 @@ void backward_kernels(const Kernel2D& X, const Kernel2D& Xtildek,
 BackwardBarResult backward_bar_adjoints(
     const Kernel2D& X, const Kernel2D& Xtildek, const Kernel2D& Dk,
     const std::array<double, N_MAX>& barX, double b,
-    const std::array<double, N_MAX>& prec_k, double terminal_weight) {
+    const std::array<double, N_MAX>& prec_k, double terminal_weight,
+    const std::array<double, N_MAX>* scale_k) {
 
     BackwardBarResult res;
     res.barHx.fill(0.0);
@@ -628,11 +643,12 @@ BackwardBarResult backward_bar_adjoints(
     for (int j = g_n - 2; j >= 0; --j) {
         int tp = j + 1;
         double Pk = prec_k[tp];
+        const double scale_tp = scale_k ? (*scale_k)[tp] : 1.0;
 
         double I_val = 0.0;
         for (int z = 0; z <= tp; ++z)
             I_val += Xtildek[tp][z].dot(res.barHk[tp][z]);
-        I_val *= g_dt * Pk;
+        I_val *= g_dt * Pk * scale_tp;
 
         res.barHx[j] = res.barHx[tp] + g_dt * ((barX[tp] - b) + I_val);
 
@@ -666,10 +682,10 @@ BarSolution solve_bar_equilibrium(
         {
             #pragma omp section
             bba1 = backward_bar_adjoints(env.X, env.Xtilde2, D2,
-                                          barX, g_b1, prec2_arr, 0.0);
+                                          barX, g_b1, prec2_arr, 0.0, &env.scale2);
             #pragma omp section
             bba2 = backward_bar_adjoints(env.X, env.Xtilde1, D1,
-                                          barX, g_b2, prec1_arr, 0.0);
+                                          barX, g_b2, prec1_arr, 0.0, &env.scale1);
         }
 
         std::array<double, N_MAX> barD1_new, barD2_new;
@@ -778,9 +794,9 @@ static EquilibriumResult solve_equilibrium_core(
         #pragma omp parallel sections
         {
             #pragma omp section
-            backward_kernels(env.X, env.Xtilde2, D2, prec2, 0.0, Hx1);
+            backward_kernels(env.X, env.Xtilde2, D2, prec2, 0.0, Hx1, &env.scale2);
             #pragma omp section
-            backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2);
+            backward_kernels(env.X, env.Xtilde1, D1, prec1, 0.0, Hx2, &env.scale1);
         }
 
         // Compute residual and update D
