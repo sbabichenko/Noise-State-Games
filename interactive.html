@@ -689,14 +689,16 @@ h1 { text-align: center; font-size: 1.3em; font-weight: 400; letter-spacing: 0.0
 <!-- Tab 2: Kernels (consolidated) -->
 <div id="tab-kernels" class="tab-panel">
   <div class="figure-caption" style="margin-bottom:14px;">
-    <strong>The catalog of equilibrium objects.</strong>
-    Every quantity in this model is a <em>kernel</em> &mdash; a function of two times
-    mapping a shock at source $s$ to its effect at evaluation time $t$. The subtabs
-    step through them: state response, player feedback rules, primitive controls,
-    unresolved state, the filtration map, the wedge that prices belief manipulation,
-    and rank structure. All plots use three sub-panels for the noise channels $W^0$
-    (common), $W^1$, $W^2$, with curves colored by evaluation time $t$
-    (purple $\to$ yellow = early $\to$ late).
+    <strong>The dual view to impulse responses.</strong>
+    Where the Impulse tab fixes a shock at source time $s$ and traces its forward
+    propagation, the kernel view fixes evaluation time $t$ and shows how the state
+    and each player's noise state are constructed as integrals over past shocks
+    $s \le t$ &mdash; e.g., $X_t = \bar{X}_t + \sum_r \int_0^t X^r(t,s)\,dW^r_s$.
+    Same objects, transposed perspective. The subtabs cover the state response,
+    players' feedback rules, primitive controls, unresolved state, the filtration
+    map, the wedge that prices belief manipulation, and rank structure. All plots
+    use three sub-panels for the noise channels $W^0$ (common), $W^1$, $W^2$, with
+    curves colored by evaluation time $t$ (purple $\to$ yellow = early $\to$ late).
   </div>
   <div style="display:flex; flex-wrap:wrap; gap:2px; margin-bottom:12px; padding:6px 0;">
     <button class="subtab-btn active" data-subtab="kern-state" data-group="kernels">State</button>
