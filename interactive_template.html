@@ -591,6 +591,14 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Tab 1: Equilibrium -->
 <div id="tab-equilibrium" class="tab-panel">
+  <div class="figure-caption" style="margin-bottom:14px;">
+    <strong>The deterministic equilibrium and its strategic distortion.</strong>
+    Mean controls $\bar{D}^i(t)$ and the information wedge $\bar{V}^i(t)$ that
+    prices bilateral belief manipulation: each player shades their drift to steer
+    what the opponent learns, and the wedge captures that as an additive correction
+    to the costate. Compare the solid curves against the dashed perfect-information
+    Riccati benchmark &mdash; the gap is the deadweight loss from the friction.
+  </div>
   <div class="figure-block">
     <div id="plot-controls" class="plot"></div>
     <div class="figure-caption">
@@ -619,6 +627,13 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Simulation tab -->
 <div id="tab-simulation" class="tab-panel">
+  <div class="figure-caption" style="margin-bottom:14px;">
+    <strong>What equilibrium looks like on a single draw.</strong>
+    The other tabs display kernel objects abstractly. Here we generate concrete
+    realizations of the state, player estimates, and realized controls so equilibrium
+    dynamics are visible pathwise &mdash; and so the analytical $\pm 2\sigma$ envelopes
+    can be checked against the empirical spread of paths. Resample to draw new noise.
+  </div>
   <div class="param-card" style="margin-bottom:14px;">
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:2px 0;">
       <button id="sim-resample">Resample</button>
@@ -660,10 +675,16 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Tab 2: Kernels (consolidated) -->
 <div id="tab-kernels" class="tab-panel">
-  <p class="figure-caption" style="margin-bottom:10px; font-style:italic;">
-    All kernel plots show three sub-panels for noise channels $W^0$ (system), $W^1$ (player 1 obs.),
-    $W^2$ (player 2 obs.). Curves colored by evaluation time $t$ (purple $\to$ yellow = early $\to$ late).
-  </p>
+  <div class="figure-caption" style="margin-bottom:14px;">
+    <strong>The catalog of equilibrium objects.</strong>
+    Every quantity in this model is a <em>kernel</em> &mdash; a function of two times
+    mapping a shock at source $s$ to its effect at evaluation time $t$. The subtabs
+    step through them: state response, player feedback rules, primitive controls,
+    unresolved state, the filtration map, the wedge that prices belief manipulation,
+    and rank structure. All plots use three sub-panels for the noise channels $W^0$
+    (common), $W^1$, $W^2$, with curves colored by evaluation time $t$
+    (purple $\to$ yellow = early $\to$ late).
+  </div>
   <div style="display:flex; flex-wrap:wrap; gap:2px; margin-bottom:12px; padding:6px 0;">
     <button class="subtab-btn active" data-subtab="kern-state" data-group="kernels">State</button>
     <button class="subtab-btn" data-subtab="kern-feedback" data-group="kernels">Feedback</button>
@@ -802,8 +823,12 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 <!-- Tab 2.5: Impulse Response -->
 <div id="tab-impulse" class="tab-panel">
   <div class="figure-caption" style="margin-bottom:14px;">
-    A unit shock hits noise channel $W^r$ at source time $s$. The panels below show how it
-    propagates through the physical state, each player's controls, and their information sets.
+    <strong>The most direct view of equilibrium dynamics.</strong>
+    Drop a unit shock into one of the three noise channels at source time $s$ and
+    watch the full system response: how the physical state moves, how much each
+    player resolves about it, and how each player's noise-state belief reacts.
+    Every other plot in this app is a slice or summary of these impulse responses
+    &mdash; this is the most fundamental object the solver computes.
   </div>
   <div class="param-card" style="margin-bottom:14px;">
     <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap; padding:2px 0;">
@@ -869,6 +894,14 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Tab 4: Comparative Statics -->
 <div id="tab-statics" class="tab-panel">
+  <div class="figure-caption" style="margin-bottom:14px;">
+    <strong>Comparative statics in player 2's precision.</strong>
+    Sweeps $p_2$ with everything else fixed. Pooled-information costs (dashed) remove
+    both the direct information loss and the strategic friction simultaneously, so
+    the gap to the solid private-information curves separates these two effects:
+    how much is the cost of having less information, and how much is the additional
+    distortion from bilateral belief manipulation.
+  </div>
   <div class="figure-block">
     <div id="plot-costs" class="plot"></div>
     <div class="figure-caption">
@@ -900,6 +933,16 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Tab: Allocation -->
 <div id="tab-allocation" class="tab-panel">
+  <div class="figure-caption" style="margin-bottom:14px;">
+    <strong>The headline policy result.</strong>
+    Given a fixed precision budget $p_1^2 + p_2^2 = \bar{P}$, who should the planner
+    give it to? Sweeping the split surfaces the paper's central finding: under
+    asymmetric effort costs, concentrating precision on the efficient player wins
+    via <em>information starvation</em>. The mechanism is a chain reaction
+    &mdash; starve the inefficient player of signal $\Rightarrow$ their mean control
+    collapses $\Rightarrow$ the efficient player has nothing to manipulate
+    $\Rightarrow$ bilateral waste collapses.
+  </div>
   <div class="param-card" style="margin-bottom:14px;">
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:2px 0;">
       <div class="slider-group" style="min-width:150px; max-width:100%;">
@@ -939,6 +982,13 @@ h1 { text-align: center; font-size: 1.15em; font-weight: 700; letter-spacing: 0.
 
 <!-- Tab 5: Diagnostics -->
 <div id="tab-diagnostics" class="tab-panel">
+  <div class="figure-caption" style="margin-bottom:14px;">
+    <strong>Solver health.</strong>
+    Trace of the Anderson-accelerated Picard iteration that solves for the
+    equilibrium fixed point, plus a summary of solver state. Use this to confirm
+    that the displayed equilibrium has actually converged before reading too much
+    into the other tabs.
+  </div>
   <div class="figure-block">
     <div id="plot-residual" class="plot"></div>
     <div class="figure-caption">
