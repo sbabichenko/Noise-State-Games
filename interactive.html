@@ -949,14 +949,21 @@ h1 { text-align: center; font-size: 1.3em; font-weight: 400; letter-spacing: 0.0
 <!-- Tab: Allocation -->
 <div id="tab-allocation" class="tab-panel">
   <div class="figure-caption" style="margin-bottom:14px;">
-    <strong>The headline policy result.</strong>
-    Given a fixed precision budget $p_1^2 + p_2^2 = \bar{P}$, who should the planner
-    give it to? Sweeping the split surfaces the paper's central finding: under
-    asymmetric effort costs, concentrating precision on the efficient player wins
-    via <em>information starvation</em>. The mechanism is a chain reaction
-    &mdash; starve the inefficient player of signal $\Rightarrow$ their mean control
-    collapses $\Rightarrow$ the efficient player has nothing to manipulate
-    $\Rightarrow$ bilateral waste collapses.
+    <strong>How should a planner allocate a fixed precision budget?</strong>
+    Naive answer: spread it &mdash; more information means better decisions, with
+    50/50 the symmetric default. Two complications break that intuition. Under
+    asymmetric effort costs, you'd rather concentrate the actual control on the
+    cheap player, but precision is what drives activity, so feeding the expensive
+    player information just triggers wasteful control. And precision creates
+    strategic friction: giving player $i$ more information raises the opponent's
+    incentive to manipulate them, since the wedge $\bar{V}^{-i}$ scales with
+    $p_i^2$. Sweeping the split under $p_1^2 + p_2^2 = \bar{P}$ surfaces the
+    paper's headline result &mdash; under asymmetric effort costs, concentrate
+    <em>all</em> the precision on the efficient player. The mechanism,
+    <em>information starvation</em>, is a chain reaction: starve the inefficient
+    player of signal $\Rightarrow$ their mean control collapses $\Rightarrow$
+    the efficient player has nothing to manipulate $\Rightarrow$ bilateral
+    waste collapses.
   </div>
   <div class="param-card" style="margin-bottom:14px;">
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:2px 0;">
